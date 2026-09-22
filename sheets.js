@@ -1,7 +1,7 @@
 const { google } = require('googleapis');
 
 // El ID de tu Google Sheet (esta en la URL: docs.google.com/spreadsheets/d/ESTE_ID_LARGO/edit)
-const SPREADSHEET_ID = 'PON_AQUI_EL_ID_DE_TU_GOOGLE_SHEET';
+const SPREADSHEET_ID = '1ivKfO_iW7MIr_Oe9mERzUcZJEwIKmlY85DzSGxmHKLg';
 
 function autenticar() {
   const auth = new google.auth.GoogleAuth({
