@@ -1,6 +1,6 @@
 const express = require('express');
 const { leerHoja } = require('./sheets');
-const { procesarCheckIn } = require('./logica');
+const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion } = require('./logica');
 const app = express();
 
 // Twilio manda los datos como formulario (no JSON)
@@ -21,6 +21,21 @@ app.get('/test-sheets', async (req, res) => {
   }
 });
 
+// Ruta protegida para disparar el envio de la programacion de manana
+// (reemplaza al boton que teniamos en Sheets con Apps Script)
+app.get('/enviar-programacion', async (req, res) => {
+  if (req.query.clave !== process.env.CLAVE_ADMIN) {
+    return res.status(403).send('No autorizado');
+  }
+  try {
+    const enviados = await enviarProgramacionManana();
+    res.send(`Enviados: ${enviados}`);
+  } catch (err) {
+    console.error('Error en /enviar-programacion:', err);
+    res.status(500).send('Error: ' + err.message);
+  }
+});
+
 // Aqui es donde Twilio manda cada mensaje de WhatsApp
 app.post('/webhook', async (req, res) => {
   const telefono = (req.body.From || '').replace('whatsapp:', '');
@@ -28,20 +43,25 @@ app.post('/webhook', async (req, res) => {
   const lon = req.body.Longitude;
   const texto = (req.body.Body || '').trim();
 
-  let respuesta;
+  let respuesta = null; // null = no responder nada
   try {
-    if (lat && lon) {
+    const respuestaConfirmacion = texto ? await procesarRespuestaConfirmacion(telefono, texto) : null;
+
+    if (respuestaConfirmacion) {
+      respuesta = respuestaConfirmacion;
+    } else if (lat && lon) {
       respuesta = await procesarCheckIn(telefono, parseFloat(lat), parseFloat(lon), 'Entrada');
-    } else {
+    } else if (texto.toLowerCase() === 'hola' || texto === '/start') {
       respuesta = 'Para registrar tu entrada, toca el clip 📎 (o el ícono +) y elige "Ubicación" para compartir dónde estás.';
     }
+    // Si no coincide con nada de lo anterior, respuesta se queda en null (silencio)
   } catch (err) {
     console.error('Error en /webhook:', err);
     respuesta = '⚠️ Ocurrió un error procesando tu mensaje: ' + err.message;
   }
 
   res.set('Content-Type', 'text/xml');
-  res.send(`<Response><Message>${respuesta}</Message></Response>`);
+  res.send(respuesta ? `<Response><Message>${respuesta}</Message></Response>` : '<Response></Response>');
 });
 
 const PORT = process.env.PORT || 3000;

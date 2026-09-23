@@ -152,4 +152,93 @@ async function procesarCheckIn(telefono, lat, lon, tipo) {
   return `✅ ${tipo === 'Entrada' ? 'Entrada' : 'Salida'} registrada en ${clienteTexto}. ¡Gracias!`;
 }
 
-module.exports = { procesarCheckIn, notificarGerencia };
+async function buscarTelefonoPorNombre(nombreEmpleado) {
+  const datos = await leerHoja('EMPLEADOS');
+  const idxTelefono = 0; // columna A: reutilizada como numero de WhatsApp
+  const idxNombre = 1;
+  for (let i = 1; i < datos.length; i++) {
+    if (datos[i][idxNombre] === nombreEmpleado) return datos[i][idxTelefono];
+  }
+  return null;
+}
+
+function construirMensajeProgramacion(fila, col) {
+  let msg = `📅 Servicio programado para mañana\n\n`;
+  msg += `🏠 Cliente: ${fila[col['Cliente']]}\n🕐 Horario: ${fila[col['Horario']]}\n📍 Dirección: ${fila[col['Direccion']]}\n🗺️ Ver ubicación: ${fila[col['Google_Maps_Link']]}\n\n`;
+  msg += `📋 Descripción del servicio:\n${fila[col['Descripcion_Servicio']]}\n\nℹ️ Instrucciones generales:\n${fila[col['Instrucciones']]}\n`;
+  const obs = fila[col['Observaciones_Puntuales']];
+  if (obs && obs.toString().trim() !== '') msg += `\n📝 Observaciones de mañana:\n${obs}\n`;
+  msg += `\n¿Confirmas este servicio? Responde exactamente:\n"Confirmo ${fila[col['Cliente']]}"\no\n"No puedo ${fila[col['Cliente']]}"`;
+  return msg;
+}
+
+async function enviarProgramacionManana() {
+  const datos = await leerHoja('PROGRAMACION_DIARIA');
+  const headers = datos[0];
+  const col = {};
+  headers.forEach((h, i) => col[h] = i);
+
+  const manana = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const mananaTexto = manana.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
+  let enviados = 0;
+  for (let i = 1; i < datos.length; i++) {
+    const fila = datos[i];
+    const fechaTexto = normalizarFecha(fila[col['Fecha_Servicio']]);
+    if (fechaTexto !== mananaTexto) continue;
+    if (fila[col['Estado_Envio']] === 'Enviado') continue;
+
+    const nombreEmpleado = fila[col['Empleado']];
+    const telefono = await buscarTelefonoPorNombre(nombreEmpleado);
+    if (!telefono) {
+      await notificarGerencia(`No se pudo notificar a "${nombreEmpleado}" — no se encontró su número de WhatsApp.`, 'atencion');
+      continue;
+    }
+
+    const mensaje = construirMensajeProgramacion(fila, col);
+    await enviarWhatsApp(`whatsapp:+${soloDigitos(telefono)}`, mensaje);
+    await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Estado_Envio'] + 1, 'Enviado');
+    enviados++;
+  }
+
+  await notificarGerencia(`Programación de mañana enviada — ${enviados} servicio(s) notificados.`, 'rutina');
+  return enviados;
+}
+
+async function procesarRespuestaConfirmacion(telefono, texto) {
+  const confirmaMatch = texto.match(/^confirmo\s+(.+)$/i);
+  const noPuedeMatch = texto.match(/^no\s*puedo\s+(.+)$/i);
+  if (!confirmaMatch && !noPuedeMatch) return null;
+
+  const cliente = (confirmaMatch || noPuedeMatch)[1].trim();
+  const nuevoEstado = confirmaMatch ? 'Confirmado' : 'No puede';
+  const nombreEmpleado = await buscarEmpleadoPorTelefono(telefono);
+  if (!nombreEmpleado) return null;
+
+  const datos = await leerHoja('PROGRAMACION_DIARIA');
+  const headers = datos[0];
+  const col = {};
+  headers.forEach((h, i) => col[h] = i);
+
+  for (let i = 1; i < datos.length; i++) {
+    const fila = datos[i];
+    if (fila[col['Empleado']] === nombreEmpleado &&
+        fila[col['Cliente']].toLowerCase() === cliente.toLowerCase() &&
+        (fila[col['Estado_Confirmacion']] === 'Pendiente' || !fila[col['Estado_Confirmacion']])) {
+
+      await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Estado_Confirmacion'] + 1, nuevoEstado);
+      await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Fecha_Hora_Confirmacion'] + 1,
+        new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+
+      if (nuevoEstado === 'Confirmado') {
+        return `✅ Confirmado. Nos vemos mañana en ${fila[col['Cliente']]}.`;
+      } else {
+        await notificarGerencia(`${nombreEmpleado} NO puede cubrir el servicio de ${fila[col['Cliente']]} mañana.`, 'urgente');
+        return 'Entendido, quedó registrado que no puedes. Por favor escríbele directamente al administrador para explicarle el motivo.';
+      }
+    }
+  }
+  return null; // no se encontro fila pendiente que coincida
+}
+
+module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion };
