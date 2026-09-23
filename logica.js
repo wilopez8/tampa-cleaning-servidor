@@ -115,8 +115,8 @@ async function procesarCheckIn(telefono, lat, lon, tipo) {
   }
 
   await agregarFila('REGISTRO_TURNOS', [
-    ahora.toLocaleDateString('en-US'),
-    ahora.toLocaleTimeString('en-US'),
+    ahora.toLocaleDateString('en-US', { timeZone: 'America/New_York' }),
+    ahora.toLocaleTimeString('en-US', { timeZone: 'America/New_York' }),
     telefono,
     nombreEmpleado,
     lat,
