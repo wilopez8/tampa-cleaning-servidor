@@ -1,5 +1,6 @@
 const express = require('express');
 const { leerHoja } = require('./sheets');
+const { procesarCheckIn } = require('./logica');
 const app = express();
 
 // Twilio manda los datos como formulario (no JSON)
@@ -20,20 +21,27 @@ app.get('/test-sheets', async (req, res) => {
   }
 });
 
-// Aqui es donde Twilio va a mandar cada mensaje de WhatsApp
-app.post('/webhook', (req, res) => {
-  const mensajeEntrante = req.body.Body || '';
-  const numeroDe = req.body.From || '';
+// Aqui es donde Twilio manda cada mensaje de WhatsApp
+app.post('/webhook', async (req, res) => {
+  const telefono = (req.body.From || '').replace('whatsapp:', '');
+  const lat = req.body.Latitude;
+  const lon = req.body.Longitude;
+  const texto = (req.body.Body || '').trim();
 
-  console.log(`Mensaje recibido de ${numeroDe}: ${mensajeEntrante}`);
+  let respuesta;
+  try {
+    if (lat && lon) {
+      respuesta = await procesarCheckIn(telefono, parseFloat(lat), parseFloat(lon), 'Entrada');
+    } else {
+      respuesta = 'Para registrar tu entrada, toca el clip 📎 (o el ícono +) y elige "Ubicación" para compartir dónde estás.';
+    }
+  } catch (err) {
+    console.error('Error en /webhook:', err);
+    respuesta = '⚠️ Ocurrió un error procesando tu mensaje: ' + err.message;
+  }
 
-  // Respuesta en formato TwiML (el formato que espera Twilio)
   res.set('Content-Type', 'text/xml');
-  res.send(`
-    <Response>
-      <Message>Recibido: ${mensajeEntrante}</Message>
-    </Response>
-  `);
+  res.send(`<Response><Message>${respuesta}</Message></Response>`);
 });
 
 const PORT = process.env.PORT || 3000;
