@@ -63,19 +63,30 @@ async function buscarSitio(nombreCliente) {
   return null;
 }
 
+function normalizarFecha(valor) {
+  const texto = String(valor).trim();
+  const isoMatch = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  const partesSlash = texto.split('/');
+  if (partesSlash.length === 3) {
+    const [mm, dd, yyyy] = partesSlash;
+    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+  }
+  return texto;
+}
+
 async function buscarProgramacionHoy(nombreEmpleado) {
   const datos = await leerHoja('PROGRAMACION_DIARIA');
   const headers = datos[0];
   const col = {};
   headers.forEach((h, i) => col[h] = i);
 
-  const hoy = new Date();
-  const hoyTexto = hoy.toISOString().split('T')[0]; // YYYY-MM-DD
+  // "Hoy" segun la hora de Florida, no la del servidor (evita el corrimiento de UTC)
+  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
   for (let i = 1; i < datos.length; i++) {
     const fila = datos[i];
-    const fechaCelda = new Date(fila[col['Fecha_Servicio']]);
-    const fechaTexto = isNaN(fechaCelda) ? '' : fechaCelda.toISOString().split('T')[0];
+    const fechaTexto = normalizarFecha(fila[col['Fecha_Servicio']]);
 
     if (fechaTexto === hoyTexto && fila[col['Empleado']] === nombreEmpleado) {
       return {
