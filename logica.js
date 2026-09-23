@@ -118,7 +118,8 @@ async function procesarCheckIn(telefono, lat, lon, tipo) {
 
     const prefijo = (tipo === 'Entrada') ? 'Entrada' : 'Salida';
     if (prog.col[`Hora_${prefijo}_Real`] !== undefined) {
-      await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Hora_${prefijo}_Real`] + 1, ahora.toISOString());
+      const horaLegible = ahora.toLocaleString('en-US', { timeZone: 'America/New_York' });
+      await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Hora_${prefijo}_Real`] + 1, horaLegible);
       await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Lat_${prefijo}`] + 1, lat);
       await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Lon_${prefijo}`] + 1, lon);
       await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Dentro_Rango_${prefijo}`] + 1, dentroRango);
