@@ -101,10 +101,47 @@ async function buscarProgramacionHoy(nombreEmpleado) {
   return null;
 }
 
+async function detectarAnomalias(nombreEmpleado, lat, lon, ahora) {
+  const datos = await leerHoja('REGISTRO_TURNOS');
+  const headers = datos[0];
+  const col = {};
+  headers.forEach((h, i) => col[h] = i);
+
+  // Busca el check-in mas reciente de este mismo empleado (cualquier dia/sitio)
+  let ultimo = null;
+  for (let i = 1; i < datos.length; i++) {
+    if (datos[i][col['Nombre_Empleado']] === nombreEmpleado) ultimo = datos[i];
+  }
+  if (!ultimo) return [];
+
+  const alertas = [];
+  const latUltimo = parseFloat(ultimo[col['Lat']]);
+  const lonUltimo = parseFloat(ultimo[col['Lon']]);
+
+  // Chequeo 1: coordenadas identicas, sin ninguna variacion
+  if (latUltimo === lat && lonUltimo === lon) {
+    alertas.push('coordenadas idénticas al check-in anterior');
+  }
+
+  // Chequeo 2: velocidad implicita imposible entre los dos puntos
+  const fechaHoraUltimo = new Date(`${ultimo[col['Fecha']]} ${ultimo[col['Hora']]}`);
+  const minutos = (ahora - fechaHoraUltimo) / 60000;
+  if (minutos > 0.5 && minutos < 24 * 60) {
+    const distanciaKm = distanciaMetros(lat, lon, latUltimo, lonUltimo) / 1000;
+    const velocidadKmH = distanciaKm / (minutos / 60);
+    if (velocidadKmH > 150) {
+      alertas.push(`velocidad implícita de ${Math.round(velocidadKmH)} km/h respecto al check-in anterior`);
+    }
+  }
+
+  return alertas;
+}
+
 async function procesarCheckIn(telefono, lat, lon) {
   const nombreEmpleado = await buscarEmpleadoPorTelefono(telefono) || 'DESCONOCIDO';
-  const prog = await buscarProgramacionHoy(nombreEmpleado);
   const ahora = new Date();
+  const alertasAnomalia = await detectarAnomalias(nombreEmpleado, lat, lon, ahora);
+  const prog = await buscarProgramacionHoy(nombreEmpleado);
 
   let distancia = '', dentroRango = '', idProgramacion = '', clienteTexto = 'Sin asignación hoy';
   let tipo = 'Entrada'; // por defecto, si no hay programacion de referencia
@@ -153,6 +190,10 @@ async function procesarCheckIn(telefono, lat, lon) {
   if (dentroRango === 'NO') {
     await notificarGerencia(`${nombreEmpleado} registró ${tipo.toLowerCase()} a ${distancia}m de ${clienteTexto} (fuera de rango).`, 'urgente');
     return `⚠️ Ubicación registrada, pero estás a ${distancia}m de ${clienteTexto}. Avisamos al administrador.`;
+  }
+
+  if (alertasAnomalia.length > 0) {
+    await notificarGerencia(`Posible ubicación falsa en el check-in de ${nombreEmpleado} (${clienteTexto}): ${alertasAnomalia.join('; ')}.`, 'urgente');
   }
 
   return `✅ ${tipo === 'Entrada' ? 'Entrada' : 'Salida'} registrada en ${clienteTexto}. ¡Gracias!`;
