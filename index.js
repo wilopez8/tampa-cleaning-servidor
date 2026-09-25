@@ -45,8 +45,8 @@ app.post('/webhook', async (req, res) => {
   const numMedia = parseInt(req.body.NumMedia || '0', 10);
   const fotoUrl = numMedia > 0 ? req.body.MediaUrl0 : '';
 
-  const quejaMatch = texto.match(/^\/?queja\s+([\s\S]+)$/i);
-  const dudaMatch = texto.match(/^\/?duda\s+([\s\S]+)$/i);
+  const contieneQueja = /\bquejas?\b/i.test(texto);
+  const contieneDuda = /\bdudas?\b/i.test(texto);
 
   let respuesta = null; // null = no responder nada
   try {
@@ -54,10 +54,10 @@ app.post('/webhook', async (req, res) => {
 
     if (respuestaConfirmacion) {
       respuesta = respuestaConfirmacion;
-    } else if (quejaMatch) {
-      respuesta = await procesarQuejaODuda(telefono, 'Queja', quejaMatch[1].trim(), fotoUrl);
-    } else if (dudaMatch) {
-      respuesta = await procesarQuejaODuda(telefono, 'Duda', dudaMatch[1].trim(), fotoUrl);
+    } else if (contieneQueja) {
+      respuesta = await procesarQuejaODuda(telefono, 'Queja', texto, fotoUrl);
+    } else if (contieneDuda) {
+      respuesta = await procesarQuejaODuda(telefono, 'Duda', texto, fotoUrl);
     } else if (lat && lon) {
       respuesta = await procesarCheckIn(telefono, parseFloat(lat), parseFloat(lon), 'Entrada');
     } else if (texto.toLowerCase() === 'hola' || texto === '/start') {
