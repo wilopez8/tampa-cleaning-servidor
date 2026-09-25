@@ -241,4 +241,40 @@ async function procesarRespuestaConfirmacion(telefono, texto) {
   return null; // no se encontro fila pendiente que coincida
 }
 
-module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion };
+async function procesarQuejaODuda(telefono, tipo, descripcion, fotoUrl) {
+  const nombreEmpleado = await buscarEmpleadoPorTelefono(telefono) || 'DESCONOCIDO';
+  const prog = await buscarProgramacionHoy(nombreEmpleado);
+  const ahora = new Date();
+  const idQueja = `${tipo === 'Queja' ? 'QJ' : 'DU'}-${Date.now()}`;
+
+  await agregarFila('QUEJAS', [
+    idQueja,
+    ahora.toLocaleString('en-US', { timeZone: 'America/New_York' }),
+    tipo,
+    'WhatsApp',
+    prog ? prog.idProgramacion : '',
+    prog ? prog.cliente : '',
+    tipo === 'Queja' ? 'Alta' : 'Media',
+    descripcion,
+    nombreEmpleado,
+    '', // Contacto_Cliente (se llena manualmente si aplica)
+    fotoUrl || '',
+    '', // Responsable_Asignado
+    '', // Accion_Correctiva
+    'Abierta',
+    '', // Fecha_Cierre
+  ]);
+
+  const nivel = tipo === 'Queja' ? 'urgente' : 'atencion';
+  const clienteTexto = prog ? prog.cliente : 'servicio sin identificar';
+  await notificarGerencia(
+    `${tipo === 'Queja' ? 'Queja' : 'Consulta'} de ${nombreEmpleado} (${clienteTexto}): "${descripcion}"${fotoUrl ? ' [con foto adjunta]' : ''}`,
+    nivel
+  );
+
+  return tipo === 'Queja'
+    ? '✅ Tu reporte fue enviado, en breve te responden.'
+    : '✅ Tu consulta fue enviada, en breve te responden.';
+}
+
+module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda };

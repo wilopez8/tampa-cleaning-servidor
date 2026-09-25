@@ -1,6 +1,6 @@
 const express = require('express');
 const { leerHoja } = require('./sheets');
-const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion } = require('./logica');
+const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda } = require('./logica');
 const app = express();
 
 // Twilio manda los datos como formulario (no JSON)
@@ -42,6 +42,11 @@ app.post('/webhook', async (req, res) => {
   const lat = req.body.Latitude;
   const lon = req.body.Longitude;
   const texto = (req.body.Body || '').trim();
+  const numMedia = parseInt(req.body.NumMedia || '0', 10);
+  const fotoUrl = numMedia > 0 ? req.body.MediaUrl0 : '';
+
+  const quejaMatch = texto.match(/^\/?queja\s+([\s\S]+)$/i);
+  const dudaMatch = texto.match(/^\/?duda\s+([\s\S]+)$/i);
 
   let respuesta = null; // null = no responder nada
   try {
@@ -49,10 +54,14 @@ app.post('/webhook', async (req, res) => {
 
     if (respuestaConfirmacion) {
       respuesta = respuestaConfirmacion;
+    } else if (quejaMatch) {
+      respuesta = await procesarQuejaODuda(telefono, 'Queja', quejaMatch[1].trim(), fotoUrl);
+    } else if (dudaMatch) {
+      respuesta = await procesarQuejaODuda(telefono, 'Duda', dudaMatch[1].trim(), fotoUrl);
     } else if (lat && lon) {
       respuesta = await procesarCheckIn(telefono, parseFloat(lat), parseFloat(lon), 'Entrada');
     } else if (texto.toLowerCase() === 'hola' || texto === '/start') {
-      respuesta = 'Para registrar tu entrada, toca el clip 📎 (o el ícono +) y elige "Ubicación" para compartir dónde estás.';
+      respuesta = 'Para registrar tu entrada, toca el clip 📎 (o el ícono +) y elige "Ubicación" para compartir dónde estás.\n\nPara reportar algo, escribe:\nqueja [descripción]\nduda [descripción]';
     }
     // Si no coincide con nada de lo anterior, respuesta se queda en null (silencio)
   } catch (err) {
