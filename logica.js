@@ -198,9 +198,12 @@ async function procesarCheckIn(telefono, lat, lon) {
     return '⚠️ Registramos tu ubicación, pero no encontramos un servicio asignado para ti hoy. Ya avisamos al administrador.';
   }
 
+  let mensaje;
   if (dentroRango === 'NO') {
     await notificarGerencia(`${nombreEmpleado} registró ${tipo.toLowerCase()} a ${distancia}m de ${clienteTexto} (fuera de rango).`, 'urgente');
-    return `⚠️ Ubicación registrada, pero estás a ${distancia}m de ${clienteTexto}. Avisamos al administrador.`;
+    mensaje = `⚠️ Ubicación registrada, pero estás a ${distancia}m de ${clienteTexto}. Avisamos al administrador.`;
+  } else {
+    mensaje = `✅ ${tipo === 'Entrada' ? 'Entrada' : 'Salida'} registrada en ${clienteTexto}. ¡Gracias!`;
   }
 
   if (alertasAnomalia.length > 0) {
@@ -209,10 +212,10 @@ async function procesarCheckIn(telefono, lat, lon) {
 
   if (tipo === 'Salida' && idProgramacion) {
     const linkCierre = construirLinkCierre(idProgramacion);
-    return `✅ Salida registrada en ${clienteTexto}. Completa el cierre del servicio aquí:\n${linkCierre}`;
+    mensaje += `\n\nCompleta el cierre del servicio aquí:\n${linkCierre}`;
   }
 
-  return `✅ Entrada registrada en ${clienteTexto}. ¡Gracias!`;
+  return mensaje;
 }
 
 async function buscarTelefonoPorNombre(nombreEmpleado) {
