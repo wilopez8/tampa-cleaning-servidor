@@ -94,18 +94,20 @@ async function buscarProgramacionHoy(nombreEmpleado) {
         cliente: fila[col['Cliente']],
         filaSheet: i + 1, // fila real en la hoja (encabezado = fila 1)
         col: col,
+        fila: fila, // valores crudos, para saber que ya se registro (entrada/salida)
       };
     }
   }
   return null;
 }
 
-async function procesarCheckIn(telefono, lat, lon, tipo) {
+async function procesarCheckIn(telefono, lat, lon) {
   const nombreEmpleado = await buscarEmpleadoPorTelefono(telefono) || 'DESCONOCIDO';
   const prog = await buscarProgramacionHoy(nombreEmpleado);
   const ahora = new Date();
 
   let distancia = '', dentroRango = '', idProgramacion = '', clienteTexto = 'Sin asignación hoy';
+  let tipo = 'Entrada'; // por defecto, si no hay programacion de referencia
 
   if (prog) {
     idProgramacion = prog.idProgramacion;
@@ -116,13 +118,17 @@ async function procesarCheckIn(telefono, lat, lon, tipo) {
       dentroRango = distancia <= sitio.radio ? 'SI' : 'NO';
     }
 
-    const prefijo = (tipo === 'Entrada') ? 'Entrada' : 'Salida';
-    if (prog.col[`Hora_${prefijo}_Real`] !== undefined) {
+    // Decide solo si es Entrada o Salida, segun lo que ya este registrado hoy
+    const yaTieneEntrada = prog.col['Hora_Entrada_Real'] !== undefined && !!prog.fila[prog.col['Hora_Entrada_Real']];
+    const yaTieneSalida = prog.col['Hora_Salida_Real'] !== undefined && !!prog.fila[prog.col['Hora_Salida_Real']];
+    tipo = (!yaTieneEntrada) ? 'Entrada' : (!yaTieneSalida ? 'Salida' : 'Salida');
+
+    if (prog.col[`Hora_${tipo}_Real`] !== undefined) {
       const horaLegible = ahora.toLocaleString('en-US', { timeZone: 'America/New_York' });
-      await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Hora_${prefijo}_Real`] + 1, horaLegible);
-      await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Lat_${prefijo}`] + 1, lat);
-      await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Lon_${prefijo}`] + 1, lon);
-      await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Dentro_Rango_${prefijo}`] + 1, dentroRango);
+      await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Hora_${tipo}_Real`] + 1, horaLegible);
+      await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Lat_${tipo}`] + 1, lat);
+      await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Lon_${tipo}`] + 1, lon);
+      await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Dentro_Rango_${tipo}`] + 1, dentroRango);
     }
   }
 
@@ -140,7 +146,7 @@ async function procesarCheckIn(telefono, lat, lon, tipo) {
   ]);
 
   if (!prog) {
-    await notificarGerencia(`${nombreEmpleado} hizo check-in (${tipo}) pero no tiene servicio asignado hoy.`, 'urgente');
+    await notificarGerencia(`${nombreEmpleado} hizo check-in pero no tiene servicio asignado hoy.`, 'urgente');
     return '⚠️ Registramos tu ubicación, pero no encontramos un servicio asignado para ti hoy. Ya avisamos al administrador.';
   }
 

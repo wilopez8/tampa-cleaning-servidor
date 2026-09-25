@@ -1,6 +1,6 @@
 const express = require('express');
 const { leerHoja } = require('./sheets');
-const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda } = require('./logica');
+const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso } = require('./logica');
 const app = express();
 
 // Twilio manda los datos como formulario (no JSON)
@@ -47,19 +47,25 @@ app.post('/webhook', async (req, res) => {
 
   const contieneQueja = /\bquejas?\b/i.test(texto);
   const contieneDuda = /\bdudas?\b/i.test(texto);
+  const esComandoAviso = /^aviso\s+/i.test(texto);
 
   let respuesta = null; // null = no responder nada
   try {
     const respuestaConfirmacion = texto ? await procesarRespuestaConfirmacion(telefono, texto) : null;
+    const respuestaAvisoRecibido = (!respuestaConfirmacion && texto) ? await procesarConfirmacionAviso(telefono, texto) : null;
 
     if (respuestaConfirmacion) {
       respuesta = respuestaConfirmacion;
+    } else if (respuestaAvisoRecibido) {
+      respuesta = respuestaAvisoRecibido;
+    } else if (esComandoAviso) {
+      respuesta = await procesarAviso(telefono, texto);
     } else if (contieneQueja) {
       respuesta = await procesarQuejaODuda(telefono, 'Queja', texto, fotoUrl);
     } else if (contieneDuda) {
       respuesta = await procesarQuejaODuda(telefono, 'Duda', texto, fotoUrl);
     } else if (lat && lon) {
-      respuesta = await procesarCheckIn(telefono, parseFloat(lat), parseFloat(lon), 'Entrada');
+      respuesta = await procesarCheckIn(telefono, parseFloat(lat), parseFloat(lon));
     } else if (texto.toLowerCase() === 'hola' || texto === '/start') {
       respuesta = 'Para registrar tu entrada, toca el clip 📎 (o el ícono +) y elige "Ubicación" para compartir dónde estás.\n\nPara reportar algo, escribe:\nqueja [descripción]\nduda [descripción]';
     }
