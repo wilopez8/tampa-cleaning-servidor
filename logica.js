@@ -168,7 +168,7 @@ function construirMensajeProgramacion(fila, col) {
   msg += `📋 Descripción del servicio:\n${fila[col['Descripcion_Servicio']]}\n\nℹ️ Instrucciones generales:\n${fila[col['Instrucciones']]}\n`;
   const obs = fila[col['Observaciones_Puntuales']];
   if (obs && obs.toString().trim() !== '') msg += `\n📝 Observaciones de mañana:\n${obs}\n`;
-  msg += `\n¿Confirmas este servicio? Responde exactamente:\n"Confirmo ${fila[col['Cliente']]}"\no\n"No puedo ${fila[col['Cliente']]}"`;
+  msg += `\n¿Confirmas este servicio? Responde:\n"Ok" o "Confirmo"\no\n"No puedo"`;
   return msg;
 }
 
@@ -206,15 +206,15 @@ async function enviarProgramacionManana() {
 }
 
 async function procesarRespuestaConfirmacion(telefono, texto) {
-  const confirmaMatch = texto.match(/^confirmo\s+(.+)$/i);
-  const noPuedeMatch = texto.match(/^no\s*puedo\s+(.+)$/i);
-  if (!confirmaMatch && !noPuedeMatch) return null;
+  const textoLimpio = texto.trim();
+  const esConfirma = /^(ok|confirmo)\b/i.test(textoLimpio);
+  const esNoPuede = /^no\s*puedo\b/i.test(textoLimpio);
+  if (!esConfirma && !esNoPuede) return null;
 
-  const cliente = (confirmaMatch || noPuedeMatch)[1].trim();
-  const nuevoEstado = confirmaMatch ? 'Confirmado' : 'No puede';
   const nombreEmpleado = await buscarEmpleadoPorTelefono(telefono);
   if (!nombreEmpleado) return null;
 
+  const nuevoEstado = esConfirma ? 'Confirmado' : 'No puede';
   const datos = await leerHoja('PROGRAMACION_DIARIA');
   const headers = datos[0];
   const col = {};
@@ -222,23 +222,23 @@ async function procesarRespuestaConfirmacion(telefono, texto) {
 
   for (let i = 1; i < datos.length; i++) {
     const fila = datos[i];
-    if (fila[col['Empleado']] === nombreEmpleado &&
-        fila[col['Cliente']].toLowerCase() === cliente.toLowerCase() &&
-        (fila[col['Estado_Confirmacion']] === 'Pendiente' || !fila[col['Estado_Confirmacion']])) {
+    const estadoActual = fila[col['Estado_Confirmacion']];
+    if (fila[col['Empleado']] === nombreEmpleado && (estadoActual === 'Pendiente' || !estadoActual)) {
+      const cliente = fila[col['Cliente']];
 
       await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Estado_Confirmacion'] + 1, nuevoEstado);
       await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Fecha_Hora_Confirmacion'] + 1,
         new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
 
       if (nuevoEstado === 'Confirmado') {
-        return `✅ Confirmado. Nos vemos mañana en ${fila[col['Cliente']]}.`;
+        return `✅ Confirmado. Nos vemos en ${cliente}.`;
       } else {
-        await notificarGerencia(`${nombreEmpleado} NO puede cubrir el servicio de ${fila[col['Cliente']]} mañana.`, 'urgente');
+        await notificarGerencia(`${nombreEmpleado} NO puede cubrir el servicio de ${cliente}.`, 'urgente');
         return 'Entendido, quedó registrado que no puedes. Por favor escríbele directamente al administrador para explicarle el motivo.';
       }
     }
   }
-  return null; // no se encontro fila pendiente que coincida
+  return null; // no hay ninguna confirmacion pendiente para este empleado
 }
 
 async function procesarQuejaODuda(telefono, tipo, descripcion, fotoUrl) {
@@ -277,4 +277,75 @@ async function procesarQuejaODuda(telefono, tipo, descripcion, fotoUrl) {
     : '✅ Tu consulta fue enviada, en breve te responden.';
 }
 
-module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda };
+async function buscarProgramacionPorClienteHoy() {
+  const datos = await leerHoja('PROGRAMACION_DIARIA');
+  const headers = datos[0];
+  const col = {};
+  headers.forEach((h, i) => col[h] = i);
+  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  return { datos, col, hoyTexto };
+}
+
+async function procesarAviso(telefonoEmisor, texto) {
+  const esWill = soloDigitos(telefonoEmisor) === soloDigitos(CHAT_ADMIN_WHATSAPP.replace('whatsapp:', ''));
+  if (!esWill) return null; // silencio total para cualquiera que no sea Will
+
+  const match = texto.match(/^aviso\s+([^:]+):\s*(.+)$/i);
+  if (!match) return 'Formato: aviso [Cliente]: [mensaje]';
+
+  const cliente = match[1].trim();
+  const mensajeAviso = match[2].trim();
+  const { datos, col, hoyTexto } = await buscarProgramacionPorClienteHoy();
+
+  const notificados = [];
+  for (let i = 1; i < datos.length; i++) {
+    const fila = datos[i];
+    const fechaTexto = normalizarFecha(fila[col['Fecha_Servicio']]);
+    if (fechaTexto === hoyTexto && fila[col['Cliente']].toLowerCase() === cliente.toLowerCase()) {
+      const nombreEmpleado = fila[col['Empleado']];
+      const telefonoEmpleado = await buscarTelefonoPorNombre(nombreEmpleado);
+      if (!telefonoEmpleado) continue;
+
+      await enviarWhatsApp(
+        `whatsapp:+${soloDigitos(telefonoEmpleado)}`,
+        `📢 Aviso sobre tu servicio actual:\n${mensajeAviso}\n\nPor favor responde "Recibido" para confirmar que lo viste.`
+      );
+
+      if (col['Avisos_Durante_Servicio'] !== undefined) {
+        const previo = fila[col['Avisos_Durante_Servicio']] || '';
+        const marca = `[${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })}] ${mensajeAviso}`;
+        await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Avisos_Durante_Servicio'] + 1, previo ? `${previo}\n${marca}` : marca);
+      }
+      if (col['Aviso_Confirmado'] !== undefined) {
+        await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Aviso_Confirmado'] + 1, 'No');
+      }
+      notificados.push(nombreEmpleado);
+    }
+  }
+
+  if (notificados.length === 0) return `No encontré ningún servicio de hoy para "${cliente}".`;
+  return `✅ Enviado a: ${notificados.join(', ')}`;
+}
+
+async function procesarConfirmacionAviso(telefono, texto) {
+  if (!/^recibido$/i.test(texto.trim())) return null;
+
+  const nombreEmpleado = await buscarEmpleadoPorTelefono(telefono);
+  if (!nombreEmpleado) return null;
+
+  const { datos, col, hoyTexto } = await buscarProgramacionPorClienteHoy();
+  if (col['Aviso_Confirmado'] === undefined) return null;
+
+  for (let i = 1; i < datos.length; i++) {
+    const fila = datos[i];
+    const fechaTexto = normalizarFecha(fila[col['Fecha_Servicio']]);
+    if (fechaTexto === hoyTexto && fila[col['Empleado']] === nombreEmpleado && fila[col['Aviso_Confirmado']] === 'No') {
+      await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Aviso_Confirmado'] + 1, 'Sí');
+      await notificarGerencia(`${nombreEmpleado} confirmó que vio el aviso sobre ${fila[col['Cliente']]}.`, 'rutina');
+      return '👍 Recibido, gracias.';
+    }
+  }
+  return null;
+}
+
+module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso };
