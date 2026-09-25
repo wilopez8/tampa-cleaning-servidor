@@ -5,6 +5,17 @@ const clienteTwilio = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_
 const TWILIO_WHATSAPP_FROM = 'whatsapp:+14155238886'; // numero del Sandbox
 const CHAT_ADMIN_WHATSAPP = 'whatsapp:+18133856059';  // numero personal de Will (gerencia)
 
+// Configuración de AppSheet, para el link de cierre de servicio
+const APPSHEET_APP_ID = '29ee0119-6d78-4396-888f-8aef46a76045';
+const APPSHEET_APP_NAME = 'TampaCleaning-935453415';
+const APPSHEET_TABLE = 'PROGRAMACION_DIARIA';
+const APPSHEET_VIEW = 'Cierre de Servicio';
+
+function construirLinkCierre(idProgramacion) {
+  const viewCodificada = encodeURIComponent(APPSHEET_VIEW).replace(/%20/g, '+');
+  return `https://www.appsheet.com/start/${APPSHEET_APP_ID}#appName=${APPSHEET_APP_NAME}&page=form&row=${encodeURIComponent(idProgramacion)}&table=${APPSHEET_TABLE}&view=${viewCodificada}`;
+}
+
 function soloDigitos(texto) {
   return String(texto || '').replace(/\D/g, '');
 }
@@ -196,7 +207,12 @@ async function procesarCheckIn(telefono, lat, lon) {
     await notificarGerencia(`Posible ubicación falsa en el check-in de ${nombreEmpleado} (${clienteTexto}): ${alertasAnomalia.join('; ')}.`, 'urgente');
   }
 
-  return `✅ ${tipo === 'Entrada' ? 'Entrada' : 'Salida'} registrada en ${clienteTexto}. ¡Gracias!`;
+  if (tipo === 'Salida' && idProgramacion) {
+    const linkCierre = construirLinkCierre(idProgramacion);
+    return `✅ Salida registrada en ${clienteTexto}. Completa el cierre del servicio aquí:\n${linkCierre}`;
+  }
+
+  return `✅ Entrada registrada en ${clienteTexto}. ¡Gracias!`;
 }
 
 async function buscarTelefonoPorNombre(nombreEmpleado) {
