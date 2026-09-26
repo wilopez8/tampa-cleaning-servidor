@@ -3,6 +3,13 @@ const { leerHoja } = require('./sheets');
 const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, procesarCierreCompletado } = require('./logica');
 const app = express();
 
+function escaparXml(texto) {
+  return String(texto)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 // Twilio manda los datos como formulario (no JSON)
 app.use(express.urlencoded({ extended: false }));
 
@@ -91,7 +98,7 @@ app.post('/webhook', async (req, res) => {
   }
 
   res.set('Content-Type', 'text/xml');
-  res.send(respuesta ? `<Response><Message>${respuesta}</Message></Response>` : '<Response></Response>');
+  res.send(respuesta ? `<Response><Message>${escaparXml(respuesta)}</Message></Response>` : '<Response></Response>');
 });
 
 const PORT = process.env.PORT || 3000;
