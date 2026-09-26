@@ -414,4 +414,35 @@ async function procesarConfirmacionAviso(telefono, texto) {
   return null;
 }
 
-module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso };
+async function procesarCierreCompletado(idProgramacion) {
+  const datos = await leerHoja('PROGRAMACION_DIARIA');
+  const headers = datos[0];
+  const col = {};
+  headers.forEach((h, i) => col[h] = i);
+
+  for (let i = 1; i < datos.length; i++) {
+    const fila = datos[i];
+    if (fila[col['ID_Programacion']] === idProgramacion) {
+      const cliente = fila[col['Cliente']];
+      const empleado = fila[col['Empleado']];
+      const pendientes = fila[col['Tareas_Pendientes']] || 'Ninguna';
+      const insumos = fila[col['Insumos_Faltantes']] || 'Ninguno';
+      const comentario = fila[col['Comentario_Empleado']] || '(sin comentario)';
+      const fotos = fila[col['Fotos_Resultado']] || '';
+      const numFotos = fotos ? fotos.split(',').filter(f => f.trim()).length : 0;
+
+      await notificarGerencia(
+        `Servicio finalizado — ${cliente} (${empleado})\n` +
+        `Tareas pendientes: ${pendientes}\n` +
+        `Insumos faltantes: ${insumos}\n` +
+        `Comentario: ${comentario}\n` +
+        `Fotos adjuntas: ${numFotos}`,
+        'rutina'
+      );
+      return;
+    }
+  }
+  throw new Error(`No se encontró la fila con ID_Programacion=${idProgramacion}`);
+}
+
+module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, procesarCierreCompletado };

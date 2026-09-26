@@ -1,6 +1,6 @@
 const express = require('express');
 const { leerHoja } = require('./sheets');
-const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso } = require('./logica');
+const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, procesarCierreCompletado } = require('./logica');
 const app = express();
 
 // Twilio manda los datos como formulario (no JSON)
@@ -32,6 +32,21 @@ app.get('/enviar-programacion', async (req, res) => {
     res.send(`Enviados: ${enviados}`);
   } catch (err) {
     console.error('Error en /enviar-programacion:', err);
+    res.status(500).send('Error: ' + err.message);
+  }
+});
+
+// Ruta que AppSheet llama automaticamente cuando el empleado marca
+// "Servicio_Finalizado" en el formulario de cierre.
+app.get('/appsheet-cierre', async (req, res) => {
+  if (req.query.clave !== process.env.CLAVE_ADMIN) {
+    return res.status(403).send('No autorizado');
+  }
+  try {
+    await procesarCierreCompletado(req.query.id);
+    res.send('OK');
+  } catch (err) {
+    console.error('Error en /appsheet-cierre:', err);
     res.status(500).send('Error: ' + err.message);
   }
 });
