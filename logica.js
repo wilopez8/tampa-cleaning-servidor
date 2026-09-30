@@ -466,11 +466,13 @@ async function obtenerDatosFormularioCierre(idProgramacion) {
   const { fila, col } = encontrado;
   const cliente = fila[col['Cliente']];
   const sitio = await buscarSitio(cliente);
+  const yaFinalizado = col['Servicio_Finalizado'] !== undefined && fila[col['Servicio_Finalizado']] === 'Sí';
   return {
     cliente,
     direccion: fila[col['Direccion']] || '',
     instrucciones: fila[col['Instrucciones']] || '',
     checklist: sitio ? sitio.checklist : [],
+    yaFinalizado,
   };
 }
 
@@ -481,6 +483,13 @@ async function procesarCierreFormulario(body) {
   const encontrado = await obtenerFilaProgramacionPorId(idProgramacion);
   if (!encontrado) throw new Error('Servicio no encontrado');
   const { fila, filaSheet, col } = encontrado;
+
+  if (col['Servicio_Finalizado'] !== undefined && fila[col['Servicio_Finalizado']] === 'Sí') {
+    const error = new Error('Este cierre ya había sido enviado antes');
+    error.yaFinalizado = true;
+    throw error;
+  }
+
   const cliente = fila[col['Cliente']];
   const empleado = fila[col['Empleado']];
 

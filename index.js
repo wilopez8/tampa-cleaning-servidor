@@ -64,6 +64,15 @@ app.get('/cierre', async (req, res) => {
     const datos = await obtenerDatosFormularioCierre(req.query.id);
     if (!datos) return res.status(404).send('Servicio no encontrado.');
 
+    if (datos.yaFinalizado) {
+      res.set('Content-Type', 'text/html');
+      return res.send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+      <body style="font-family:-apple-system,Arial,sans-serif;text-align:center;padding:60px 20px;">
+        <h2 style="color:#b45309;">⚠️ Este servicio ya fue cerrado</h2>
+        <p style="color:#555;font-size:16px;">El cierre de <strong>${datos.cliente}</strong> ya se envió anteriormente y no se puede modificar.<br>Si necesitas corregir algo, comunícate directamente con el administrador.</p>
+      </body></html>`);
+    }
+
     const checklistHtml = datos.checklist.length
       ? datos.checklist.map(t => `
         <label style="display:block;margin:10px 0;font-size:16px;">
@@ -123,6 +132,14 @@ app.post('/cierre', async (req, res) => {
     </body></html>`);
   } catch (err) {
     console.error('Error en POST /cierre:', err);
+    if (err.yaFinalizado) {
+      res.set('Content-Type', 'text/html');
+      return res.send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+      <body style="font-family:-apple-system,Arial,sans-serif;text-align:center;padding:60px 20px;">
+        <h2 style="color:#b45309;">⚠️ Este cierre ya había sido enviado</h2>
+        <p style="color:#555;font-size:16px;">No se guardó de nuevo para evitar duplicar la información.</p>
+      </body></html>`);
+    }
     res.status(500).send('Ocurrió un error guardando el cierre.');
   }
 });
