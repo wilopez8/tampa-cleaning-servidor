@@ -3,6 +3,7 @@ const twilio = require('twilio');
 
 const clienteTwilio = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 const TWILIO_WHATSAPP_FROM = 'whatsapp:+14155238886'; // numero del Sandbox
+const BASE_URL = 'https://tampa-cleaning-servidor.onrender.com'; // tu propio servidor (sin AppSheet)
 const CHAT_ADMIN_WHATSAPP = 'whatsapp:+18133856059';  // numero personal de Will (gerencia)
 
 // Configuración de AppSheet, para el link de cierre de servicio
@@ -64,10 +65,12 @@ async function buscarSitio(nombreCliente) {
   headers.forEach((h, i) => col[h] = i);
   for (let i = 1; i < datos.length; i++) {
     if (datos[i][col['Nombre_Cliente']] === nombreCliente) {
+      const checklistTexto = col['Checklist_Tareas'] !== undefined ? (datos[i][col['Checklist_Tareas']] || '') : '';
       return {
         lat: parseFloat(datos[i][col['Latitud']]),
         lon: parseFloat(datos[i][col['Longitud']]),
         radio: parseFloat(datos[i][col['Radio_Tolerancia_m']]) || 150,
+        checklist: checklistTexto.split(',').map(t => t.trim()).filter(Boolean),
       };
     }
   }
@@ -211,8 +214,7 @@ async function procesarCheckIn(telefono, lat, lon) {
   }
 
   if (tipo === 'Salida' && idProgramacion) {
-    const linkCierre = construirLinkCierre(idProgramacion);
-    mensaje += `\n\nCompleta el cierre del servicio aquí:\n${linkCierre}`;
+    mensaje += `\n\nCompleta el cierre del servicio aquí:\n${BASE_URL}/cierre?id=${encodeURIComponent(idProgramacion)}`;
   }
 
   return mensaje;
@@ -445,4 +447,69 @@ async function procesarCierreCompletado(idProgramacion) {
   throw new Error(`No se encontró la fila con ID_Programacion=${idProgramacion}`);
 }
 
-module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, procesarCierreCompletado };
+async function obtenerFilaProgramacionPorId(idProgramacion) {
+  const datos = await leerHoja('PROGRAMACION_DIARIA');
+  const headers = datos[0];
+  const col = {};
+  headers.forEach((h, i) => col[h] = i);
+  for (let i = 1; i < datos.length; i++) {
+    if (datos[i][col['ID_Programacion']] === idProgramacion) {
+      return { fila: datos[i], filaSheet: i + 1, col };
+    }
+  }
+  return null;
+}
+
+async function obtenerDatosFormularioCierre(idProgramacion) {
+  const encontrado = await obtenerFilaProgramacionPorId(idProgramacion);
+  if (!encontrado) return null;
+  const { fila, col } = encontrado;
+  const cliente = fila[col['Cliente']];
+  const sitio = await buscarSitio(cliente);
+  return {
+    cliente,
+    direccion: fila[col['Direccion']] || '',
+    instrucciones: fila[col['Instrucciones']] || '',
+    checklist: sitio ? sitio.checklist : [],
+  };
+}
+
+const INSUMOS_COMUNES = ['Clorox', 'Jabón para pisos', 'Papel higiénico', 'Toallas de papel', 'Bolsas de basura'];
+
+async function procesarCierreFormulario(body) {
+  const idProgramacion = body.id;
+  const encontrado = await obtenerFilaProgramacionPorId(idProgramacion);
+  if (!encontrado) throw new Error('Servicio no encontrado');
+  const { fila, filaSheet, col } = encontrado;
+  const cliente = fila[col['Cliente']];
+  const empleado = fila[col['Empleado']];
+
+  const sitio = await buscarSitio(cliente);
+  const todasTareas = sitio ? sitio.checklist : [];
+  let completadas = body.completadas || [];
+  if (!Array.isArray(completadas)) completadas = [completadas];
+  const pendientes = todasTareas.filter(t => !completadas.includes(t));
+  const pendientesTexto = pendientes.length ? pendientes.join(', ') : 'Ninguna';
+
+  let insumos = body.insumosFaltantes || [];
+  if (!Array.isArray(insumos)) insumos = [insumos];
+  if (body.otroInsumo && body.otroInsumo.trim()) insumos.push(body.otroInsumo.trim());
+  const insumosTexto = insumos.length ? insumos.join(', ') : 'Ninguno';
+
+  const comentario = (body.comentario || '').trim() || '(sin comentario)';
+
+  if (col['Tareas_Pendientes'] !== undefined) await actualizarCelda('PROGRAMACION_DIARIA', filaSheet, col['Tareas_Pendientes'] + 1, pendientesTexto);
+  if (col['Insumos_Faltantes'] !== undefined) await actualizarCelda('PROGRAMACION_DIARIA', filaSheet, col['Insumos_Faltantes'] + 1, insumosTexto);
+  if (col['Comentario_Empleado'] !== undefined) await actualizarCelda('PROGRAMACION_DIARIA', filaSheet, col['Comentario_Empleado'] + 1, comentario);
+  if (col['Servicio_Finalizado'] !== undefined) await actualizarCelda('PROGRAMACION_DIARIA', filaSheet, col['Servicio_Finalizado'] + 1, 'Sí');
+
+  await notificarGerencia(
+    `Servicio finalizado — ${cliente} (${empleado})\n` +
+    `Tareas pendientes: ${pendientesTexto}\n` +
+    `Insumos faltantes: ${insumosTexto}\n` +
+    `Comentario: ${comentario}`,
+    'rutina'
+  );
+}
+
+module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, procesarCierreCompletado, obtenerDatosFormularioCierre, procesarCierreFormulario, INSUMOS_COMUNES };

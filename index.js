@@ -1,6 +1,6 @@
 const express = require('express');
 const { leerHoja } = require('./sheets');
-const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, procesarCierreCompletado } = require('./logica');
+const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, procesarCierreCompletado, obtenerDatosFormularioCierre, procesarCierreFormulario, INSUMOS_COMUNES } = require('./logica');
 const app = express();
 
 function escaparXml(texto) {
@@ -55,6 +55,75 @@ app.get('/appsheet-cierre', async (req, res) => {
   } catch (err) {
     console.error('Error en /appsheet-cierre:', err);
     res.status(500).send('Error: ' + err.message);
+  }
+});
+
+// Muestra el formulario de cierre de servicio (nuestra propia pagina, sin AppSheet)
+app.get('/cierre', async (req, res) => {
+  try {
+    const datos = await obtenerDatosFormularioCierre(req.query.id);
+    if (!datos) return res.status(404).send('Servicio no encontrado.');
+
+    const checklistHtml = datos.checklist.length
+      ? datos.checklist.map(t => `
+        <label style="display:block;margin:10px 0;font-size:16px;">
+          <input type="checkbox" name="completadas" value="${t}" checked style="width:20px;height:20px;vertical-align:middle;"> ${t}
+        </label>`).join('')
+      : '<p>Este cliente no tiene checklist configurado.</p>';
+
+    const insumosHtml = INSUMOS_COMUNES.map(i => `
+      <label style="display:block;margin:10px 0;font-size:16px;">
+        <input type="checkbox" name="insumosFaltantes" value="${i}" style="width:20px;height:20px;vertical-align:middle;"> ${i}
+      </label>`).join('');
+
+    res.set('Content-Type', 'text/html');
+    res.send(`<!DOCTYPE html>
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cierre de servicio</title>
+<style>
+  body{font-family:-apple-system,Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px;color:#222;}
+  h2{color:#2e7d32;margin-bottom:4px;}
+  h3{margin-top:28px;margin-bottom:8px;font-size:17px;}
+  p{color:#555;font-size:15px;}
+  button{background:#2e7d32;color:white;padding:14px 20px;border:none;border-radius:8px;font-size:17px;width:100%;margin-top:24px;}
+  textarea, input[type=text]{width:100%;padding:10px;font-size:15px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;}
+  textarea{min-height:90px;}
+</style>
+</head><body>
+<h2>Cierre de servicio</h2>
+<p><strong>${datos.cliente}</strong><br>${datos.direccion}</p>
+${datos.instrucciones ? `<p><strong>Instrucciones:</strong> ${datos.instrucciones}</p>` : ''}
+<form method="POST" action="/cierre">
+  <input type="hidden" name="id" value="${req.query.id}">
+  <h3>Tareas completadas (desmarca las que NO alcanzaste a hacer)</h3>
+  ${checklistHtml}
+  <h3>Insumos faltantes</h3>
+  ${insumosHtml}
+  <label style="display:block;margin:10px 0;font-size:15px;">Otro insumo:<br><input type="text" name="otroInsumo"></label>
+  <h3>Comentario del servicio</h3>
+  <textarea name="comentario" placeholder="Escribe cualquier observación (opcional)"></textarea>
+  <button type="submit">Guardar cierre</button>
+</form>
+</body></html>`);
+  } catch (err) {
+    console.error('Error en GET /cierre:', err);
+    res.status(500).send('Ocurrió un error cargando el formulario.');
+  }
+});
+
+// Recibe el formulario de cierre ya lleno
+app.post('/cierre', async (req, res) => {
+  try {
+    await procesarCierreFormulario(req.body);
+    res.set('Content-Type', 'text/html');
+    res.send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+    <body style="font-family:-apple-system,Arial,sans-serif;text-align:center;padding:60px 20px;">
+      <h2 style="color:#2e7d32;">✅ ¡Gracias!</h2>
+      <p style="color:#555;font-size:16px;">El cierre del servicio quedó registrado.<br>Ya puedes cerrar esta ventana.</p>
+    </body></html>`);
+  } catch (err) {
+    console.error('Error en POST /cierre:', err);
+    res.status(500).send('Ocurrió un error guardando el cierre.');
   }
 });
 
