@@ -6,17 +6,6 @@ const TWILIO_WHATSAPP_FROM = 'whatsapp:+14155238886'; // numero del Sandbox
 const BASE_URL = 'https://tampa-cleaning-servidor.onrender.com'; // tu propio servidor (sin AppSheet)
 const CHAT_ADMIN_WHATSAPP = 'whatsapp:+18133856059';  // numero personal de Will (gerencia)
 
-// Configuración de AppSheet, para el link de cierre de servicio
-const APPSHEET_APP_ID = '29ee0119-6d78-4396-888f-8aef46a76045';
-const APPSHEET_APP_NAME = 'TampaCleaning-935453415';
-const APPSHEET_TABLE = 'PROGRAMACION_DIARIA';
-const APPSHEET_VIEW = 'Cierre de Servicio';
-
-function construirLinkCierre(idProgramacion) {
-  const viewCodificada = encodeURIComponent(APPSHEET_VIEW).replace(/%20/g, '+');
-  return `https://www.appsheet.com/start/${APPSHEET_APP_ID}#appName=${APPSHEET_APP_NAME}&page=form&row=${encodeURIComponent(idProgramacion)}&table=${APPSHEET_TABLE}&view=${viewCodificada}`;
-}
-
 function soloDigitos(texto) {
   return String(texto || '').replace(/\D/g, '');
 }
@@ -416,37 +405,6 @@ async function procesarConfirmacionAviso(telefono, texto) {
   return null;
 }
 
-async function procesarCierreCompletado(idProgramacion) {
-  const datos = await leerHoja('PROGRAMACION_DIARIA');
-  const headers = datos[0];
-  const col = {};
-  headers.forEach((h, i) => col[h] = i);
-
-  for (let i = 1; i < datos.length; i++) {
-    const fila = datos[i];
-    if (fila[col['ID_Programacion']] === idProgramacion) {
-      const cliente = fila[col['Cliente']];
-      const empleado = fila[col['Empleado']];
-      const pendientes = fila[col['Tareas_Pendientes']] || 'Ninguna';
-      const insumos = fila[col['Insumos_Faltantes']] || 'Ninguno';
-      const comentario = fila[col['Comentario_Empleado']] || '(sin comentario)';
-      const fotos = fila[col['Fotos_Resultado']] || '';
-      const numFotos = fotos ? fotos.split(',').filter(f => f.trim()).length : 0;
-
-      await notificarGerencia(
-        `Servicio finalizado — ${cliente} (${empleado})\n` +
-        `Tareas pendientes: ${pendientes}\n` +
-        `Insumos faltantes: ${insumos}\n` +
-        `Comentario: ${comentario}\n` +
-        `Fotos adjuntas: ${numFotos}`,
-        'rutina'
-      );
-      return;
-    }
-  }
-  throw new Error(`No se encontró la fila con ID_Programacion=${idProgramacion}`);
-}
-
 async function obtenerFilaProgramacionPorId(idProgramacion) {
   const datos = await leerHoja('PROGRAMACION_DIARIA');
   const headers = datos[0];
@@ -521,4 +479,4 @@ async function procesarCierreFormulario(body) {
   );
 }
 
-module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, procesarCierreCompletado, obtenerDatosFormularioCierre, procesarCierreFormulario, INSUMOS_COMUNES };
+module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, INSUMOS_COMUNES };
