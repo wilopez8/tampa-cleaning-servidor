@@ -425,16 +425,19 @@ async function obtenerDatosFormularioCierre(idProgramacion) {
   const cliente = fila[col['Cliente']];
   const sitio = await buscarSitio(cliente);
   const yaFinalizado = col['Servicio_Finalizado'] !== undefined && fila[col['Servicio_Finalizado']] === 'Sí';
+  const tipoServicio = fila[col['Tipo_Servicio']] || 'Limpieza';
   return {
     cliente,
     direccion: fila[col['Direccion']] || '',
     instrucciones: fila[col['Instrucciones']] || '',
     checklist: sitio ? sitio.checklist : [],
     yaFinalizado,
+    tipoServicio,
   };
 }
 
 const INSUMOS_COMUNES = ['Clorox', 'Jabón para pisos', 'Papel higiénico', 'Toallas de papel', 'Bolsas de basura'];
+const AREAS_INSPECCION = ['Limpieza general', 'Uso de productos', 'Atención a instrucciones del cliente', 'Orden y organización', 'Seguridad y EPP'];
 
 async function procesarCierreFormulario(body) {
   const idProgramacion = body.id;
@@ -479,4 +482,44 @@ async function procesarCierreFormulario(body) {
   );
 }
 
-module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, INSUMOS_COMUNES };
+async function procesarInspeccionFormulario(body) {
+  const idProgramacion = body.id;
+  const encontrado = await obtenerFilaProgramacionPorId(idProgramacion);
+  if (!encontrado) throw new Error('Servicio no encontrado');
+  const { fila, filaSheet, col } = encontrado;
+
+  if (col['Servicio_Finalizado'] !== undefined && fila[col['Servicio_Finalizado']] === 'Sí') {
+    const error = new Error('Esta inspección ya había sido enviada antes');
+    error.yaFinalizado = true;
+    throw error;
+  }
+
+  const cliente = fila[col['Cliente']];
+  const supervisor = fila[col['Empleado']];
+
+  const resumenAreas = AREAS_INSPECCION.map(area => {
+    const valor = body[`area_${area}`] || 'Cumple';
+    return `${area}: ${valor}`;
+  }).join('; ');
+
+  const noCumpleAlguna = AREAS_INSPECCION.some(area => body[`area_${area}`] === 'No cumple');
+  const requiereAccion = body.requiereAccion === 'Si';
+  const hallazgos = (body.hallazgos || '').trim() || '(sin hallazgos)';
+
+  if (col['Resultado_Inspeccion'] !== undefined) await actualizarCelda('PROGRAMACION_DIARIA', filaSheet, col['Resultado_Inspeccion'] + 1, resumenAreas);
+  if (col['Requiere_Accion_Correctiva'] !== undefined) await actualizarCelda('PROGRAMACION_DIARIA', filaSheet, col['Requiere_Accion_Correctiva'] + 1, requiereAccion ? 'Sí' : 'No');
+  if (col['Estado_Correccion'] !== undefined) await actualizarCelda('PROGRAMACION_DIARIA', filaSheet, col['Estado_Correccion'] + 1, requiereAccion ? 'Pendiente' : '');
+  if (col['Comentario_Empleado'] !== undefined) await actualizarCelda('PROGRAMACION_DIARIA', filaSheet, col['Comentario_Empleado'] + 1, hallazgos);
+  if (col['Servicio_Finalizado'] !== undefined) await actualizarCelda('PROGRAMACION_DIARIA', filaSheet, col['Servicio_Finalizado'] + 1, 'Sí');
+
+  const nivel = (noCumpleAlguna || requiereAccion) ? 'urgente' : 'rutina';
+  await notificarGerencia(
+    `Inspección finalizada — ${cliente} (${supervisor})\n` +
+    `Resultado por área: ${resumenAreas}\n` +
+    `Hallazgos: ${hallazgos}\n` +
+    `¿Requiere acción correctiva?: ${requiereAccion ? 'Sí' : 'No'}`,
+    nivel
+  );
+}
+
+module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION };

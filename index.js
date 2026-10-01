@@ -1,6 +1,6 @@
 const express = require('express');
 const { leerHoja } = require('./sheets');
-const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, INSUMOS_COMUNES } = require('./logica');
+const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION } = require('./logica');
 const app = express();
 
 function escaparXml(texto) {
@@ -58,6 +58,44 @@ app.get('/cierre', async (req, res) => {
       </body></html>`);
     }
 
+    if (datos.tipoServicio === 'Inspeccion') {
+      const areasHtml = AREAS_INSPECCION.map(area => `
+        <div style="margin:14px 0;">
+          <p style="font-weight:600;margin-bottom:6px;">${area}</p>
+          <label style="margin-right:16px;"><input type="radio" name="area_${area}" value="Cumple" checked> Cumple</label>
+          <label style="margin-right:16px;"><input type="radio" name="area_${area}" value="Cumple con observaciones"> Con observaciones</label>
+          <label><input type="radio" name="area_${area}" value="No cumple"> No cumple</label>
+        </div>`).join('');
+
+      res.set('Content-Type', 'text/html');
+      return res.send(`<!DOCTYPE html>
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inspección de calidad</title>
+<style>
+  body{font-family:-apple-system,Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px;color:#222;}
+  h2{color:#1d4ed8;margin-bottom:4px;}
+  h3{margin-top:28px;margin-bottom:8px;font-size:17px;}
+  p{color:#555;font-size:15px;}
+  button{background:#1d4ed8;color:white;padding:14px 20px;border:none;border-radius:8px;font-size:17px;width:100%;margin-top:24px;}
+  textarea{width:100%;padding:10px;font-size:15px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;min-height:90px;}
+</style>
+</head><body>
+<h2>Inspección de calidad</h2>
+<p><strong>${datos.cliente}</strong><br>${datos.direccion}</p>
+<form method="POST" action="/cierre">
+  <input type="hidden" name="id" value="${req.query.id}">
+  <h3>Evaluación por área</h3>
+  ${areasHtml}
+  <h3>Hallazgos</h3>
+  <textarea name="hallazgos" placeholder="Describe lo que encontraste"></textarea>
+  <h3>¿Requiere acción correctiva?</h3>
+  <label style="margin-right:16px;"><input type="radio" name="requiereAccion" value="No" checked> No</label>
+  <label><input type="radio" name="requiereAccion" value="Si"> Sí</label>
+  <button type="submit">Guardar inspección</button>
+</form>
+</body></html>`);
+    }
+
     const checklistHtml = datos.checklist.length
       ? datos.checklist.map(t => `
         <label style="display:block;margin:10px 0;font-size:16px;">
@@ -108,7 +146,12 @@ ${datos.instrucciones ? `<p><strong>Instrucciones:</strong> ${datos.instruccione
 // Recibe el formulario de cierre ya lleno
 app.post('/cierre', async (req, res) => {
   try {
-    await procesarCierreFormulario(req.body);
+    const datosServicio = await obtenerDatosFormularioCierre(req.body.id);
+    if (datosServicio && datosServicio.tipoServicio === 'Inspeccion') {
+      await procesarInspeccionFormulario(req.body);
+    } else {
+      await procesarCierreFormulario(req.body);
+    }
     res.set('Content-Type', 'text/html');
     res.send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
     <body style="font-family:-apple-system,Arial,sans-serif;text-align:center;padding:60px 20px;">
