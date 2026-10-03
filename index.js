@@ -3,9 +3,11 @@ const { leerHoja } = require('./sheets');
 const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION } = require('./logica');
 const app = express();
 app.set('trust proxy', 1); // Render va detrás de un proxy; así req.ip es la IP real
-
 const auth = require('./auth');
 const { invalidarCache, edadCacheSegundos } = require('./sheets');
+const { paginaAgenda } = require('./agenda');
+
+
 
 function escaparHtml(t) {
   return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -266,17 +268,11 @@ app.post('/actualizar-cache', auth.requiereAdmin, (req, res) => {
 // Marcador temporal; la etapa 3 lo reemplaza por la agenda real
 app.get('/agenda', auth.requiereAdmin, async (req, res) => {
   try {
-    const datos = await leerHoja('PROGRAMACION_DIARIA', { cache: true });
-    res.send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-    <body style="font-family:-apple-system,Arial,sans-serif;padding:30px;">
-      <h2>Sesión: ${escaparHtml(req.admin)}</h2>
-      <p>Filas en PROGRAMACION_DIARIA: ${datos.length - 1}<br>Edad de la caché: ${edadCacheSegundos('PROGRAMACION_DIARIA')} s</p>
-      <form method="POST" action="/actualizar-cache"><input type="hidden" name="volver" value="/agenda"><button>Actualizar</button></form>
-      <p><a href="/logout">Cerrar sesión</a></p>
-    </body></html>`);
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(await paginaAgenda(req.query, req.admin));
   } catch (err) {
     console.error('Error en GET /agenda:', err);
-    res.status(500).send('Error: ' + err.message);
+    res.status(500).send('Error cargando la agenda: ' + err.message);
   }
 });
 
