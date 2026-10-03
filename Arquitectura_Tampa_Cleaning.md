@@ -1,13 +1,13 @@
 # Arquitectura — Sistema Tampa Cleaning
 
-**Última actualización:** 30 de septiembre de 2026
+**Última actualización:** 2 de octubre de 2026
 **Propósito de este documento:** referencia técnica para entender cómo funciona el sistema, qué piezas lo componen y cómo se conectan.
 
 ---
 
 ## 1. Resumen en una frase
 
-Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su ubicación (check-in), confirmar su programación diaria y reportar novedades. Un **servidor propio en Node.js** (hosteado en Render) procesa esos mensajes, valida la información contra **Google Sheets** (que funciona como base de datos central), y notifica a gerencia por WhatsApp cuando algo requiere atención. El cierre de cada servicio (checklist, insumos, comentario) se completa en una **página web propia**, generada por el mismo servidor — no se usa ninguna herramienta externa de formularios.
+Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su ubicación (check-in), confirmar su programación diaria y reportar novedades. Un **servidor propio en Node.js** (hosteado en Render) procesa esos mensajes, valida la información contra **Google Sheets** (que funciona como base de datos central), y notifica a gerencia por WhatsApp cuando algo requiere atención. El cierre de cada servicio (checklist, insumos, comentario — o la evaluación por áreas, si el servicio es una inspección de calidad) se completa en una **página web propia**, generada por el mismo servidor — no se usa ninguna herramienta externa de formularios.
 
 ---
 
@@ -35,10 +35,12 @@ Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su 
 
 ```
 tampa-cleaning-servidor/
-├── index.js       → Rutas HTTP: webhook de Twilio, programación diaria, formulario de cierre
+├── index.js       → Rutas HTTP: webhook de Twilio, programación diaria, formulario de cierre / inspección
 ├── logica.js       → Toda la lógica de negocio
 ├── sheets.js       → Módulo genérico de lectura/escritura a Google Sheets
-└── package.json    → Dependencias: express, googleapis, twilio
+├── package.json    → Dependencias: express, googleapis, twilio
+├── CLAUDE.md       → Guía para Claude Code (resumen técnico del repositorio)
+└── Arquitectura_Tampa_Cleaning.md → Este documento
 ```
 
 ---
@@ -68,7 +70,7 @@ El empleado comparte ubicación por WhatsApp. El servidor identifica al empleado
 Se llena manualmente una fila en `PROGRAMACION_DIARIA` para el día siguiente. Visitando `https://tampa-cleaning-servidor.onrender.com/enviar-programacion?clave=...` se dispara el envío por WhatsApp a cada empleado con servicio pendiente. El empleado responde **"Ok"**, **"Confirmo"** o **"No puedo"** — el servidor encuentra sola la fila pendiente de ese empleado (sin necesitar que mencione el cliente).
 
 ### 6.3 Cierre de servicio (formulario propio, sin AppSheet)
-Al marcar la salida, el servidor manda un link a `GET /cierre?id=...` — una página HTML que el propio servidor genera al vuelo:
+Al marcar la salida, el servidor manda un link a `GET /cierre?id=...` — una página HTML que el propio servidor genera al vuelo. Si el servicio es de limpieza (cualquier `Tipo_Servicio` distinto de `Inspeccion`, o vacío), el formulario contiene:
 - Muestra los datos de solo lectura del cliente (dirección, instrucciones).
 - Checklist de tareas, tomado de `SITIOS.Checklist_Tareas`, con cada tarea ya marcada como completada (el empleado desmarca solo lo que no alcanzó a hacer).
 - Lista de insumos comunes (`INSUMOS_COMUNES`, definida en el código) para marcar los que faltan, más un campo de texto libre para "otro insumo".
@@ -80,17 +82,32 @@ Al enviarse (`POST /cierre`), el servidor calcula automáticamente qué tareas q
 
 *Nota: por ahora no se capturan fotos — se dejó fuera a propósito para simplificar, mientras se valida el resto del flujo. Se puede agregar más adelante conectando la API de Google Drive.*
 
-### 6.4 Quejas y dudas
+### 6.4 Inspecciones de calidad
+Una inspección se programa como **un servicio más** en `PROGRAMACION_DIARIA`: misma fila, mismo flujo de programación, confirmación y check-in, pero con `Tipo_Servicio = Inspeccion` y el supervisor en la columna `Empleado`. Al marcar la salida recibe el mismo link `/cierre?id=...`, pero el servidor detecta el tipo de servicio y muestra el **formulario de inspección** en lugar del de limpieza:
+- Evaluación por área — cada área de `AREAS_INSPECCION` (definida en el código: Limpieza general, Uso de productos, Atención a instrucciones del cliente, Orden y organización, Seguridad y EPP) se califica como **Cumple** (marcado por defecto), **Cumple con observaciones** o **No cumple**.
+- Hallazgos (texto libre).
+- ¿Requiere acción correctiva? (Sí / No).
+
+Al enviarse (`POST /cierre`), el servidor guarda en la fila de `PROGRAMACION_DIARIA`:
+- `Resultado_Inspeccion` — resumen de todas las áreas (`Área: resultado; ...`)
+- `Requiere_Accion_Correctiva` — Sí / No
+- `Estado_Correccion` — `Pendiente` si requiere acción correctiva, vacío si no
+- `Comentario_Empleado` — los hallazgos
+- `Servicio_Finalizado = Sí`
+
+Y notifica a gerencia: 🔴 **urgente** si alguna área quedó en "No cumple" o se marcó que requiere acción correctiva; ✅ **rutina** en cualquier otro caso. Tiene la misma protección contra reenvío que el cierre de limpieza.
+
+### 6.5 Quejas y dudas
 El empleado escribe un mensaje que contenga la palabra "queja" o "duda" en cualquier parte del texto (no hace falta que vaya al principio). El mensaje completo se guarda en la hoja `QUEJAS` (diferenciadas por columna `Tipo`), identificando automáticamente el servicio del día del empleado. Si viene con una foto adjunta en el mismo mensaje, el link queda guardado en `Foto_Soporte`.
 
-### 6.5 Aviso en tiempo real
+### 6.6 Aviso en tiempo real
 Solo **Will**, escribiendo `aviso [Cliente]: [mensaje]` desde su número personal, puede mandarle un aviso puntual al empleado que tenga ese cliente asignado hoy. El empleado responde **"Recibido"** para confirmar, lo que notifica de vuelta a gerencia.
 
-### 6.6 Notificaciones a gerencia (`notificarGerencia`)
+### 6.7 Notificaciones a gerencia (`notificarGerencia`)
 Función centralizada, con tres niveles de prioridad visual:
-- 🔴 **urgente** — check-in fuera de rango, sin servicio asignado, "No puedo" a un servicio, posible ubicación falsa, queja, confirmación de aviso no recibida a tiempo
+- 🔴 **urgente** — check-in fuera de rango, sin servicio asignado, "No puedo" a un servicio, posible ubicación falsa, queja, confirmación de aviso no recibida a tiempo, inspección con algún "No cumple" o que requiere acción correctiva
 - 🟡 **atención** — problemas de configuración (ej. empleado sin número registrado), consultas/dudas
-- ✅ **rutina** — confirmaciones de envío exitoso, cierre de servicio completado
+- ✅ **rutina** — confirmaciones de envío exitoso, cierre de servicio completado, inspección sin hallazgos graves
 
 ---
 
@@ -101,7 +118,7 @@ Función centralizada, con tres niveles de prioridad visual:
 | `EMPLEADOS` | Nombre, número de WhatsApp (columna `ID_Telegram`, heredada), rol, estatus |
 | `CLIENTES` | Dirección, link de Maps, descripción del servicio, instrucciones por cliente |
 | `SITIOS` | Coordenadas GPS y radio de tolerancia para geofencing, y `Checklist_Tareas` (lista separada por comas) para el formulario de cierre |
-| `PROGRAMACION_DIARIA` | El corazón del sistema — un renglón por servicio, con columnas para programación, confirmación, check-in, y cierre |
+| `PROGRAMACION_DIARIA` | El corazón del sistema — un renglón por servicio, con columnas para programación, confirmación, check-in, y cierre. `Tipo_Servicio` distingue limpieza de `Inspeccion`; las inspecciones usan además `Resultado_Inspeccion`, `Requiere_Accion_Correctiva` y `Estado_Correccion` (todas opcionales — si la columna no existe, el servidor simplemente no la escribe) |
 | `REGISTRO_TURNOS` | Bitácora de auditoría de cada check-in |
 | `QUEJAS` | Quejas y dudas, diferenciadas por columna `Tipo` |
 
@@ -124,7 +141,7 @@ Función centralizada, con tres niveles de prioridad visual:
 - **Migrar de Sandbox de Twilio a WhatsApp Business verificado** — el Sandbox requiere reconectar cada cierto tiempo (las sesiones caducan) y tiene límites de mensajes de prueba; no apto para producción real.
 - **Regenerar credenciales** compartidas durante la configuración (ver sección 5).
 - **Tablero de control** (`RESUMEN_HOY`) — pestaña en el propio Sheets con fórmulas `QUERY`, aún no construida.
-- Inspecciones de calidad como un "servicio más" dentro de `PROGRAMACION_DIARIA` (diseñado, no implementado).
+- **Seguimiento de acciones correctivas** — las inspecciones dejan `Estado_Correccion = Pendiente`, pero aún no hay flujo para marcarlas como resueltas ni recordatorios (por ahora se actualiza a mano en el Sheets).
 
 ---
 
