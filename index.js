@@ -2,6 +2,28 @@ const express = require('express');
 const { leerHoja } = require('./sheets');
 const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION } = require('./logica');
 const app = express();
+app.set('trust proxy', 1); // Render va detrás de un proxy; así req.ip es la IP real
+
+const auth = require('./auth');
+const { invalidarCache, edadCacheSegundos } = require('./sheets');
+
+function escaparHtml(t) {
+  return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function volverSeguro(v) { return (typeof v === 'string' && /^\/(?!\/)/.test(v)) ? v : '/agenda'; }
+function paginaLogin(error, volver) {
+  return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Acceso</title>
+<style>body{font-family:-apple-system,Arial,sans-serif;max-width:340px;margin:80px auto;padding:20px;color:#222;}
+input{width:100%;padding:12px;font-size:16px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin:10px 0;}
+button{background:#2e7d32;color:white;padding:12px;border:none;border-radius:8px;font-size:16px;width:100%;}
+.e{color:#b91c1c;}</style></head><body>
+<h2>Tampa Cleaning</h2><p>Ingresa tu clave de administrador</p>
+${error ? `<p class="e">${escaparHtml(error)}</p>` : ''}
+<form method="POST" action="/login"><input type="hidden" name="volver" value="${escaparHtml(volver)}">
+<input type="password" name="clave" autocomplete="current-password" autofocus required><button type="submit">Entrar</button></form></body></html>`;
+}
+
+
 
 function escaparXml(texto) {
   return String(texto)
@@ -213,6 +235,49 @@ app.post('/webhook', async (req, res) => {
 
   res.set('Content-Type', 'text/xml');
   res.send(respuesta ? `<Response><Message>${escaparXml(respuesta)}</Message></Response>` : '<Response></Response>');
+});
+
+app.get('/login', (req, res) => res.send(paginaLogin('', volverSeguro(req.query.volver))));
+
+app.post('/login', (req, res) => {
+  const volver = volverSeguro(req.body.volver);
+  if (auth.bloqueado(req.ip)) return res.status(429).send(paginaLogin('Demasiados intentos. Espera 15 minutos.', volver));
+  const nombre = auth.identificarAdmin(String(req.body.clave || ''));
+  if (!nombre) {
+    auth.registrarFallo(req.ip);
+    return res.status(401).send(paginaLogin('Clave incorrecta.', volver));
+  }
+  auth.limpiarFallos(req.ip);
+  res.set('Set-Cookie', auth.cookieSesion(nombre));
+  res.redirect(volver);
+});
+
+app.get('/logout', (req, res) => {
+  res.set('Set-Cookie', auth.cookieCierre);
+  res.redirect('/login');
+});
+
+// Botón "Actualizar": descarta la caché de lectura
+app.post('/actualizar-cache', auth.requiereAdmin, (req, res) => {
+  invalidarCache();
+  res.redirect(volverSeguro(req.body.volver));
+});
+
+// Marcador temporal; la etapa 3 lo reemplaza por la agenda real
+app.get('/agenda', auth.requiereAdmin, async (req, res) => {
+  try {
+    const datos = await leerHoja('PROGRAMACION_DIARIA', { cache: true });
+    res.send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+    <body style="font-family:-apple-system,Arial,sans-serif;padding:30px;">
+      <h2>Sesión: ${escaparHtml(req.admin)}</h2>
+      <p>Filas en PROGRAMACION_DIARIA: ${datos.length - 1}<br>Edad de la caché: ${edadCacheSegundos('PROGRAMACION_DIARIA')} s</p>
+      <form method="POST" action="/actualizar-cache"><input type="hidden" name="volver" value="/agenda"><button>Actualizar</button></form>
+      <p><a href="/logout">Cerrar sesión</a></p>
+    </body></html>`);
+  } catch (err) {
+    console.error('Error en GET /agenda:', err);
+    res.status(500).send('Error: ' + err.message);
+  }
 });
 
 const PORT = process.env.PORT || 3000;
