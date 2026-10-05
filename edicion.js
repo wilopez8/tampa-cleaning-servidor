@@ -1,4 +1,4 @@
-ervconst { leerHoja, agregarFilas, actualizarCeldas } = require('./sheets');
+const { leerHoja, agregarFilas, actualizarCeldas } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida } = require('./agenda');
 const { enviarProgramacionFecha, notificarCambioPostEnvio, registrarCambio } = require('./logica');
 
