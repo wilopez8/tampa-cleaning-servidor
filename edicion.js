@@ -1,5 +1,6 @@
-const { leerHoja, agregarFilas, actualizarCeldas } = require('./sheets');
+ervconst { leerHoja, agregarFilas, actualizarCeldas } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida } = require('./agenda');
+const { enviarProgramacionFecha, notificarCambioPostEnvio, registrarCambio } = require('./logica');
 
 const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
 const REQUERIDAS = ['ID_Programacion', 'Fecha_Servicio', 'Tipo_Servicio', 'Cliente', 'Empleado', 'Horario', 'Hora_Inicio', 'Hora_Fin',
@@ -75,8 +76,8 @@ function filasDe(datos, h, fecha) {
     if (normalizarFecha(r[ix('Fecha_Servicio')]) !== fecha) continue;
     out.push({
       _fila: i + 1, id: g(r, 'ID_Programacion'), tipo: g(r, 'Tipo_Servicio') || 'Limpieza', cliente: g(r, 'Cliente'), empleado: g(r, 'Empleado'),
-      inicio: normalizarHora(r[ix('Hora_Inicio')]), fin: normalizarHora(r[ix('Hora_Fin')]), obs: g(r, 'Observaciones_Puntuales'),
-      envio: g(r, 'Estado_Envio'), cancelado: g(r, 'Cancelado') === 'Sí',
+      horario: g(r, 'Horario'), inicio: normalizarHora(r[ix('Hora_Inicio')]), fin: normalizarHora(r[ix('Hora_Fin')]), obs: g(r, 'Observaciones_Puntuales'),
+      envio: g(r, 'Estado_Envio'), cancelado: g(r, 'Cancelado') === 'Sí', iniciado: !!g(r, 'Hora_Entrada_Real'),
     });
   }
   return out;
@@ -94,18 +95,22 @@ function maxConsecutivo(datos, h, fecha) {
 }
 
 // ---------- Validaciones por fila ----------
+const vacia = f => !f.id && !f.cliente && !f.empleado && !f.inicio && !f.fin && !f.obs;
+const cambioClave = (ex, f) => ex.tipo !== f.tipo || ex.cliente !== f.cliente || ex.empleado !== f.empleado || ex.inicio !== f.inicio || ex.fin !== f.fin;
+
 function validarLote(normal, m, existentes) {
   const editando = new Set(normal.filter(f => f.id).map(f => f.id));
   const otros = existentes.filter(r => !r.cancelado && !editando.has(r.id));
   const cruza = (a, b) => a.inicio && a.fin && b.inicio && b.fin && a.inicio < b.fin && b.inicio < a.fin;
 
   return normal.map((f, i) => {
+    if (vacia(f)) return [];
     const e = [];
     if (f.id) {
       const ex = existentes.find(r => r.id === f.id);
       if (!ex) e.push('Servicio no encontrado en esta fecha');
       else if (ex.cancelado) e.push('Servicio cancelado: no se puede editar');
-      else if (ex.envio === 'Enviado') e.push('Ya fue enviado: los cambios posteriores se habilitan en la etapa 5');
+      else if (ex.iniciado && cambioClave(ex, f)) e.push('El servicio ya inició: solo se pueden cambiar las observaciones');
     }
     if (!['Limpieza', 'Inspeccion'].includes(f.tipo)) e.push('Tipo de servicio no válido');
 
@@ -146,9 +151,12 @@ async function procesarGuardado({ fecha, filas, admin, soloValidar }) {
     id: limpio(f.id), tipo: limpio(f.tipo) || 'Limpieza', cliente: limpio(f.cliente), empleado: limpio(f.empleado),
     inicio: limpio(f.inicio), fin: limpio(f.fin), obs: limpio(f.obs).slice(0, 500),
   }));
+  if (normal.every(vacia)) {
+    return soloValidar ? { ok: true, errores: normal.map(() => []) } : { ok: false, general: 'No hay filas para guardar.' };
+  }
 
   const trabajo = async () => {
-    const vivo = !soloValidar; // al guardar siempre se revalida con datos en vivo
+    const vivo = !soloValidar;
     const m = await maestros(vivo);
     const { datos, h } = await cargarSheet(vivo);
     const existentes = filasDe(datos, h, fecha);
@@ -158,21 +166,31 @@ async function procesarGuardado({ fecha, filas, admin, soloValidar }) {
 
     const col = n => h.indexOf(n) + 1;
     const ahora = ahoraTexto();
-    const cambios = [], nuevas = [];
+    const cambios = [], nuevas = [], avisos = [], soloObs = [];
     let consecutivo = maxConsecutivo(datos, h, fecha);
     let creados = 0, modificados = 0;
 
     normal.forEach(f => {
+      if (vacia(f)) return;
       const horario = horarioTexto(f.inicio, f.fin);
       if (f.id) {
         const ex = existentes.find(r => r.id === f.id);
-        const igual = ex.tipo === f.tipo && ex.cliente === f.cliente && ex.empleado === f.empleado &&
-                      ex.inicio === f.inicio && ex.fin === f.fin && ex.obs === f.obs;
-        if (igual) return;
+        if (!cambioClave(ex, f) && ex.obs === f.obs) return;
         const valores = { Tipo_Servicio: f.tipo, Cliente: f.cliente, Empleado: f.empleado, Horario: horario,
                           Hora_Inicio: f.inicio, Hora_Fin: f.fin, Observaciones_Puntuales: f.obs,
                           Modificado_Por: admin, Fecha_Modificacion: ahora };
-        Object.keys(valores).forEach(k => cambios.push({ fila: ex._fila, columna: col(k), valor: valores[k] }));
+        if (ex.envio === 'Enviado') {
+          if (cambioClave(ex, f)) {
+            // Lo que el empleado había confirmado ya cambió: vuelve a quedar pendiente de confirmar
+            Object.assign(valores, { Estado_Confirmacion: 'Pendiente', Fecha_Hora_Confirmacion: '', Motivo_No_Puede: '' });
+            avisos.push({ id: ex.id,
+              antes: { tipo: ex.tipo, cliente: ex.cliente, empleado: ex.empleado, horario: ex.horario || horarioTexto(ex.inicio, ex.fin) },
+              despues: { tipo: f.tipo, cliente: f.cliente, empleado: f.empleado, horario } });
+          } else {
+            soloObs.push({ id: ex.id, obs: f.obs });
+          }
+        }
+        Object.keys(valores).forEach(k => { if (col(k) > 0) cambios.push({ fila: ex._fila, columna: col(k), valor: valores[k] }); });
         modificados++;
       } else {
         const id = `PRG-${fecha.replace(/-/g, '')}-${String(++consecutivo).padStart(2, '0')}`;
@@ -186,7 +204,21 @@ async function procesarGuardado({ fecha, filas, admin, soloValidar }) {
 
     await agregarFilas('PROGRAMACION_DIARIA', nuevas);
     await actualizarCeldas('PROGRAMACION_DIARIA', cambios);
-    return { ok: true, creados, modificados };
+
+    // Los cambios ya están guardados; si un aviso falla, queda registrado y se informa
+    const resultadoAvisos = [];
+    for (const a of avisos) {
+      try {
+        resultadoAvisos.push(...await notificarCambioPostEnvio({ id: a.id, fecha, por: admin, antes: a.antes, despues: a.despues, cancelado: false }));
+      } catch (err) {
+        console.error('Error avisando cambio:', err);
+        resultadoAvisos.push({ empleado: a.antes.empleado, ok: false });
+      }
+    }
+    for (const o of soloObs) {
+      await registrarCambio({ id: o.id, fechaServicio: fecha, tipo: 'Observaciones', detalle: `Nuevo texto: ${o.obs || '(vacío)'}`, por: admin, notificado: '', aviso: 'No (solo observaciones)' });
+    }
+    return { ok: true, creados, modificados, avisos: resultadoAvisos };
   };
   return soloValidar ? trabajo() : enSerie(trabajo);
 }
@@ -199,15 +231,29 @@ async function cancelarServicio({ id, motivo, admin }) {
   return enSerie(async () => {
     const { datos, h } = await cargarSheet(true);
     const ix = n => h.indexOf(n);
+    const g = (r, n) => limpio(r[ix(n)]);
     for (let i = 1; i < datos.length; i++) {
       const r = datos[i];
-      if (limpio(r[ix('ID_Programacion')]) !== id) continue;
-      if (normalizarFecha(r[ix('Fecha_Servicio')]) < hoyFlorida()) return { ok: false, general: 'Fecha pasada: solo lectura.' };
-      if (limpio(r[ix('Cancelado')]) === 'Sí') return { ok: false, general: 'Este servicio ya estaba cancelado.' };
-      if (limpio(r[ix('Estado_Envio')]) === 'Enviado') return { ok: false, general: 'Ya fue enviado: la cancelación con aviso al empleado se habilita en la etapa 5.' };
+      if (g(r, 'ID_Programacion') !== id) continue;
+      const fecha = normalizarFecha(r[ix('Fecha_Servicio')]);
+      if (fecha < hoyFlorida()) return { ok: false, general: 'Fecha pasada: solo lectura.' };
+      if (g(r, 'Cancelado') === 'Sí') return { ok: false, general: 'Este servicio ya estaba cancelado.' };
+      if (g(r, 'Hora_Entrada_Real')) return { ok: false, general: 'El servicio ya inició: no se puede cancelar desde la agenda.' };
+
+      const eraEnviado = g(r, 'Estado_Envio') === 'Enviado';
       const v = { Cancelado: 'Sí', Motivo_Cancelacion: motivo, Modificado_Por: admin, Fecha_Modificacion: ahoraTexto() };
       await actualizarCeldas('PROGRAMACION_DIARIA', Object.keys(v).map(k => ({ fila: i + 1, columna: ix(k) + 1, valor: v[k] })));
-      return { ok: true };
+
+      let avisos = [];
+      if (eraEnviado) {
+        try {
+          avisos = await notificarCambioPostEnvio({ id, fecha, por: admin, cancelado: true, motivo,
+            antes: { tipo: g(r, 'Tipo_Servicio') || 'Limpieza', cliente: g(r, 'Cliente'), empleado: g(r, 'Empleado'), horario: g(r, 'Horario') }, despues: {} });
+        } catch (err) { console.error('Error avisando cancelación:', err); avisos = [{ empleado: g(r, 'Empleado'), ok: false }]; }
+      } else {
+        await registrarCambio({ id, fechaServicio: fecha, tipo: 'Cancelación (borrador)', detalle: `${g(r, 'Cliente')}. Motivo: ${motivo}`, por: admin, notificado: '', aviso: 'No (no estaba enviado)' });
+      }
+      return { ok: true, avisos };
     }
     return { ok: false, general: 'Servicio no encontrado.' };
   });
@@ -226,18 +272,20 @@ const CSS_EDITOR = `
 
 function editorHtml(fecha, m, delDia) {
   const serv = {};
-  delDia.filter(r => r._estado !== 'Cancelado' && r.Estado_Envio !== 'Enviado').forEach(r => {
+  delDia.filter(r => r._estado !== 'Cancelado' && !r.Hora_Entrada_Real).forEach(r => {
     serv[r.ID_Programacion] = { id: r.ID_Programacion, tipo: r.Tipo_Servicio || 'Limpieza', cliente: r.Cliente, empleado: r.Empleado,
-      inicio: normalizarHora(r.Hora_Inicio), fin: normalizarHora(r.Hora_Fin), obs: r.Observaciones_Puntuales };
+      inicio: normalizarHora(r.Hora_Inicio), fin: normalizarHora(r.Hora_Fin), obs: r.Observaciones_Puntuales, env: r.Estado_Envio === 'Enviado' };
   });
+  const BORR = delDia.filter(r => r._estado !== 'Cancelado' && r.Estado_Envio !== 'Enviado' && r.Cliente && r.Empleado).length;
+
   return `<section class="editor">
 <h3>Programar servicios <small style="font-weight:normal;color:#777;">(se guardan como Borrador)</small></h3>
 <table><thead><tr><th>Tipo</th><th>Cliente</th><th>Empleado</th><th>Horario</th><th>Observaciones</th><th>Validación</th><th></th></tr></thead><tbody id="gcuerpo"></tbody></table>
-<div class="acc"><button type="button" class="btn" id="gmas">+ Fila</button><button type="button" class="btn guardar" id="gguardar">Guardar borrador</button><span id="gmsg"></span></div>
+<div class="acc"><button type="button" class="btn" id="gmas">+ Fila</button><button type="button" class="btn guardar" id="gguardar">Guardar borrador</button><button type="button" class="btn guardar" id="genviar">Guardar y enviar al equipo</button><span id="gmsg"></span></div>
 <div class="bloque" id="gpanel" style="margin-top:10px;"></div>
 <script>
 (function(){
-  var FECHA=${js(fecha)}, M=${js(m)}, SERV=${js(serv)};
+  var FECHA=${js(fecha)}, M=${js(m)}, SERV=${js(serv)}, BORR=${BORR};
   var cuerpo=document.getElementById('gcuerpo'), msg=document.getElementById('gmsg'), panel=document.getElementById('gpanel'), timer=null;
   function el(tag,props){var e=document.createElement(tag);for(var k in props)e[k]=props[k];return e;}
   function selectDe(clase,lista,valor,vacio,etiqueta){
@@ -262,6 +310,7 @@ function editorHtml(fecha, m, delDia) {
     var x=el('button',{type:'button',className:'btn',textContent:'✕',title:'Quitar de la grilla (no borra ningún servicio guardado)'});
     x.onclick=function(){tr.remove();programar();}; td(x);
     if(soloEmp){['t','c','i','f','o'].forEach(function(c){tr.querySelector('.'+c).disabled=true;});}
+    if(d.env){tr.dataset.env='1';tr.querySelector('.val').textContent='Ya enviado: cambiar empleado, cliente u hora avisará al empleado';}
     cuerpo.appendChild(tr); return tr;
   }
   function leer(){
@@ -276,7 +325,7 @@ function editorHtml(fecha, m, delDia) {
   }
   function pintar(errores){
     Array.prototype.forEach.call(cuerpo.rows,function(tr,i){
-      var e=(errores&&errores[i])||[]; tr.querySelector('.val').textContent=e.length?e.join(' · '):'✓';
+        var e=(errores&&errores[i])||[]; tr.querySelector('.val').textContent=e.length?e.join(' · '):(tr.dataset.env?'✓ Ya enviado: cambiar empleado, cliente u hora avisará al empleado':'✓');
     });
   }
   function estado(texto,bien){msg.textContent=texto;msg.className=bien?'bien':'mal';}
@@ -300,16 +349,42 @@ function editorHtml(fecha, m, delDia) {
   cuerpo.addEventListener('change',function(e){programar();if(e.target.classList.contains('c'))mostrarCliente(e.target.value);});
   cuerpo.addEventListener('focusin',function(e){var tr=e.target.closest&&e.target.closest('tr');if(tr)mostrarCliente(tr.querySelector('.c').value);});
   document.getElementById('gmas').onclick=function(){agregar();};
+  
+  function textoAvisosFallidos(r){
+    var malos=(r.avisos||[]).filter(function(a){return !a.ok;}).map(function(a){return a.empleado;});
+    return malos.length?'Guardado, pero no se pudo avisar por WhatsApp a: '+malos.join(', ')+'. Avísale directamente.':'';
+  }
   document.getElementById('gguardar').onclick=function(){
     var f=leer(); if(!f.length){estado('No hay filas.',false);return;}
+    if(cuerpo.querySelector('tr[data-env="1"]')&&!confirm('Hay servicios ya enviados en la grilla: si cambiaste empleado, cliente u hora, se enviará un aviso por WhatsApp. ¿Continuar?'))return;
     var b=this; b.disabled=true;
     llamar('/agenda/guardar',{fecha:FECHA,filas:f}).then(function(r){
       b.disabled=false; if(!r)return;
       if(r.general){estado(r.general,false);return;}
       if(!r.ok){pintar(r.errores);estado('No se guardó: revisa las filas marcadas.',false);return;}
+      var t=textoAvisosFallidos(r); if(t)alert(t);
       location.reload();
     }).catch(function(){b.disabled=false;estado('Error de conexión.',false);});
   };
+  document.getElementById('genviar').onclick=function(){
+    var f=leer();
+    var nuevas=f.filter(function(x){return !x.id&&(x.cliente||x.empleado||x.inicio||x.fin||x.obs);}).length;
+    if(BORR+nuevas===0){alert('No hay servicios en Borrador para enviar.');return;}
+    if(cuerpo.querySelector('tr[data-env="1"]')&&!confirm('Hay servicios ya enviados en la grilla: si cambiaste empleado, cliente u hora, también se avisará a esos empleados. ¿Continuar?'))return;
+    if(!confirm('¿Enviar la programación del '+FECHA+' por WhatsApp?\\n\\nServicios en Borrador: '+BORR+'\\nFilas nuevas en la grilla: '+nuevas+'\\n\\nCada empleado recibirá su mensaje.'))return;
+    var b=this; b.disabled=true; estado('Enviando…',true);
+    llamar('/agenda/enviar',{fecha:FECHA,filas:f}).then(function(r){
+      b.disabled=false; if(!r)return;
+      if(r.general){estado(r.general,false);return;}
+      if(!r.ok){pintar(r.errores);estado('No se envió: revisa las filas marcadas.',false);return;}
+      var t='Enviados: '+r.enviados;
+      if(r.sinNumero&&r.sinNumero.length)t+='\\nSin número de WhatsApp: '+r.sinNumero.join(', ');
+      if(r.fallidos&&r.fallidos.length)t+='\\nNo se pudo enviar a: '+r.fallidos.join(', ')+' (siguen en Borrador)';
+      var a=textoAvisosFallidos(r); if(a)t+='\\n'+a;
+      alert(t); location.reload();
+    }).catch(function(){b.disabled=false;estado('Error de conexión.',false);});
+  };
+  
   window.tcEditar=function(id,solo){
     var s=SERV[id]; if(!s)return;
     var ya=Array.prototype.filter.call(cuerpo.rows,function(tr){return tr.dataset.id===id;})[0];
@@ -320,7 +395,10 @@ function editorHtml(fecha, m, delDia) {
     if(motivo.trim().length<3){alert('Escribe un motivo.');return;}
     if(!confirm('¿Cancelar este servicio? Quedará registrado; la fila no se borra.'))return;
     llamar('/agenda/cancelar',{id:id,motivo:motivo}).then(function(r){
-      if(!r)return; if(!r.ok){alert(r.general||'No se pudo cancelar.');return;} location.reload();
+      if(!r)return; if(!r.ok){alert(r.general||'No se pudo cancelar.');return;}
+      var malos=(r.avisos||[]).filter(function(a){return !a.ok;}).map(function(a){return a.empleado;});
+      if(malos.length)alert('Cancelado, pero no se pudo avisar por WhatsApp a: '+malos.join(', ')+'. Avísale directamente.');
+      location.reload();
     }).catch(function(){alert('Error de conexión.');});
   };
   agregar(); mostrarCliente('');
@@ -328,4 +406,19 @@ function editorHtml(fecha, m, delDia) {
 </script></section>`;
 }
 
-module.exports = { maestros, procesarGuardado, cancelarServicio, editorHtml, CSS_EDITOR };
+// Guarda lo que haya en la grilla (si hay algo) y luego envía todos los Borrador de la fecha
+async function guardarYEnviar({ fecha, filas, admin }) {
+  if (!fechaValida(fecha)) return { ok: false, general: 'Fecha no válida.' };
+  if (fecha < hoyFlorida()) return { ok: false, general: 'Fecha pasada: solo lectura.' };
+  const hayDatos = (filas || []).some(f => f && (limpio(f.id) || limpio(f.cliente) || limpio(f.empleado) || limpio(f.inicio) || limpio(f.fin) || limpio(f.obs)));
+  let avisos = [];
+  if (hayDatos) {
+    const g = await procesarGuardado({ fecha, filas, admin, soloValidar: false });
+    if (!g.ok) return g;
+    avisos = g.avisos || [];
+  }
+  const r = await enSerie(() => enviarProgramacionFecha(fecha, admin));
+  return { ok: true, enviados: r.enviados, sinNumero: r.sinNumero, fallidos: r.fallidos, avisos };
+}
+
+module.exports = { maestros, procesarGuardado, cancelarServicio, guardarYEnviar, editorHtml, CSS_EDITOR };

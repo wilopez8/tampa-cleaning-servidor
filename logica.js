@@ -1,4 +1,4 @@
-const { leerHoja, agregarFila, actualizarCelda } = require('./sheets');
+const { leerHoja, agregarFila, actualizarCelda, asegurarHoja } = require('./sheets');
 const twilio = require('twilio');
 
 const clienteTwilio = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
@@ -219,9 +219,9 @@ async function buscarTelefonoPorNombre(nombreEmpleado) {
   return null;
 }
 
-function construirMensajeProgramacion(fila, col, dc) {
+function construirMensajeProgramacion(fila, col, dc, titulo) {
   const v = (campo, vivo) => fila[col[campo]] || vivo || '';
-  let msg = `📅 Servicio programado para mañana\n\n`;
+  let msg = `📅 ${titulo || 'Servicio programado para mañana'}\n\n`;
   msg += `🏠 Cliente: ${fila[col['Cliente']]}\n🕐 Horario: ${fila[col['Horario']]}\n📍 Dirección: ${v('Direccion', dc.direccion)}\n🗺️ Ver ubicación: ${v('Google_Maps_Link', dc.maps)}\n\n`;
   msg += `📋 Descripción del servicio:\n${v('Descripcion_Servicio', dc.descripcion)}\n\nℹ️ Instrucciones generales:\n${v('Instrucciones', dc.instrucciones)}\n`;
   const obs = fila[col['Observaciones_Puntuales']];
@@ -230,40 +230,133 @@ function construirMensajeProgramacion(fila, col, dc) {
   return msg;
 }
 
-async function enviarProgramacionManana() {
+
+function fechaLegible(f) { const [y, m, d] = f.split('-'); return `${d}/${m}/${y}`; }
+
+function tituloProgramacion(fecha) {
+  const opt = { timeZone: 'America/New_York' };
+  const hoy = new Date().toLocaleDateString('en-CA', opt);
+  const man = new Date(Date.now() + 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', opt);
+  if (fecha === hoy) return 'Servicio programado para HOY';
+  if (fecha === man) return 'Servicio programado para mañana';
+  return `Servicio programado para el ${fechaLegible(fecha)}`;
+}
+
+// Envía todos los servicios en Borrador de una fecha (lee en vivo, nunca de la caché)
+async function enviarProgramacionFecha(fecha, admin) {
   const datos = await leerHoja('PROGRAMACION_DIARIA');
   const headers = datos[0];
   const col = {};
   headers.forEach((h, i) => col[h] = i);
-
-  const manana = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const mananaTexto = manana.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const titulo = tituloProgramacion(fecha);
 
   let enviados = 0;
+  const sinNumero = [], fallidos = [];
   for (let i = 1; i < datos.length; i++) {
     const fila = datos[i];
-    const fechaTexto = normalizarFecha(fila[col['Fecha_Servicio']]);
-    if (fechaTexto !== mananaTexto) continue;
+    if (normalizarFecha(fila[col['Fecha_Servicio']]) !== fecha) continue;
     if (fila[col['Estado_Envio']] === 'Enviado') continue;
     if (fila[col['Cancelado']] === 'Sí') continue;
-
     const nombreEmpleado = fila[col['Empleado']];
+    const cliente = fila[col['Cliente']];
+    if (!nombreEmpleado || !cliente) continue;
+
     const telefono = await buscarTelefonoPorNombre(nombreEmpleado);
-    if (!telefono) {
-      await notificarGerencia(`No se pudo notificar a "${nombreEmpleado}" — no se encontró su número de WhatsApp.`, 'atencion');
+    if (!telefono) { sinNumero.push(nombreEmpleado); continue; }
+
+    try {
+      const dc = await datosClienteVivo(cliente);
+      await enviarWhatsApp(`whatsapp:+${soloDigitos(telefono)}`, construirMensajeProgramacion(fila, col, dc, titulo));
+    } catch (err) {
+      console.error('Error enviando programación a', nombreEmpleado, err);
+      fallidos.push(`${nombreEmpleado} (${cliente})`);
       continue;
     }
-
-    const dc = await datosClienteVivo(fila[col['Cliente']]);                // ← NUEVA
-    const mensaje = construirMensajeProgramacion(fila, col, dc);            // ← CAMBIADA (ahora recibe dc)
-    await enviarWhatsApp(`whatsapp:+${soloDigitos(telefono)}`, mensaje);
     await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Estado_Envio'] + 1, 'Enviado');
     enviados++;
   }
 
-  await notificarGerencia(`Programación de mañana enviada — ${enviados} servicio(s) notificados.`, 'rutina');
-  return enviados;
+  if (enviados > 0) await notificarGerencia(`Programación del ${fechaLegible(fecha)} enviada${admin ? ' por ' + admin : ''} — ${enviados} servicio(s) notificados.`, 'rutina');
+  if (sinNumero.length) await notificarGerencia(`Sin número de WhatsApp, no se notificó a: ${sinNumero.join(', ')}.`, 'atencion');
+  if (fallidos.length) await notificarGerencia(`No se pudo enviar el WhatsApp a: ${fallidos.join('; ')}. Siguen en Borrador.`, 'atencion');
+  return { enviados, sinNumero, fallidos };
 }
+
+// Se mantiene para el enlace antiguo /enviar-programacion?clave=...
+async function enviarProgramacionManana() {
+  const manana = new Date(Date.now() + 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const r = await enviarProgramacionFecha(manana, 'enlace /enviar-programacion');
+  return r.enviados;
+}
+
+// ---------- Cambios posteriores al envío ----------
+const HOJA_CAMBIOS = 'CAMBIOS_PROGRAMACION';
+const ENCAB_CAMBIOS = ['Fecha_Hora', 'ID_Programacion', 'Fecha_Servicio', 'Tipo_Cambio', 'Detalle', 'Realizado_Por', 'Empleado_Notificado', 'Aviso_Enviado'];
+
+async function registrarCambio({ id, fechaServicio, tipo, detalle, por, notificado, aviso }) {
+  try {
+    await asegurarHoja(HOJA_CAMBIOS, ENCAB_CAMBIOS);
+    await agregarFila(HOJA_CAMBIOS, [
+      new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }),
+      id, fechaServicio, tipo, detalle, por, notificado || '', aviso,
+    ]);
+  } catch (err) { console.error('No se pudo registrar el cambio:', err); }
+}
+
+async function enviarYRegistrar({ id, fecha, por, empleado, texto, tipo, detalle }) {
+  let ok = false;
+  try {
+    const tel = await buscarTelefonoPorNombre(empleado);
+    if (!tel) throw new Error('sin número de WhatsApp');
+    await enviarWhatsApp(`whatsapp:+${soloDigitos(tel)}`, texto);
+    ok = true;
+  } catch (err) { console.error('Error avisando cambio a', empleado, err); }
+  await registrarCambio({ id, fechaServicio: fecha, tipo, detalle, por, notificado: empleado, aviso: ok ? 'Sí' : 'Error' });
+  if (!ok) await notificarGerencia(`No se pudo avisar a ${empleado} del cambio en ${id}. Avísale directamente.`, 'urgente');
+  return { empleado, ok };
+}
+
+// antes / despues: { tipo, cliente, empleado, horario }
+async function notificarCambioPostEnvio({ id, fecha, por, antes, despues, cancelado, motivo }) {
+  const fl = fechaLegible(fecha);
+  const base = { id, fecha, por };
+  const resultados = [];
+
+  if (cancelado) {
+    const texto = `❌ Servicio cancelado\n\n🏠 ${antes.cliente}\n📅 ${fl}\n🕐 ${antes.horario}\n\nYa no tienes que asistir a este servicio.`;
+    resultados.push(await enviarYRegistrar({ ...base, empleado: antes.empleado, texto, tipo: 'Cancelación',
+      detalle: `${antes.cliente} ${fl} ${antes.horario}. Motivo: ${motivo || ''}` }));
+    return resultados;
+  }
+
+  if (antes.empleado !== despues.empleado) {
+    const detalle = `${antes.empleado} → ${despues.empleado}`;
+    const sale = `🔄 Cambio de asignación\n\nYa no estás asignado/a al servicio de ${antes.cliente} del ${fl} (${antes.horario}).`;
+    resultados.push(await enviarYRegistrar({ ...base, empleado: antes.empleado, texto: sale, tipo: 'Cambio de empleado (sale)', detalle }));
+
+    const encontrado = await obtenerFilaProgramacionPorId(id);
+    const dc = await datosClienteVivo(despues.cliente);
+    const entra = construirMensajeProgramacion(encontrado.fila, encontrado.col, dc, `Nueva asignación — ${tituloProgramacion(fecha)}`);
+    resultados.push(await enviarYRegistrar({ ...base, empleado: despues.empleado, texto: entra, tipo: 'Cambio de empleado (entra)', detalle }));
+    return resultados;
+  }
+
+  const cambios = [];
+  if (antes.cliente !== despues.cliente) cambios.push(`🏠 Cliente: ${antes.cliente} → ${despues.cliente}`);
+  if (antes.horario !== despues.horario) cambios.push(`🕐 Horario: ${antes.horario} → ${despues.horario}`);
+  if (antes.tipo !== despues.tipo) cambios.push(`🧾 Tipo de servicio: ${antes.tipo} → ${despues.tipo}`);
+  if (!cambios.length) return resultados;
+
+  let texto = `🔄 Cambio en tu servicio del ${fl}\n\n${cambios.join('\n')}`;
+  if (antes.cliente !== despues.cliente) {
+    const dc = await datosClienteVivo(despues.cliente);
+    texto += `\n📍 Dirección: ${dc.direccion}\n🗺️ Ver ubicación: ${dc.maps}`;
+  }
+  texto += `\n\nPor favor confirma de nuevo:\n"Ok" o "Confirmo"\no\n"No puedo"`;
+  resultados.push(await enviarYRegistrar({ ...base, empleado: despues.empleado, texto, tipo: 'Cambio de cliente/horario/tipo', detalle: cambios.join(' | ').replace(/[🏠🕐🧾] /gu, '') }));
+  return resultados;
+}
+
 
 async function procesarRespuestaConfirmacion(telefono, texto) {
   const textoLimpio = texto.trim();
@@ -280,10 +373,14 @@ async function procesarRespuestaConfirmacion(telefono, texto) {
   const col = {};
   headers.forEach((h, i) => col[h] = i);
 
+  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
   for (let i = 1; i < datos.length; i++) {
     const fila = datos[i];
     const estadoActual = fila[col['Estado_Confirmacion']];
-      if (fila[col['Empleado']] === nombreEmpleado && (estadoActual === 'Pendiente' || !estadoActual) && fila[col['Estado_Envio']] === 'Enviado' && fila[col['Cancelado']] !== 'Sí') {
+        if (fila[col['Empleado']] === nombreEmpleado && (estadoActual === 'Pendiente' || !estadoActual)
+        && fila[col['Estado_Envio']] === 'Enviado' && fila[col['Cancelado']] !== 'Sí'
+        && normalizarFecha(fila[col['Fecha_Servicio']]) >= hoyTexto) {
       const cliente = fila[col['Cliente']];
 
       await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Estado_Confirmacion'] + 1, nuevoEstado);
@@ -540,4 +637,4 @@ async function datosClienteVivo(nombre) {
   return { direccion: '', maps: '', descripcion: '', instrucciones: '' };
 }
 
-module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION };
+module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION, enviarProgramacionFecha, notificarCambioPostEnvio, registrarCambio };

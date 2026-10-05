@@ -299,6 +299,15 @@ app.post('/agenda/cancelar', auth.requiereAdmin, async (req, res) => {
   }
 });
 
+app.post('/agenda/enviar', auth.requiereAdmin, async (req, res) => {
+  try {
+    res.json(await edicion.guardarYEnviar({ fecha: req.body.fecha, filas: req.body.filas, admin: req.admin }));
+  } catch (err) {
+    console.error('Error en POST /agenda/enviar:', err);
+    res.status(500).json({ ok: false, general: 'Error: ' + err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en puerto ${PORT}`);

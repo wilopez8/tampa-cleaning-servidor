@@ -108,4 +108,24 @@ async function agregarFilas(nombreHoja, filas) { // filas: arreglo de arreglos
   invalidarCache(nombreHoja);
 }
 
-module.exports = { leerHoja, agregarFila, actualizarCelda, actualizarCeldas, agregarFilas, invalidarCache, edadCacheSegundos };
+const hojasAseguradas = new Set();
+async function asegurarHoja(nombreHoja, encabezados) {
+  if (hojasAseguradas.has(nombreHoja)) return;
+  const sheets = autenticar();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID, fields: 'sheets.properties.title' });
+  if (!meta.data.sheets.some(s => s.properties.title === nombreHoja)) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: { requests: [{ addSheet: { properties: { title: nombreHoja, gridProperties: { frozenRowCount: 1 } } } }] },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID, range: `${nombreHoja}!A1`, valueInputOption: 'RAW',
+      requestBody: { values: [encabezados] },
+    });
+  }
+  hojasAseguradas.add(nombreHoja);
+}
+
+
+
+module.exports = { leerHoja, agregarFila, actualizarCelda, actualizarCeldas, agregarFilas, invalidarCache, edadCacheSegundos, asegurarHoja };

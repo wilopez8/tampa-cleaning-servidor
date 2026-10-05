@@ -77,6 +77,25 @@ async function quejasPorServicio(ids) {
   return mapa;
 }
 
+async function cambiosPorServicio(ids) {
+  const mapa = {};
+  try {
+    const datos = await leerHoja('CAMBIOS_PROGRAMACION', { cache: true });
+    if (datos.length < 2) return mapa;
+    const h = datos[0];
+    const iId = h.indexOf('ID_Programacion');
+    for (let i = 1; i < datos.length; i++) {
+      const id = datos[i][iId];
+      if (!id || !ids.has(id)) continue;
+      const c = {};
+      h.forEach((n, j) => { c[n] = datos[i][j] || ''; });
+      (mapa[id] = mapa[id] || []).push(c);
+    }
+  } catch (e) { /* la hoja se crea con el primer cambio */ }
+  return mapa;
+}
+
+
 function bloque(titulo, pares) {
   const llenos = pares.filter(([, v]) => v !== undefined && String(v).trim() !== '');
   const cuerpo = llenos.length
@@ -85,7 +104,8 @@ function bloque(titulo, pares) {
   return `<div class="bloque"><h4>${esc(titulo)}</h4>${cuerpo}</div>`;
 }
 
-function lineaDeVida(r, quejas) {
+function lineaDeVida(r, quejas, cambios) {
+  const c = (cambios || []).map(x => `${x.Fecha_Hora} · ${x.Realizado_Por}: ${x.Tipo_Cambio} — ${x.Detalle}${x.Empleado_Notificado ? ` (avisó a ${x.Empleado_Notificado}: ${x.Aviso_Enviado})` : ` (${x.Aviso_Enviado})`}`).join('\n');
   const horario = (r.Hora_Inicio && r.Hora_Fin) ? `${r.Hora_Inicio} – ${r.Hora_Fin}` : r.Horario;
   const maps = /^https?:\/\//i.test(r.Google_Maps_Link) ? { __html: `<a href="${esc(r.Google_Maps_Link)}" target="_blank" rel="noopener">Abrir mapa</a>` } : r.Google_Maps_Link;
   const q = (quejas || []).map(x => `${x.Tipo} (${x.Estado}): ${x.Descripcion}`).join('\n');
@@ -100,6 +120,7 @@ function lineaDeVida(r, quejas) {
     bloque('Cierre', [['Tareas pendientes', r.Tareas_Pendientes], ['Insumos faltantes', r.Insumos_Faltantes], ['Comentario', r.Comentario_Empleado], ['Fotos', r.Fotos_Resultado], ['Finalizado', r.Servicio_Finalizado]]),
     bloque('Inspección', [['Servicio inspeccionado', r.ID_Servicio_Inspeccionado], ['Resultado', r.Resultado_Inspeccion], ['Requiere acción correctiva', r.Requiere_Accion_Correctiva], ['Estado corrección', r.Estado_Correccion]]),
     bloque('Avisos', [['Avisos durante el servicio', r.Avisos_Durante_Servicio], ['Aviso confirmado', r.Aviso_Confirmado]]),
+    bloque('Cambios posteriores al envío', [['Registro', c]]),
     bloque('Quejas y dudas', [['Asociadas', q]]),
   ].join('') + '</div>';
 }
@@ -140,6 +161,7 @@ async function paginaAgenda(query, admin) {
   const filasSemana = await filasDelRango(lunes, domingo);
   const delDia = filasSemana.filter(r => r._fecha === fecha);
   const quejas = await quejasPorServicio(new Set(delDia.map(r => r.ID_Programacion)));
+  const cambios = await cambiosPorServicio(new Set(delDia.map(r => r.ID_Programacion)));
 
   // Filtros (las opciones salen de las filas del día)
   const f = { cliente: query.cliente || '', empleado: query.empleado || '', estado: query.estado || '', tipo: query.tipo || '' };
@@ -166,8 +188,7 @@ async function paginaAgenda(query, admin) {
   const aviso = pasada ? 'Fecha pasada: solo lectura.' : 'Modo editable: los servicios nuevos se guardan como Borrador hasta enviarlos.';
 
   const acciones = r => {
-    if (!ed || r._estado === 'Cancelado') return '';
-    if (r.Estado_Envio === 'Enviado') return '<span class="nota">Ya enviado: cambios en etapa 5</span>';
+    if (!ed || r._estado === 'Cancelado' || r.Hora_Entrada_Real) return '';
     const id = esc(r.ID_Programacion);
     return `<button class="btn" data-id="${id}" onclick="tcEditar(this.dataset.id,false)">Editar</button>
       <button class="btn" data-id="${id}" onclick="tcEditar(this.dataset.id,true)">Reasignar</button>
@@ -180,7 +201,7 @@ async function paginaAgenda(query, admin) {
     return `<tr class="${r._estado === 'Cancelado' ? 'canc' : ''}">
       <td>${esc(horario)}</td><td>${esc(tipoDe(r))}</td><td>${esc(r.Cliente)}</td><td>${esc(r.Empleado)}</td>
       <td><span class="est ${esc(r._estado)}">${esc(r._estado)}</span>${accionPendiente(r) ? ' ⚠️' : ''}</td>
-      <td><details><summary>Detalle</summary>${lineaDeVida(r, quejas[r.ID_Programacion])}</details></td>
+      <td><details><summary>Detalle</summary>${lineaDeVida(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion])}</details></td>
       <td>${acciones(r)}</td></tr>`;
   }).join('') : '<tr><td colspan="7" style="text-align:center;color:#888;padding:24px;">No hay servicios para esta fecha o filtro.</td></tr>';
 
