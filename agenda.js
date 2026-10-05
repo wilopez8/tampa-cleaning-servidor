@@ -161,22 +161,33 @@ async function paginaAgenda(query, admin) {
   }).join('');
 
   const pasada = fecha < hoy;
-  const aviso = pasada
-    ? 'Fecha pasada: solo lectura.'
-    : 'Modo consulta. La edición (grilla, cancelar, reasignar) se activa en la etapa 4.';
+  const ed = pasada ? null : require('./edicion'); // carga diferida: evita dependencia circular
+  const maestrosDatos = ed ? await ed.maestros(false) : null;
+  const aviso = pasada ? 'Fecha pasada: solo lectura.' : 'Modo editable: los servicios nuevos se guardan como Borrador hasta enviarlos.';
+
+  const acciones = r => {
+    if (!ed || r._estado === 'Cancelado') return '';
+    if (r.Estado_Envio === 'Enviado') return '<span class="nota">Ya enviado: cambios en etapa 5</span>';
+    const id = esc(r.ID_Programacion);
+    return `<button class="btn" data-id="${id}" onclick="tcEditar(this.dataset.id,false)">Editar</button>
+      <button class="btn" data-id="${id}" onclick="tcEditar(this.dataset.id,true)">Reasignar</button>
+      <button class="btn" data-id="${id}" onclick="tcCancelar(this.dataset.id)">Cancelar</button>`;
+  };
+
 
   const filasHtml = visibles.length ? visibles.map(r => {
     const horario = (r.Hora_Inicio && r.Hora_Fin) ? `${r.Hora_Inicio}–${r.Hora_Fin}` : r.Horario;
     return `<tr class="${r._estado === 'Cancelado' ? 'canc' : ''}">
       <td>${esc(horario)}</td><td>${esc(tipoDe(r))}</td><td>${esc(r.Cliente)}</td><td>${esc(r.Empleado)}</td>
       <td><span class="est ${esc(r._estado)}">${esc(r._estado)}</span>${accionPendiente(r) ? ' ⚠️' : ''}</td>
-      <td><details><summary>Detalle</summary>${lineaDeVida(r, quejas[r.ID_Programacion])}</details></td></tr>`;
-  }).join('') : '<tr><td colspan="6" style="text-align:center;color:#888;padding:24px;">No hay servicios para esta fecha o filtro.</td></tr>';
+      <td><details><summary>Detalle</summary>${lineaDeVida(r, quejas[r.ID_Programacion])}</details></td>
+      <td>${acciones(r)}</td></tr>`;
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:#888;padding:24px;">No hay servicios para esta fecha o filtro.</td></tr>';
 
   const edad = edadCacheSegundos('PROGRAMACION_DIARIA');
   const volver = esc('/agenda?' + new URLSearchParams({ fecha, ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)) }).toString());
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Agenda ${fecha}</title><style>${CSS}</style></head><body>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Agenda ${fecha}</title><style>${CSS}${ed ? ed.CSS_EDITOR : ''}</style></head><body>
 <div class="top"><h2 style="margin:0;">Agenda — ${diaSemana(fecha)} ${fecha}</h2>
   <div>${esc(admin)} · <a href="/logout">Cerrar sesión</a></div></div>
 <div class="nav">
@@ -190,12 +201,13 @@ async function paginaAgenda(query, admin) {
 </div>
 <div class="semana">${tira}</div>
 <div class="aviso">${aviso}</div>
+${ed ? ed.editorHtml(fecha, maestrosDatos, delDia) : ''}
 <form class="filtros" method="GET" action="/agenda"><input type="hidden" name="fecha" value="${fecha}">
   ${sel('cliente', 'Todos los clientes', unicos('Cliente'))}${sel('empleado', 'Todos los empleados', unicos('Empleado'))}
   ${sel('estado', 'Todos los estados', ESTADOS)}${sel('tipo', 'Todos los tipos', ['Limpieza', 'Inspeccion'])}
   <button class="btn">Filtrar</button> <a class="btn" href="/agenda?fecha=${fecha}">Limpiar</a></form>
-<table><tr><th>Horario</th><th>Tipo</th><th>Cliente</th><th>Empleado</th><th>Estado</th><th></th></tr>${filasHtml}</table>
+<table><tr><th>Horario</th><th>Tipo</th><th>Cliente</th><th>Empleado</th><th>Estado</th><th></th><th>Acciones</th></tr>${filasHtml}</table>
 </body></html>`;
 }
 
-module.exports = { paginaAgenda };
+module.exports = { paginaAgenda, normalizarFecha, fechaValida, hoyFlorida };

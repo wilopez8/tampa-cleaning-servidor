@@ -91,7 +91,7 @@ async function buscarProgramacionHoy(nombreEmpleado) {
     const fila = datos[i];
     const fechaTexto = normalizarFecha(fila[col['Fecha_Servicio']]);
 
-    if (fechaTexto === hoyTexto && fila[col['Empleado']] === nombreEmpleado) {
+      if (fechaTexto === hoyTexto && fila[col['Empleado']] === nombreEmpleado && fila[col['Cancelado']] !== 'Sí') {
       return {
         idProgramacion: fila[col['ID_Programacion']],
         cliente: fila[col['Cliente']],
@@ -219,10 +219,11 @@ async function buscarTelefonoPorNombre(nombreEmpleado) {
   return null;
 }
 
-function construirMensajeProgramacion(fila, col) {
+function construirMensajeProgramacion(fila, col, dc) {
+  const v = (campo, vivo) => fila[col[campo]] || vivo || '';
   let msg = `📅 Servicio programado para mañana\n\n`;
-  msg += `🏠 Cliente: ${fila[col['Cliente']]}\n🕐 Horario: ${fila[col['Horario']]}\n📍 Dirección: ${fila[col['Direccion']]}\n🗺️ Ver ubicación: ${fila[col['Google_Maps_Link']]}\n\n`;
-  msg += `📋 Descripción del servicio:\n${fila[col['Descripcion_Servicio']]}\n\nℹ️ Instrucciones generales:\n${fila[col['Instrucciones']]}\n`;
+  msg += `🏠 Cliente: ${fila[col['Cliente']]}\n🕐 Horario: ${fila[col['Horario']]}\n📍 Dirección: ${v('Direccion', dc.direccion)}\n🗺️ Ver ubicación: ${v('Google_Maps_Link', dc.maps)}\n\n`;
+  msg += `📋 Descripción del servicio:\n${v('Descripcion_Servicio', dc.descripcion)}\n\nℹ️ Instrucciones generales:\n${v('Instrucciones', dc.instrucciones)}\n`;
   const obs = fila[col['Observaciones_Puntuales']];
   if (obs && obs.toString().trim() !== '') msg += `\n📝 Observaciones de mañana:\n${obs}\n`;
   msg += `\n¿Confirmas este servicio? Responde:\n"Ok" o "Confirmo"\no\n"No puedo"`;
@@ -244,6 +245,7 @@ async function enviarProgramacionManana() {
     const fechaTexto = normalizarFecha(fila[col['Fecha_Servicio']]);
     if (fechaTexto !== mananaTexto) continue;
     if (fila[col['Estado_Envio']] === 'Enviado') continue;
+    if (fila[col['Cancelado']] === 'Sí') continue;
 
     const nombreEmpleado = fila[col['Empleado']];
     const telefono = await buscarTelefonoPorNombre(nombreEmpleado);
@@ -252,7 +254,8 @@ async function enviarProgramacionManana() {
       continue;
     }
 
-    const mensaje = construirMensajeProgramacion(fila, col);
+    const dc = await datosClienteVivo(fila[col['Cliente']]);                // ← NUEVA
+    const mensaje = construirMensajeProgramacion(fila, col, dc);            // ← CAMBIADA (ahora recibe dc)
     await enviarWhatsApp(`whatsapp:+${soloDigitos(telefono)}`, mensaje);
     await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Estado_Envio'] + 1, 'Enviado');
     enviados++;
@@ -280,7 +283,7 @@ async function procesarRespuestaConfirmacion(telefono, texto) {
   for (let i = 1; i < datos.length; i++) {
     const fila = datos[i];
     const estadoActual = fila[col['Estado_Confirmacion']];
-    if (fila[col['Empleado']] === nombreEmpleado && (estadoActual === 'Pendiente' || !estadoActual)) {
+      if (fila[col['Empleado']] === nombreEmpleado && (estadoActual === 'Pendiente' || !estadoActual) && fila[col['Estado_Envio']] === 'Enviado' && fila[col['Cancelado']] !== 'Sí') {
       const cliente = fila[col['Cliente']];
 
       await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Estado_Confirmacion'] + 1, nuevoEstado);
@@ -426,10 +429,12 @@ async function obtenerDatosFormularioCierre(idProgramacion) {
   const sitio = await buscarSitio(cliente);
   const yaFinalizado = col['Servicio_Finalizado'] !== undefined && fila[col['Servicio_Finalizado']] === 'Sí';
   const tipoServicio = fila[col['Tipo_Servicio']] || 'Limpieza';
+  const dc = await datosClienteVivo(cliente);
+
   return {
     cliente,
-    direccion: fila[col['Direccion']] || '',
-    instrucciones: fila[col['Instrucciones']] || '',
+    direccion: fila[col['Direccion']] || dc.direccion,
+    instrucciones: fila[col['Instrucciones']] || dc.instrucciones,
     checklist: sitio ? sitio.checklist : [],
     yaFinalizado,
     tipoServicio,
@@ -520,6 +525,19 @@ async function procesarInspeccionFormulario(body) {
     `¿Requiere acción correctiva?: ${requiereAccion ? 'Sí' : 'No'}`,
     nivel
   );
+}
+
+async function datosClienteVivo(nombre) {
+  const datos = await leerHoja('CLIENTES');
+  const h = datos[0] || [];
+  const iN = h.indexOf('clientes');
+  for (let r = 1; r < datos.length; r++) {
+    if (datos[r][iN] === nombre) {
+      const g = n => datos[r][h.indexOf(n)] || '';
+      return { direccion: g('Direccion'), maps: g('Google Maps'), descripcion: g('Descripcion_Servicio'), instrucciones: g('Instrucciones') };
+    }
+  }
+  return { direccion: '', maps: '', descripcion: '', instrucciones: '' };
 }
 
 module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION };

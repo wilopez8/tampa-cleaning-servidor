@@ -82,4 +82,30 @@ function numeroAColumna(n) {
   return letra;
 }
 
-module.exports = { leerHoja, agregarFila, actualizarCelda, invalidarCache, edadCacheSegundos };
+async function actualizarCeldas(nombreHoja, cambios) { // cambios: [{ fila, columna, valor }] (1-indexados)
+  if (!cambios.length) return;
+  const sheets = autenticar();
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data: cambios.map(c => ({ range: `${nombreHoja}!${numeroAColumna(c.columna)}${c.fila}`, values: [[c.valor]] })),
+    },
+  });
+  invalidarCache(nombreHoja);
+}
+
+async function agregarFilas(nombreHoja, filas) { // filas: arreglo de arreglos
+  if (!filas.length) return;
+  const sheets = autenticar();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: nombreHoja,
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: { values: filas },
+  });
+  invalidarCache(nombreHoja);
+}
+
+module.exports = { leerHoja, agregarFila, actualizarCelda, actualizarCeldas, agregarFilas, invalidarCache, edadCacheSegundos };

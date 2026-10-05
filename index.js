@@ -4,6 +4,7 @@ const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion
 const app = express();
 app.set('trust proxy', 1); // Render va detrás de un proxy; así req.ip es la IP real
 const auth = require('./auth');
+const edicion = require('./edicion');
 const { invalidarCache, edadCacheSegundos } = require('./sheets');
 const { paginaAgenda } = require('./agenda');
 
@@ -36,6 +37,8 @@ function escaparXml(texto) {
 
 // Twilio manda los datos como formulario (no JSON)
 app.use(express.urlencoded({ extended: false }));
+
+app.use(express.json({ limit: '200kb' }));
 
 // Ruta de salud, para confirmar que el servidor esta vivo
 app.get('/', (req, res) => {
@@ -273,6 +276,26 @@ app.get('/agenda', auth.requiereAdmin, async (req, res) => {
   } catch (err) {
     console.error('Error en GET /agenda:', err);
     res.status(500).send('Error cargando la agenda: ' + err.message);
+  }
+});
+
+app.post('/agenda/guardar', auth.requiereAdmin, async (req, res) => {
+  try {
+    res.json(await edicion.procesarGuardado({
+      fecha: req.body.fecha, filas: req.body.filas, admin: req.admin, soloValidar: !!req.body.soloValidar,
+    }));
+  } catch (err) {
+    console.error('Error en POST /agenda/guardar:', err);
+    res.status(500).json({ ok: false, general: 'Error: ' + err.message });
+  }
+});
+
+app.post('/agenda/cancelar', auth.requiereAdmin, async (req, res) => {
+  try {
+    res.json(await edicion.cancelarServicio({ id: req.body.id, motivo: req.body.motivo, admin: req.admin }));
+  } catch (err) {
+    console.error('Error en POST /agenda/cancelar:', err);
+    res.status(500).json({ ok: false, general: 'Error: ' + err.message });
   }
 });
 
