@@ -282,7 +282,7 @@ app.get('/agenda', auth.requiereAdmin, async (req, res) => {
 app.post('/agenda/guardar', auth.requiereAdmin, async (req, res) => {
   try {
     res.json(await edicion.procesarGuardado({
-      fecha: req.body.fecha, filas: req.body.filas, admin: req.admin, soloValidar: !!req.body.soloValidar,
+      fecha: req.body.fecha, filas: req.body.filas, admin: req.admin, soloValidar: !!req.body.soloValidar, motivo: req.body.motivo,
     }));
   } catch (err) {
     console.error('Error en POST /agenda/guardar:', err);

@@ -256,6 +256,7 @@ async function enviarProgramacionFecha(fecha, admin) {
     const fila = datos[i];
     if (normalizarFecha(fila[col['Fecha_Servicio']]) !== fecha) continue;
     if (fila[col['Estado_Envio']] === 'Enviado') continue;
+    if (fila[col['Estado_Envio']] === 'No aplica') continue;
     if (fila[col['Cancelado']] === 'Sí') continue;
     const nombreEmpleado = fila[col['Empleado']];
     const cliente = fila[col['Cliente']];

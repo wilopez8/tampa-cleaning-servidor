@@ -16,6 +16,33 @@ function ahoraTexto() {
   const g = t => p.find(x => x.type === t).value;
   return `${g('year')}-${g('month')}-${g('day')} ${g('hour')}:${g('minute')}`;
 }
+function aHora24(t) {
+  const m = String(t || '').match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*([AP]M)?/i);
+  if (!m) return '';
+  let h = parseInt(m[1], 10);
+  const ap = (m[3] || '').toUpperCase();
+  if (ap === 'PM' && h < 12) h += 12;
+  if (ap === 'AM' && h === 12) h = 0;
+  return String(h).padStart(2, '0') + ':' + m[2];
+}
+// Mismo formato que escribe el check-in: "10/9/2026, 5:11:00 PM"
+function textoHoraReal(fecha, hhmm) {
+  const [y, mo, d] = fecha.split('-').map(Number);
+  let h = parseInt(hhmm.slice(0, 2), 10);
+  const ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${mo}/${d}/${y}, ${h}:${hhmm.slice(3)}:00 ${ap}`;
+}
+function diferencias(ex, f) {
+  const d = [];
+  const c = (n, a, b) => { if (a !== b) d.push(`${n}: ${a || '(vacío)'} → ${b || '(vacío)'}`); };
+  c('Tipo', ex.tipo, f.tipo); c('Cliente', ex.cliente, f.cliente); c('Empleado', ex.empleado, f.empleado);
+  c('Inicio', ex.inicio, f.inicio); c('Fin', ex.fin, f.fin); c('Observaciones', ex.obs, f.obs);
+  if (ex.entrada !== f.entrada) d.push(`Entrada real: ${ex.entradaRaw || '(vacío)'} → ${f.entrada || '(vacío)'}`);
+  if (ex.salida !== f.salida) d.push(`Salida real: ${ex.salidaRaw || '(vacío)'} → ${f.salida || '(vacío)'}`);
+  c('Finalizado', ex.final ? 'Sí' : 'No', f.final ? 'Sí' : 'No');
+  return d;
+}
 
 // Escrituras una tras otra: evita que dos guardados simultáneos generen el mismo ID
 let cola = Promise.resolve();
@@ -78,6 +105,9 @@ function filasDe(datos, h, fecha) {
       _fila: i + 1, id: g(r, 'ID_Programacion'), tipo: g(r, 'Tipo_Servicio') || 'Limpieza', cliente: g(r, 'Cliente'), empleado: g(r, 'Empleado'),
       horario: g(r, 'Horario'), inicio: normalizarHora(r[ix('Hora_Inicio')]), fin: normalizarHora(r[ix('Hora_Fin')]), obs: g(r, 'Observaciones_Puntuales'),
       envio: g(r, 'Estado_Envio'), cancelado: g(r, 'Cancelado') === 'Sí', iniciado: !!g(r, 'Hora_Entrada_Real'),
+      entradaRaw: g(r, 'Hora_Entrada_Real'), entrada: aHora24(g(r, 'Hora_Entrada_Real')),
+      salidaRaw: g(r, 'Hora_Salida_Real'), salida: aHora24(g(r, 'Hora_Salida_Real')),
+      final: g(r, 'Servicio_Finalizado') === 'Sí',
     });
   }
   return out;
@@ -98,7 +128,7 @@ function maxConsecutivo(datos, h, fecha) {
 const vacia = f => !f.id && !f.cliente && !f.empleado && !f.inicio && !f.fin && !f.obs;
 const cambioClave = (ex, f) => ex.tipo !== f.tipo || ex.cliente !== f.cliente || ex.empleado !== f.empleado || ex.inicio !== f.inicio || ex.fin !== f.fin;
 
-function validarLote(normal, m, existentes) {
+function validarLote(normal, m, existentes, retro) {
   const editando = new Set(normal.filter(f => f.id).map(f => f.id));
   const otros = existentes.filter(r => !r.cancelado && !editando.has(r.id));
   const cruza = (a, b) => a.inicio && a.fin && b.inicio && b.fin && a.inicio < b.fin && b.inicio < a.fin;
@@ -106,27 +136,39 @@ function validarLote(normal, m, existentes) {
   return normal.map((f, i) => {
     if (vacia(f)) return [];
     const e = [];
+    const ex = f.id ? existentes.find(r => r.id === f.id) : null;
     if (f.id) {
-      const ex = existentes.find(r => r.id === f.id);
       if (!ex) e.push('Servicio no encontrado en esta fecha');
       else if (ex.cancelado) e.push('Servicio cancelado: no se puede editar');
-      else if (ex.iniciado && cambioClave(ex, f)) e.push('El servicio ya inició: solo se pueden cambiar las observaciones');
+      else if (!retro && ex.iniciado && cambioClave(ex, f)) e.push('El servicio ya inició: solo se pueden cambiar las observaciones');
     }
     if (!['Limpieza', 'Inspeccion'].includes(f.tipo)) e.push('Tipo de servicio no válido');
 
+    // En fechas pasadas, un cliente/empleado que ya no está activo se acepta si no se cambió
+    const mismoCli = retro && ex && ex.cliente === f.cliente;
     const cli = m.clientes.find(c => c.n === f.cliente);
     if (!f.cliente) e.push('Falta el cliente');
-    else if (!cli) e.push('Cliente no activo (debe ser Vigente en CLIENTES y Activo en SITIOS)');
-    else if (!cli.coord) e.push('El cliente no tiene coordenadas en SITIOS');
-
+    else if (!mismoCli) {
+      if (!cli) e.push('Cliente no activo (debe ser Vigente en CLIENTES y Activo en SITIOS)');
+      else if (!cli.coord) e.push('El cliente no tiene coordenadas en SITIOS');
+    }
+    const mismoEmp = retro && ex && ex.empleado === f.empleado;
     const emp = m.empleados.find(x => x.n === f.empleado);
     if (!f.empleado) e.push('Falta el empleado');
-    else if (!emp) e.push('Empleado inexistente o inactivo');
-    else if (!emp.wa) e.push('El empleado no tiene número de WhatsApp');
+    else if (!mismoEmp) {
+      if (!emp) e.push('Empleado inexistente o inactivo');
+      else if (!emp.wa) e.push('El empleado no tiene número de WhatsApp');
+    }
 
     const horasOk = HORA.test(f.inicio) && HORA.test(f.fin);
     if (!horasOk) e.push('Falta la hora de inicio o de fin');
     else if (f.fin <= f.inicio) e.push('La hora de fin debe ser posterior a la de inicio');
+
+    if (retro) {
+      if (f.entrada && !HORA.test(f.entrada)) e.push('Hora de entrada no válida');
+      if (f.salida && !HORA.test(f.salida)) e.push('Hora de salida no válida');
+      if (HORA.test(f.entrada) && HORA.test(f.salida) && f.salida <= f.entrada) e.push('La salida debe ser posterior a la entrada');
+    }
 
     const comparables = otros.concat(normal.slice(0, i));
     if (f.cliente && f.empleado && comparables.some(r => r.cliente === f.cliente && r.tipo === f.tipo && r.empleado === f.empleado)) {
@@ -141,32 +183,39 @@ function validarLote(normal, m, existentes) {
 }
 
 // ---------- Guardar (crear + editar + reasignar) ----------
-async function procesarGuardado({ fecha, filas, admin, soloValidar }) {
+async function procesarGuardado({ fecha, filas, admin, soloValidar, motivo }) {
   if (!fechaValida(fecha)) return { ok: false, general: 'Fecha no válida.' };
-  if (fecha < hoyFlorida()) return { ok: false, general: 'Fecha pasada: solo lectura.' };
+  const retro = fecha < hoyFlorida();
+  motivo = limpio(motivo).slice(0, 300);
   if (!Array.isArray(filas) || !filas.length) return { ok: false, general: 'No hay filas para guardar.' };
   if (filas.length > 60) return { ok: false, general: 'Demasiadas filas en una sola operación (máximo 60).' };
 
   const normal = filas.map(f => ({
     id: limpio(f.id), tipo: limpio(f.tipo) || 'Limpieza', cliente: limpio(f.cliente), empleado: limpio(f.empleado),
     inicio: limpio(f.inicio), fin: limpio(f.fin), obs: limpio(f.obs).slice(0, 500),
+    entrada: limpio(f.entrada), salida: limpio(f.salida), final: !!f.final,
   }));
   if (normal.every(vacia)) {
     return soloValidar ? { ok: true, errores: normal.map(() => []) } : { ok: false, general: 'No hay filas para guardar.' };
   }
+  if (retro && !soloValidar && motivo.length < 3) return { ok: false, general: 'En fechas pasadas el motivo es obligatorio.' };
 
   const trabajo = async () => {
     const vivo = !soloValidar;
     const m = await maestros(vivo);
     const { datos, h } = await cargarSheet(vivo);
+    if (retro) {
+      const falta = ['Registro_Retroactivo', 'Motivo_Retroactivo', 'Origen_Registro', 'Hora_Entrada_Real', 'Hora_Salida_Real', 'Servicio_Finalizado'].filter(n => h.indexOf(n) === -1);
+      if (falta.length) return { ok: false, general: 'Faltan columnas en PROGRAMACION_DIARIA: ' + falta.join(', ') };
+    }
     const existentes = filasDe(datos, h, fecha);
-    const errores = validarLote(normal, m, existentes);
+    const errores = validarLote(normal, m, existentes, retro);
     const hay = errores.some(e => e.length);
     if (soloValidar || hay) return { ok: !hay, errores };
 
     const col = n => h.indexOf(n) + 1;
     const ahora = ahoraTexto();
-    const cambios = [], nuevas = [], avisos = [], soloObs = [];
+    const cambios = [], nuevas = [], avisos = [], soloObs = [], retros = [];
     let consecutivo = maxConsecutivo(datos, h, fecha);
     let creados = 0, modificados = 0;
 
@@ -175,13 +224,20 @@ async function procesarGuardado({ fecha, filas, admin, soloValidar }) {
       const horario = horarioTexto(f.inicio, f.fin);
       if (f.id) {
         const ex = existentes.find(r => r.id === f.id);
-        if (!cambioClave(ex, f) && ex.obs === f.obs) return;
+        const dif = retro ? diferencias(ex, f) : [];
+        if (retro ? !dif.length : (!cambioClave(ex, f) && ex.obs === f.obs)) return;
         const valores = { Tipo_Servicio: f.tipo, Cliente: f.cliente, Empleado: f.empleado, Horario: horario,
                           Hora_Inicio: f.inicio, Hora_Fin: f.fin, Observaciones_Puntuales: f.obs,
                           Modificado_Por: admin, Fecha_Modificacion: ahora };
-        if (ex.envio === 'Enviado') {
+        if (retro) {
+          Object.assign(valores, { Registro_Retroactivo: 'Sí', Motivo_Retroactivo: motivo });
+          if (f.entrada !== ex.entrada) valores.Hora_Entrada_Real = f.entrada ? textoHoraReal(fecha, f.entrada) : '';
+          if (f.salida !== ex.salida) valores.Hora_Salida_Real = f.salida ? textoHoraReal(fecha, f.salida) : '';
+          if (f.entrada !== ex.entrada || f.salida !== ex.salida) valores.Origen_Registro = 'Manual';
+          if (f.final !== ex.final) valores.Servicio_Finalizado = f.final ? 'Sí' : '';
+          retros.push({ id: ex.id, tipo: 'Retroactivo (edición)', detalle: `Motivo: ${motivo}. ${dif.join(' | ')}` });
+        } else if (ex.envio === 'Enviado') {
           if (cambioClave(ex, f)) {
-            // Lo que el empleado había confirmado ya cambió: vuelve a quedar pendiente de confirmar
             Object.assign(valores, { Estado_Confirmacion: 'Pendiente', Fecha_Hora_Confirmacion: '', Motivo_No_Puede: '' });
             avisos.push({ id: ex.id,
               antes: { tipo: ex.tipo, cliente: ex.cliente, empleado: ex.empleado, horario: ex.horario || horarioTexto(ex.inicio, ex.fin) },
@@ -197,6 +253,14 @@ async function procesarGuardado({ fecha, filas, admin, soloValidar }) {
         const obj = { ID_Programacion: id, Fecha_Servicio: fecha, Tipo_Servicio: f.tipo, Cliente: f.cliente, Empleado: f.empleado,
                       Horario: horario, Hora_Inicio: f.inicio, Hora_Fin: f.fin, Observaciones_Puntuales: f.obs,
                       Estado_Envio: 'Borrador', Estado_Confirmacion: 'Pendiente', Creado_Por: admin, Fecha_Creacion: ahora };
+        if (retro) {
+          Object.assign(obj, { Estado_Envio: 'No aplica', Estado_Confirmacion: 'No aplica',
+            Registro_Retroactivo: 'Sí', Motivo_Retroactivo: motivo, Origen_Registro: 'Manual',
+            Hora_Entrada_Real: f.entrada ? textoHoraReal(fecha, f.entrada) : '',
+            Hora_Salida_Real: f.salida ? textoHoraReal(fecha, f.salida) : '',
+            Servicio_Finalizado: f.final ? 'Sí' : '' });
+          retros.push({ id, tipo: 'Retroactivo (nuevo)', detalle: `Motivo: ${motivo}. ${f.cliente} / ${f.empleado} ${horario}${f.entrada ? ` · entrada ${f.entrada}` : ''}${f.salida ? ` · salida ${f.salida}` : ''}${f.final ? ' · finalizado' : ''}` });
+        }
         nuevas.push(h.map(n => (obj[n] === undefined ? '' : obj[n])));
         creados++;
       }
@@ -205,7 +269,6 @@ async function procesarGuardado({ fecha, filas, admin, soloValidar }) {
     await agregarFilas('PROGRAMACION_DIARIA', nuevas);
     await actualizarCeldas('PROGRAMACION_DIARIA', cambios);
 
-    // Los cambios ya están guardados; si un aviso falla, queda registrado y se informa
     const resultadoAvisos = [];
     for (const a of avisos) {
       try {
@@ -217,6 +280,9 @@ async function procesarGuardado({ fecha, filas, admin, soloValidar }) {
     }
     for (const o of soloObs) {
       await registrarCambio({ id: o.id, fechaServicio: fecha, tipo: 'Observaciones', detalle: `Nuevo texto: ${o.obs || '(vacío)'}`, por: admin, notificado: '', aviso: 'No (solo observaciones)' });
+    }
+    for (const r of retros) {
+      await registrarCambio({ id: r.id, fechaServicio: fecha, tipo: r.tipo, detalle: r.detalle, por: admin, notificado: '', aviso: 'No (fecha pasada)' });
     }
     return { ok: true, creados, modificados, avisos: resultadoAvisos };
   };
@@ -236,11 +302,12 @@ async function cancelarServicio({ id, motivo, admin }) {
       const r = datos[i];
       if (g(r, 'ID_Programacion') !== id) continue;
       const fecha = normalizarFecha(r[ix('Fecha_Servicio')]);
-      if (fecha < hoyFlorida()) return { ok: false, general: 'Fecha pasada: solo lectura.' };
+      const pasada = fecha < hoyFlorida();
       if (g(r, 'Cancelado') === 'Sí') return { ok: false, general: 'Este servicio ya estaba cancelado.' };
-      if (g(r, 'Hora_Entrada_Real')) return { ok: false, general: 'El servicio ya inició: no se puede cancelar desde la agenda.' };
+      if (!pasada && g(r, 'Hora_Entrada_Real')) return { ok: false, general: 'El servicio ya inició: no se puede cancelar desde la agenda.' };
 
-      const eraEnviado = g(r, 'Estado_Envio') === 'Enviado';
+      const eraEnviado = !pasada && g(r, 'Estado_Envio') === 'Enviado';
+
       const v = { Cancelado: 'Sí', Motivo_Cancelacion: motivo, Modificado_Por: admin, Fecha_Modificacion: ahoraTexto() };
       await actualizarCeldas('PROGRAMACION_DIARIA', Object.keys(v).map(k => ({ fila: i + 1, columna: ix(k) + 1, valor: v[k] })));
 
@@ -251,7 +318,7 @@ async function cancelarServicio({ id, motivo, admin }) {
             antes: { tipo: g(r, 'Tipo_Servicio') || 'Limpieza', cliente: g(r, 'Cliente'), empleado: g(r, 'Empleado'), horario: g(r, 'Horario') }, despues: {} });
         } catch (err) { console.error('Error avisando cancelación:', err); avisos = [{ empleado: g(r, 'Empleado'), ok: false }]; }
       } else {
-        await registrarCambio({ id, fechaServicio: fecha, tipo: 'Cancelación (borrador)', detalle: `${g(r, 'Cliente')}. Motivo: ${motivo}`, por: admin, notificado: '', aviso: 'No (no estaba enviado)' });
+        await registrarCambio({ id, fechaServicio: fecha, tipo: pasada ? 'Cancelación retroactiva' : 'Cancelación (borrador)', detalle: `${g(r, 'Cliente')}. Motivo: ${motivo}`, por: admin, notificado: '', aviso: pasada ? 'No (fecha pasada)' : 'No (no estaba enviado)' });
       }
       return { ok: true, avisos };
     }
@@ -268,24 +335,28 @@ const CSS_EDITOR = `
 .editor select,.editor input[type=text],.editor input[type=time]{padding:6px;border:1px solid #ccc;border-radius:6px;font-size:14px;}
 .editor .val{font-size:12px;color:#b91c1c;max-width:280px;} .editor .acc{margin-top:10px;display:flex;gap:10px;align-items:center;}
 .guardar{background:#2e7d32;color:#fff;border-color:#2e7d32;} .mal{color:#b91c1c;font-size:13px;} .bien{color:#15803d;font-size:13px;}
+.retro{background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;border-radius:6px;padding:8px 12px;font-size:14px;margin-bottom:10px;}
 .nota{font-size:12px;color:#92400e;}`;
 
 function editorHtml(fecha, m, delDia) {
+  const retro = fecha < hoyFlorida();
   const serv = {};
-  delDia.filter(r => r._estado !== 'Cancelado' && !r.Hora_Entrada_Real).forEach(r => {
+  delDia.filter(r => r._estado !== 'Cancelado' && (retro || !r.Hora_Entrada_Real)).forEach(r => {
     serv[r.ID_Programacion] = { id: r.ID_Programacion, tipo: r.Tipo_Servicio || 'Limpieza', cliente: r.Cliente, empleado: r.Empleado,
-      inicio: normalizarHora(r.Hora_Inicio), fin: normalizarHora(r.Hora_Fin), obs: r.Observaciones_Puntuales, env: r.Estado_Envio === 'Enviado' };
+      inicio: normalizarHora(r.Hora_Inicio), fin: normalizarHora(r.Hora_Fin), obs: r.Observaciones_Puntuales, env: !retro && r.Estado_Envio === 'Enviado',
+      entrada: aHora24(r.Hora_Entrada_Real), salida: aHora24(r.Hora_Salida_Real), final: r.Servicio_Finalizado === 'Sí' };
   });
-  const BORR = delDia.filter(r => r._estado !== 'Cancelado' && r.Estado_Envio !== 'Enviado' && r.Cliente && r.Empleado).length;
 
+  const BORR = delDia.filter(r => r._estado !== 'Cancelado' && r.Estado_Envio !== 'Enviado' && r.Cliente && r.Empleado).length;
   return `<section class="editor">
-<h3>Programar servicios <small style="font-weight:normal;color:#777;">(se guardan como Borrador)</small></h3>
-<table><thead><tr><th>Tipo</th><th>Cliente</th><th>Empleado</th><th>Horario</th><th>Observaciones</th><th>Validación</th><th></th></tr></thead><tbody id="gcuerpo"></tbody></table>
-<div class="acc"><button type="button" class="btn" id="gmas">+ Fila</button><button type="button" class="btn guardar" id="gguardar">Guardar borrador</button><button type="button" class="btn guardar" id="genviar">Guardar y enviar al equipo</button><span id="gmsg"></span></div>
+${retro ? '<div class="retro"><b>Registro retroactivo.</b> Fecha pasada: exige motivo, queda marcado y no envía WhatsApp. Las horas escritas aquí quedan como Manual.</div><input type="text" id="gmotivo" maxlength="300" placeholder="Motivo (obligatorio)" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #fca5a5;border-radius:6px;margin-bottom:10px;">' : ''}
+<h3>${retro ? 'Registrar / corregir servicios' : 'Programar servicios <small style="font-weight:normal;color:#777;">(se guardan como Borrador)</small>'}</h3>
+<table><thead><tr><th>Tipo</th><th>Cliente</th><th>Empleado</th><th>Horario</th><th>Observaciones</th>${retro ? '<th>Entrada real</th><th>Salida real</th><th>Finalizado</th>' : ''}<th>Validación</th><th></th></tr></thead><tbody id="gcuerpo"></tbody></table>
+<div class="acc"><button type="button" class="btn" id="gmas">+ Fila</button><button type="button" class="btn guardar" id="gguardar">${retro ? 'Guardar registro retroactivo' : 'Guardar borrador'}</button><button type="button" class="btn guardar" id="genviar"${retro ? ' style="display:none"' : ''}>Guardar y enviar al equipo</button><span id="gmsg"></span></div>
 <div class="bloque" id="gpanel" style="margin-top:10px;"></div>
 <script>
 (function(){
-  var FECHA=${js(fecha)}, M=${js(m)}, SERV=${js(serv)}, BORR=${BORR};
+  var FECHA=${js(fecha)}, RETRO=${retro}, M=${js(m)}, SERV=${js(serv)}, BORR=${BORR};
   var cuerpo=document.getElementById('gcuerpo'), msg=document.getElementById('gmsg'), panel=document.getElementById('gpanel'), timer=null;
   function el(tag,props){var e=document.createElement(tag);for(var k in props)e[k]=props[k];return e;}
   function selectDe(clase,lista,valor,vacio,etiqueta){
@@ -306,6 +377,11 @@ function editorHtml(fecha, m, delDia) {
     var h=el('td'); h.appendChild(el('input',{type:'time',className:'i',value:d.inicio||''}));
     h.appendChild(document.createTextNode(' – ')); h.appendChild(el('input',{type:'time',className:'f',value:d.fin||''})); tr.appendChild(h);
     td(el('input',{type:'text',className:'o',value:d.obs||'',placeholder:'Observaciones del día',maxLength:500}));
+      if(RETRO){
+      td(el('input',{type:'time',className:'en',value:d.entrada||''}));
+      td(el('input',{type:'time',className:'sa',value:d.salida||''}));
+      td(el('input',{type:'checkbox',className:'fz',checked:!!d.final}));
+    };
     tr.appendChild(el('td',{className:'val'}));
     var x=el('button',{type:'button',className:'btn',textContent:'✕',title:'Quitar de la grilla (no borra ningún servicio guardado)'});
     x.onclick=function(){tr.remove();programar();}; td(x);
@@ -316,7 +392,9 @@ function editorHtml(fecha, m, delDia) {
   function leer(){
     return Array.prototype.map.call(cuerpo.rows,function(tr){
       var q=function(c){return tr.querySelector('.'+c).value;};
-      return {id:tr.dataset.id,tipo:q('t'),cliente:q('c'),empleado:q('e'),inicio:q('i'),fin:q('f'),obs:q('o')};
+      var o={id:tr.dataset.id,tipo:q('t'),cliente:q('c'),empleado:q('e'),inicio:q('i'),fin:q('f'),obs:q('o')};
+      if(RETRO){o.entrada=q('en');o.salida=q('sa');o.final=tr.querySelector('.fz').checked;}
+      return o;
     });
   }
   function llamar(url,datos){
@@ -357,8 +435,10 @@ function editorHtml(fecha, m, delDia) {
   document.getElementById('gguardar').onclick=function(){
     var f=leer(); if(!f.length){estado('No hay filas.',false);return;}
     if(cuerpo.querySelector('tr[data-env="1"]')&&!confirm('Hay servicios ya enviados en la grilla: si cambiaste empleado, cliente u hora, se enviará un aviso por WhatsApp. ¿Continuar?'))return;
+    var motivo=RETRO?document.getElementById('gmotivo').value.trim():'';
+    if(RETRO&&motivo.length<3){estado('Escribe el motivo del registro retroactivo.',false);return;}
     var b=this; b.disabled=true;
-    llamar('/agenda/guardar',{fecha:FECHA,filas:f}).then(function(r){
+    llamar('/agenda/guardar',{fecha:FECHA,filas:f,motivo:motivo})
       b.disabled=false; if(!r)return;
       if(r.general){estado(r.general,false);return;}
       if(!r.ok){pintar(r.errores);estado('No se guardó: revisa las filas marcadas.',false);return;}

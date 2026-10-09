@@ -113,7 +113,9 @@ function lineaDeVida(r, quejas, cambios) {
     bloque('Programación', [['ID', r.ID_Programacion], ['Horario', horario], ['Dirección', r.Direccion], ['Mapa', maps],
       ['Descripción', r.Descripcion_Servicio], ['Instrucciones', r.Instrucciones], ['Observaciones del día', r.Observaciones_Puntuales],
       ['Creado por', r.Creado_Por && `${r.Creado_Por} (${r.Fecha_Creacion})`], ['Modificado por', r.Modificado_Por && `${r.Modificado_Por} (${r.Fecha_Modificacion})`],
-      ['Cancelación', r.Cancelado === 'Sí' ? (r.Motivo_Cancelacion || 'Sí') : '']]),
+      ['Cancelación', r.Cancelado === 'Sí' ? (r.Motivo_Cancelacion || 'Sí') : '']
+      ['Retroactivo', r.Registro_Retroactivo === 'Sí' ? 'Sí — ' + r.Motivo_Retroactivo : ''], 
+      ['Origen del registro', r.Origen_Registro] ]),
     bloque('Envío y confirmación', [['Envío', r.Estado_Envio], ['Confirmación', r.Estado_Confirmacion], ['Motivo "No puedo"', r.Motivo_No_Puede], ['Fecha/hora', r.Fecha_Hora_Confirmacion]]),
     bloque('Entrada', [['Hora', r.Hora_Entrada_Real], ['Latitud', r.Lat_Entrada], ['Longitud', r.Lon_Entrada], ['Dentro de rango', r.Dentro_Rango_Entrada]]),
     bloque('Salida', [['Hora', r.Hora_Salida_Real], ['Latitud', r.Lat_Salida], ['Longitud', r.Lon_Salida], ['Dentro de rango', r.Dentro_Rango_Salida]]),
@@ -183,12 +185,12 @@ async function paginaAgenda(query, admin) {
   }).join('');
 
   const pasada = fecha < hoy;
-  const ed = pasada ? null : require('./edicion'); // carga diferida: evita dependencia circular
+  const ed = require('./edicion'); // carga diferida: evita dependencia circular
   const maestrosDatos = ed ? await ed.maestros(false) : null;
   const aviso = pasada ? 'Fecha pasada: solo lectura.' : 'Modo editable: los servicios nuevos se guardan como Borrador hasta enviarlos.';
 
   const acciones = r => {
-    if (!ed || r._estado === 'Cancelado' || r.Hora_Entrada_Real) return '';
+    if (!ed || r._estado === 'Cancelado' || (!pasada && r.Hora_Entrada_Real)) return '';
     const id = esc(r.ID_Programacion);
     return `<button class="btn" data-id="${id}" onclick="tcEditar(this.dataset.id,false)">Editar</button>
       <button class="btn" data-id="${id}" onclick="tcEditar(this.dataset.id,true)">Reasignar</button>
@@ -202,7 +204,7 @@ async function paginaAgenda(query, admin) {
     const equipo = grupo.length > 1 ? ` <span title="${esc(grupo.map(x => x.Empleado).join(', '))}">👥${grupo.length}</span>` : '';
     return `<tr class="${r._estado === 'Cancelado' ? 'canc' : ''}">
       <td>${esc(horario)}</td><td>${esc(tipoDe(r))}</td><td>${esc(r.Cliente)}${equipo}</td><td>${esc(r.Empleado)}</td>
-      <td><span class="est ${esc(r._estado)}">${esc(r._estado)}</span>${accionPendiente(r) ? ' ⚠️' : ''}</td>
+      <td><span class="est ${esc(r._estado)}">${esc(r._estado)}</span> ${accionPendiente(r) ? ' ⚠️' : ''}</td>
       <td><details><summary>Detalle</summary>${lineaDeVida(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion])}</details></td>
       <td>${acciones(r)}</td></tr>`;
     
