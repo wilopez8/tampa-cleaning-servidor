@@ -129,8 +129,8 @@ function validarLote(normal, m, existentes) {
     else if (f.fin <= f.inicio) e.push('La hora de fin debe ser posterior a la de inicio');
 
     const comparables = otros.concat(normal.slice(0, i));
-    if (f.cliente && comparables.some(r => r.cliente === f.cliente && r.tipo === f.tipo)) {
-      e.push('Este cliente ya está programado ese día (mismo tipo de servicio)');
+    if (f.cliente && f.empleado && comparables.some(r => r.cliente === f.cliente && r.tipo === f.tipo && r.empleado === f.empleado)) {
+      e.push('Este empleado ya está asignado a este cliente ese día (mismo tipo de servicio)');
     }
     if (f.empleado && horasOk && f.fin > f.inicio) {
       const choque = comparables.find(r => r.empleado === f.empleado && cruza(f, r));

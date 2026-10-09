@@ -198,11 +198,14 @@ async function paginaAgenda(query, admin) {
 
   const filasHtml = visibles.length ? visibles.map(r => {
     const horario = (r.Hora_Inicio && r.Hora_Fin) ? `${r.Hora_Inicio}–${r.Hora_Fin}` : r.Horario;
+    const grupo = delDia.filter(x => x._estado !== 'Cancelado' && x.Cliente === r.Cliente && tipoDe(x) === tipoDe(r));
+    const equipo = grupo.length > 1 ? ` <span title="${esc(grupo.map(x => x.Empleado).join(', '))}">👥${grupo.length}</span>` : '';
     return `<tr class="${r._estado === 'Cancelado' ? 'canc' : ''}">
-      <td>${esc(horario)}</td><td>${esc(tipoDe(r))}</td><td>${esc(r.Cliente)}</td><td>${esc(r.Empleado)}</td>
+      <td>${esc(horario)}</td><td>${esc(tipoDe(r))}</td><td>${esc(r.Cliente)}${equipo}</td><td>${esc(r.Empleado)}</td>
       <td><span class="est ${esc(r._estado)}">${esc(r._estado)}</span>${accionPendiente(r) ? ' ⚠️' : ''}</td>
       <td><details><summary>Detalle</summary>${lineaDeVida(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion])}</details></td>
       <td>${acciones(r)}</td></tr>`;
+    
   }).join('') : '<tr><td colspan="7" style="text-align:center;color:#888;padding:24px;">No hay servicios para esta fecha o filtro.</td></tr>';
 
   const edad = edadCacheSegundos('PROGRAMACION_DIARIA');
