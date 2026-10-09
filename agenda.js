@@ -187,7 +187,7 @@ async function paginaAgenda(query, admin) {
   const pasada = fecha < hoy;
   const ed = require('./edicion'); // carga diferida: evita dependencia circular
   const maestrosDatos = ed ? await ed.maestros(false) : null;
-  const aviso = pasada ? 'Fecha pasada: solo lectura.' : 'Modo editable: los servicios nuevos se guardan como Borrador hasta enviarlos.';
+  const aviso = pasada ? 'Fecha pasada: registro retroactivo. Exige motivo, queda marcado y no envía WhatsApp.' : 'Modo editable: los servicios nuevos se guardan como Borrador hasta enviarlos.';
 
   const acciones = r => {
     if (!ed || r._estado === 'Cancelado' || (!pasada && r.Hora_Entrada_Real)) return '';
@@ -204,7 +204,7 @@ async function paginaAgenda(query, admin) {
     const equipo = grupo.length > 1 ? ` <span title="${esc(grupo.map(x => x.Empleado).join(', '))}">👥${grupo.length}</span>` : '';
     return `<tr class="${r._estado === 'Cancelado' ? 'canc' : ''}">
       <td>${esc(horario)}</td><td>${esc(tipoDe(r))}</td><td>${esc(r.Cliente)}${equipo}</td><td>${esc(r.Empleado)}</td>
-      <td><span class="est ${esc(r._estado)}">${esc(r._estado)}</span> ${accionPendiente(r) ? ' ⚠️' : ''}</td>
+      <td><span class="est ${esc(r._estado)}">${esc(r._estado)}</span>${r.Registro_Retroactivo === 'Sí' ? ` <span class="est" style="background:#fecaca" title="${esc(r.Motivo_Retroactivo)}">Retroactivo</span>` : ''}${r.Origen_Registro === 'Manual' ? ' ✍️' : ''}${accionPendiente(r) ? ' ⚠️' : ''}</td>
       <td><details><summary>Detalle</summary>${lineaDeVida(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion])}</details></td>
       <td>${acciones(r)}</td></tr>`;
     
