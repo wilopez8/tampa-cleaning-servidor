@@ -215,7 +215,7 @@ async function paginaAgenda(query, admin) {
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Agenda ${fecha}</title><style>${CSS}${ed ? ed.CSS_EDITOR : ''}</style></head><body>
 <div class="top"><h2 style="margin:0;">Agenda — ${diaSemana(fecha)} ${fecha}</h2>
-  <div>${esc(admin)} · <a href="/logout">Cerrar sesión</a></div></div>
+  <div>${esc(admin)} · <a href="/pendientes">Pendientes</a> · <a href="/logout">Cerrar sesión</a></div></div>
 <div class="nav">
   <a class="btn" href="/agenda?fecha=${sumarDias(fecha, -1)}">←</a>
   <a class="btn hoy" href="/agenda?fecha=${hoy}">Hoy</a>

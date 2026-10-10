@@ -5,6 +5,7 @@ const app = express();
 app.set('trust proxy', 1); // Render va detrás de un proxy; así req.ip es la IP real
 const auth = require('./auth');
 const edicion = require('./edicion');
+const pend = require('./pendientes');
 const { invalidarCache, edadCacheSegundos } = require('./sheets');
 const { paginaAgenda } = require('./agenda');
 
@@ -208,7 +209,6 @@ app.post('/webhook', async (req, res) => {
   const texto = (req.body.Body || '').trim();
   const numMedia = parseInt(req.body.NumMedia || '0', 10);
   const fotoUrl = numMedia > 0 ? req.body.MediaUrl0 : '';
-
   const contieneQueja = /\bquejas?\b/i.test(texto);
   const contieneDuda = /\bdudas?\b/i.test(texto);
   const esComandoAviso = /^aviso\s+/i.test(texto);
@@ -216,13 +216,19 @@ app.post('/webhook', async (req, res) => {
 
   let respuesta = null; // null = no responder nada
   try {
-    const respuestaConfirmacion = texto ? await procesarRespuestaConfirmacion(telefono, texto) : null;
-    const respuestaAvisoRecibido = (!respuestaConfirmacion && texto) ? await procesarConfirmacionAviso(telefono, texto) : null;
+    const respuestaPend = (texto && req.body.OriginalRepliedMessageSid) ? await pend.procesarReply(telefono, texto, req.body.OriginalRepliedMessageSid) : null;
+    const respuestaConfirmacion = (!respuestaPend && texto) ? await procesarRespuestaConfirmacion(telefono, texto) : null;
+    const respuestaAvisoRecibido = (!respuestaPend && !respuestaConfirmacion && texto) ? await procesarConfirmacionAviso(telefono, texto) : null;
+    const respuestaOkPend = (!respuestaPend && !respuestaConfirmacion && !respuestaAvisoRecibido && texto) ? await pend.procesarOkSinReply(telefono, texto) : null;
 
-    if (respuestaConfirmacion) {
+    if (respuestaPend) {
+      respuesta = respuestaPend;
+    } else if (respuestaConfirmacion) {
       respuesta = respuestaConfirmacion;
     } else if (respuestaAvisoRecibido) {
       respuesta = respuestaAvisoRecibido;
+    } else if (respuestaOkPend) {
+      respuesta = respuestaOkPend;
     } else if (esComandoAviso) {
       respuesta = await procesarAviso(telefono, texto);
     } else if (contieneQueja) {
@@ -309,6 +315,30 @@ app.post('/agenda/enviar', auth.requiereAdmin, async (req, res) => {
     res.status(500).json({ ok: false, general: 'Error: ' + err.message });
   }
 });
+
+app.get('/pendientes', auth.requiereAdmin, async (req, res) => {
+  try { res.set('Content-Type', 'text/html; charset=utf-8'); res.send(await pend.paginaPendientes(req.query, req.admin)); }
+  catch (err) { console.error('Error en GET /pendientes:', err); res.status(500).send('Error: ' + err.message); }
+});
+const apiPend = (ruta, fn) => app.post(ruta, auth.requiereAdmin, async (req, res) => {
+  try { res.json(await fn(req)); }
+  catch (err) { console.error('Error en POST ' + ruta, err); res.status(500).json({ ok: false, general: 'Error: ' + err.message }); }
+});
+apiPend('/pendientes/guardar', r => pend.guardar({ filas: r.body.filas, admin: r.admin, enviar: !!r.body.enviar, soloEnviar: !!r.body.soloEnviar }));
+apiPend('/pendientes/cerrar', r => pend.cerrar({ id: r.body.id, nota: r.body.nota, por: r.admin, via: 'Agenda web' }));
+apiPend('/pendientes/cancelar', r => pend.cancelar({ id: r.body.id, motivo: r.body.motivo, admin: r.admin }));
+apiPend('/pendientes/recordar', r => pend.recordar({ id: r.body.id, responsable: r.body.responsable }, r.admin));
+
+// Página del empleado (enlace único por pendiente, igual que /cierre)
+app.get('/pendiente', async (req, res) => {
+  try { const r = await pend.obtener(String(req.query.id || '')); res.set('Content-Type', 'text/html; charset=utf-8'); res.send(pend.paginaPendienteEmpleado(r && r.p)); }
+  catch (err) { console.error('Error en GET /pendiente:', err); res.status(500).send('Error cargando el pendiente.'); }
+});
+app.post('/pendiente', async (req, res) => {
+  try { res.set('Content-Type', 'text/html; charset=utf-8'); res.send(await pend.procesarPendienteWeb(req.body)); }
+  catch (err) { console.error('Error en POST /pendiente:', err); res.status(500).send('Error guardando.'); }
+});
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

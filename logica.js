@@ -639,4 +639,4 @@ async function datosClienteVivo(nombre) {
   return { direccion: '', maps: '', descripcion: '', instrucciones: '' };
 }
 
-module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION, enviarProgramacionFecha, notificarCambioPostEnvio, registrarCambio, enviarWhatsApp };
+module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION, enviarProgramacionFecha, notificarCambioPostEnvio, registrarCambio, enviarWhatsApp, buscarTelefonoPorNombre, buscarEmpleadoPorTelefono, BASE_URL };
