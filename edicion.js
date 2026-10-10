@@ -438,7 +438,7 @@ ${retro ? '<div class="retro"><b>Registro retroactivo.</b> Fecha pasada: exige m
     var motivo=RETRO?document.getElementById('gmotivo').value.trim():'';
     if(RETRO&&motivo.length<3){estado('Escribe el motivo del registro retroactivo.',false);return;}
     var b=this; b.disabled=true;
-    llamar('/agenda/guardar',{fecha:FECHA,filas:f,motivo:motivo})
+    llamar('/agenda/guardar',{fecha:FECHA,filas:f,motivo:motivo}).then(function(r){
       b.disabled=false; if(!r)return;
       if(r.general){estado(r.general,false);return;}
       if(!r.ok){pintar(r.errores);estado('No se guardó: revisa las filas marcadas.',false);return;}
