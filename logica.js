@@ -11,11 +11,12 @@ function soloDigitos(texto) {
 }
 
 async function enviarWhatsApp(numeroConPrefijo, texto) {
-  await clienteTwilio.messages.create({
+  const m = await clienteTwilio.messages.create({
     from: TWILIO_WHATSAPP_FROM,
     to: numeroConPrefijo,
     body: texto,
   });
+  return m.sid;
 }
 
 async function notificarGerencia(mensaje, nivel) {
@@ -638,4 +639,4 @@ async function datosClienteVivo(nombre) {
   return { direccion: '', maps: '', descripcion: '', instrucciones: '' };
 }
 
-module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION, enviarProgramacionFecha, notificarCambioPostEnvio, registrarCambio };
+module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION, enviarProgramacionFecha, notificarCambioPostEnvio, registrarCambio, enviarWhatsApp };

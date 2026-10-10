@@ -1,6 +1,6 @@
 const express = require('express');
 const { leerHoja } = require('./sheets');
-const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION } = require('./logica');
+const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION, enviarWhatsApp  } = require('./logica');
 const app = express();
 app.set('trust proxy', 1); // Render va detrás de un proxy; así req.ip es la IP real
 const auth = require('./auth');
@@ -199,6 +199,17 @@ app.post('/cierre', async (req, res) => {
   }
 });
 
+app.get('/test-reply', auth.requiereAdmin, async (req, res) => {
+  const tel = String(req.query.tel || '').replace(/\D/g, '');
+  if (tel.length < 10) return res.status(400).send('Falta ?tel=NUMERO con código de país, ej. 1813XXXXXXX');
+  try {
+    const a = await enviarWhatsApp(`whatsapp:+${tel}`, 'Prueba A: responde con Reply a ESTE mensaje escribiendo: ok A');
+    const b = await enviarWhatsApp(`whatsapp:+${tel}`, 'Prueba B: responde con Reply a ESTE mensaje escribiendo: ok B');
+    res.send(`Enviados. SID A=${a} | SID B=${b}`);
+  } catch (err) { res.status(500).send('Error: ' + err.message); }
+});
+
+
 // Aqui es donde Twilio manda cada mensaje de WhatsApp
 app.post('/webhook', async (req, res) => {
   const telefono = (req.body.From || '').replace('whatsapp:', '');
@@ -211,6 +222,9 @@ app.post('/webhook', async (req, res) => {
   const contieneQueja = /\bquejas?\b/i.test(texto);
   const contieneDuda = /\bdudas?\b/i.test(texto);
   const esComandoAviso = /^aviso\s+/i.test(texto);
+    
+  console.log('TEST-REPLY', JSON.stringify({ Body: texto, Original: req.body.OriginalRepliedMessageSid || null,
+  CamposReply: Object.keys(req.body).filter(k => /repl|context/i.test(k)) }));
 
   let respuesta = null; // null = no responder nada
   try {
