@@ -621,7 +621,7 @@ async function procesarInspeccionFormulario(body) {
     `Inspección finalizada — ${cliente} (${supervisor})\n` +
     `Resultado por área: ${resumenAreas}\n` +
     `Hallazgos: ${hallazgos}\n` +
-    `¿Requiere acción correctiva?: ${requiereAccion ? 'Sí' : 'No'}`,
+    `¿Requiere acción correctiva?: ${requiereAccion ? `Sí — si procede, crea un pendiente en ${BASE_URL}/pendientes (ID del servicio: ${idProgramacion})` : 'No'}`,
     nivel
   );
 }

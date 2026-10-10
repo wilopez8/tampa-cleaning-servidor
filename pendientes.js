@@ -69,6 +69,7 @@ function validar(normal, m) {
       if (!HORA.test(f.inicio) || !HORA.test(f.fin)) e.push('Horario incompleto');
       else if (f.fin <= f.inicio) e.push('La hora de fin debe ser posterior a la de inicio');
     }
+    if (f.idServ && !m.idsServicios.has(f.idServ)) e.push('El ID de servicio no existe');
     return e;
   });
 }
@@ -79,9 +80,15 @@ async function _crear(filas, admin) {
   const normal = filas.map(f => ({
     tipo: limpio(f.tipo) || 'Otro', titulo: limpio(f.titulo).slice(0, 150), cliente: limpio(f.cliente), responsable: limpio(f.responsable),
     fecha: limpio(f.fecha), inicio: limpio(f.inicio), fin: limpio(f.fin), prioridad: limpio(f.prioridad) || 'Normal', obs: limpio(f.obs).slice(0, 800),
+    idServ: limpio(f.idServ),
   }));
   if (normal.every(vacia)) return { ok: false, general: 'No hay filas para guardar.' };
-  const errores = validar(normal, await edicion.maestros(true));
+
+  const maestro = await edicion.maestros(true);
+  const prog = await leerHoja('PROGRAMACION_DIARIA');
+  maestro.idsServicios = new Set(prog.slice(1).map(r => String(r[prog[0].indexOf('ID_Programacion')] || '')).filter(Boolean));
+  const errores = validar(normal, maestro);
+
   if (errores.some(e => e.length)) return { ok: false, errores };
 
   await asegurarHoja(HOJA, ENC);
@@ -95,7 +102,7 @@ async function _crear(filas, admin) {
   normal.forEach(f => {
     if (vacia(f)) return;
     const id = pref + String(++max).padStart(2, '0');
-    const o = { ID_Pendiente: id, Tipo: f.tipo, Titulo: f.titulo, Observaciones: f.obs, Cliente: f.cliente, Responsable: f.responsable,
+    const o = { ID_Programacion: f.idServ, ID_Pendiente: id, Tipo: f.tipo, Titulo: f.titulo, Observaciones: f.obs, Cliente: f.cliente, Responsable: f.responsable,
       Fecha_Limite: f.fecha, Hora_Inicio: f.inicio, Hora_Fin: f.fin, Prioridad: f.prioridad, Estado: 'Abierto', Estado_Envio: 'Borrador',
       Creado_Por: admin, Fecha_Creacion: ahora() };
     nuevas.push(ENC.map(n => o[n] ?? '')); ids.push(id);
@@ -260,7 +267,7 @@ async function paginaPendientes(query, admin) {
       <button class="btn" data-id="${id}" onclick="tpCancelar(this.dataset.id)">Cancelar</button>` : '';
     const det = [['Observaciones', p.Observaciones], ['Seguimiento', p.Notas_Seguimiento], ['Cierre', p.Nota_Cierre && `${p.Nota_Cierre} — ${p.Cerrado_Por} ${p.Fecha_Cierre}`], ['Creado', `${p.Creado_Por} ${p.Fecha_Creacion}`], ['Último recordatorio', p.Ultimo_Recordatorio]]
       .filter(x => x[1]).map(x => `<div><small>${esc(x[0])}</small><br><span style="white-space:pre-wrap">${esc(x[1])}</span></div>`).join('');
-    return `<tr><td>${id}</td><td>${esc(p.Tipo)}</td><td>${p.Prioridad === 'Alta' ? '<span class="alta">❗</span> ' : ''}${esc(p.Titulo)}<details><summary><small>Detalle</small></summary>${det}</details></td>
+        return `<tr><td>${id}</td><td>${esc(p.Tipo)}</td><td>${p.Prioridad === 'Alta' ? '<span class="alta">❗</span> ' : ''}${esc(p.Titulo)}${p.ID_Programacion ? `<br><small>Servicio: ${esc(p.ID_Programacion)}</small>` : ''}<details><summary><small>Detalle</small></summary>${det}</details></td>
       <td>${esc(p.Cliente)}</td><td>${esc(p.Responsable)}</td><td>${esc(fechaLeg(p.Fecha_Limite))}${p.Hora_Inicio ? `<br><small>${esc(hora(p.Hora_Inicio))}–${esc(hora(p.Hora_Fin))}</small>` : ''}</td>
       <td><span class="est ${esc(p.Estado)}">${esc(p.Estado)}</span>${v ? ' <span class="est venc">Vencido</span>' : ''}<br><small>${esc(p.Estado_Envio)}</small></td><td>${acc}</td></tr>`;
   }).join('') : '<tr><td colspan="8" style="text-align:center;color:#888;padding:24px;">No hay pendientes con este filtro.</td></tr>';
@@ -274,7 +281,7 @@ async function paginaPendientes(query, admin) {
 ${sel('tipo', 'Todos los tipos', TIPOS, f.tipo)}<label><input type="checkbox" name="vencidos" value="1"${f.venc ? ' checked' : ''}> Solo vencidos</label>
 <button class="btn">Filtrar</button> <a class="btn" href="/pendientes?estado=">Todos</a> <a class="btn" href="/pendientes">Limpiar</a>
 ${f.responsable ? `<button type="button" class="btn" onclick="tpRecordarEmp(${esc(js(f.responsable))})">Recordar los abiertos de ${esc(f.responsable)}</button>` : ''}</form>
-<table><tr><th>ID</th><th>Tipo</th><th>Pendiente</th><th>Cliente</th><th>Responsable</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr>${rows}</table>
+<table><tr><th>ID</th><th>Tipo</th><th>Pendiente</th><th>Cliente</th><th>ID servicio</th><th>Responsable</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr>${rows}</table>
 <script>
 (function(){
   var M=${js({ clientes: m.clientes.map(c => c.n), empleados: m.empleados.map(e => ({ n: e.n, wa: e.wa })) })}, TIPOS=${js(TIPOS)}, PRIOS=${js(PRIOS)};
@@ -287,6 +294,7 @@ ${f.responsable ? `<button type="button" class="btn" onclick="tpRecordarEmp(${es
     tr.appendChild(td(sel('t',TIPOS,'Otro')));
     tr.appendChild(td(el('input',{type:'text',className:'ti',placeholder:'Título',maxLength:150})));
     tr.appendChild(td(sel('c',M.clientes,'','(sin cliente)')));
+    tr.appendChild(td(el('input',{type:'text',className:'sv',placeholder:'PRG-AAAAMMDD-NN',size:16})));
     tr.appendChild(td(sel('r',M.empleados,'','Responsable…')));
     tr.appendChild(td(el('input',{type:'date',className:'fe'})));
     var h=el('td');h.appendChild(el('input',{type:'time',className:'i'}));h.appendChild(document.createTextNode(' – '));h.appendChild(el('input',{type:'time',className:'f'}));tr.appendChild(h);
@@ -296,8 +304,8 @@ ${f.responsable ? `<button type="button" class="btn" onclick="tpRecordarEmp(${es
     tr.appendChild(td(el('button',{type:'button',className:'btn',textContent:'✕',onclick:function(){tr.remove();}})));
     cuerpo.appendChild(tr);
   }
-  function leer(){return Array.prototype.map.call(cuerpo.rows,function(tr){var q=function(c){return tr.querySelector('.'+c).value;};
-    return {tipo:q('t'),titulo:q('ti'),cliente:q('c'),responsable:q('r'),fecha:q('fe'),inicio:q('i'),fin:q('f'),prioridad:q('p'),obs:q('o')};});}
+  function leer(){return Array.prototype.map.call(cuerpo.rows, function(tr){var q=function(c){return tr.querySelector('.'+c).value;};
+    return {tipo:q('t'),titulo:q('ti'),cliente:q('c'),idServ:q('sv'),responsable:q('r'),fecha:q('fe'),inicio:q('i'),fin:q('f'),prioridad:q('p'),obs:q('o')};});}
   function post(u,d){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(d)})
     .then(function(r){if(r.status===401){location.href='/login?volver='+encodeURIComponent(location.pathname+location.search);return null;}return r.json();});}
   function guardar(enviar,b){
@@ -307,7 +315,7 @@ ${f.responsable ? `<button type="button" class="btn" onclick="tpRecordarEmp(${es
     post('/pendientes/guardar',{filas:f,enviar:enviar,soloEnviar:false}).then(function(r){
       b.disabled=false;if(!r)return;
       if(r.general){msg.textContent=r.general;return;}
-      if(!r.ok){Array.prototype.forEach.call(cuerpo.rows,function(tr,i){tr.cells[8].textContent=((r.errores&&r.errores[i])||[]).join(' · ');});msg.textContent='No se guardó: revisa las filas marcadas.';return;}
+      if(!r.ok){Array.prototype.forEach.call(cuerpo.rows,function(tr,i){tr.cells[9].textContent=((r.errores&&r.errores[i])||[]).join(' · ');});msg.textContent='No se guardó: revisa las filas marcadas.';return;}
       var t='Creados: '+r.creados;
       if(enviar){t+='\\nEnviados: '+r.enviados;if(r.sinNumero&&r.sinNumero.length)t+='\\nSin WhatsApp: '+r.sinNumero.join(', ');if(r.fallidos&&r.fallidos.length)t+='\\nFallaron: '+r.fallidos.join(', ')+' (siguen en Borrador)';}
       alert(t);location.reload();

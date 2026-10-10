@@ -33,7 +33,7 @@ function estadoDe(r) {
   return 'Borrador';
 }
 const tipoDe = r => r.Tipo_Servicio || 'Limpieza';
-const accionPendiente = r => r.Requiere_Accion_Correctiva === 'Sí' && r.Estado_Correccion === 'Pendiente';
+const accionPendiente = r => !!r._accion;
 
 function estadoDia(regs, fecha, hoy) {
   const activos = regs.filter(r => r._estado !== 'Cancelado');
@@ -59,6 +59,15 @@ async function filasDelRango(desde, hasta) {
     filas.push(r);
   }
   return filas;
+}
+
+async function cargarPendientes() {
+  try {
+    const datos = await leerHoja('PENDIENTES', { cache: true });
+    if (datos.length < 2) return [];
+    const h = datos[0];
+    return datos.slice(1).map(f => { const p = {}; h.forEach((n, j) => { p[n] = f[j] === undefined ? '' : String(f[j]); }); return p; }).filter(p => p.ID_Pendiente);
+  } catch (e) { return []; }
 }
 
 async function quejasPorServicio(ids) {
@@ -104,11 +113,12 @@ function bloque(titulo, pares) {
   return `<div class="bloque"><h4>${esc(titulo)}</h4>${cuerpo}</div>`;
 }
 
-function lineaDeVida(r, quejas, cambios) {
+function lineaDeVida(r, quejas, cambios, pends) {
   const c = (cambios || []).map(x => `${x.Fecha_Hora} · ${x.Realizado_Por}: ${x.Tipo_Cambio} — ${x.Detalle}${x.Empleado_Notificado ? ` (avisó a ${x.Empleado_Notificado}: ${x.Aviso_Enviado})` : ` (${x.Aviso_Enviado})`}`).join('\n');
   const horario = (r.Hora_Inicio && r.Hora_Fin) ? `${r.Hora_Inicio} – ${r.Hora_Fin}` : r.Horario;
   const maps = /^https?:\/\//i.test(r.Google_Maps_Link) ? { __html: `<a href="${esc(r.Google_Maps_Link)}" target="_blank" rel="noopener">Abrir mapa</a>` } : r.Google_Maps_Link;
   const q = (quejas || []).map(x => `${x.Tipo} (${x.Estado}): ${x.Descripcion}`).join('\n');
+  const pv = (pends || []).map(p => `${p.ID_Pendiente} (${p.Estado}${p.Responsable ? ', ' + p.Responsable : ''}): ${p.Titulo}`).join('\n');
   return '<div class="vida">' + [
     bloque('Programación', [['ID', r.ID_Programacion], ['Horario', horario], ['Dirección', r.Direccion], ['Mapa', maps],
       ['Descripción', r.Descripcion_Servicio], ['Instrucciones', r.Instrucciones], ['Observaciones del día', r.Observaciones_Puntuales],
@@ -123,6 +133,7 @@ function lineaDeVida(r, quejas, cambios) {
     bloque('Inspección', [['Servicio inspeccionado', r.ID_Servicio_Inspeccionado], ['Resultado', r.Resultado_Inspeccion], ['Requiere acción correctiva', r.Requiere_Accion_Correctiva], ['Estado corrección', r.Estado_Correccion]]),
     bloque('Avisos', [['Avisos durante el servicio', r.Avisos_Durante_Servicio], ['Aviso confirmado', r.Aviso_Confirmado]]),
     bloque('Cambios posteriores al envío', [['Registro', c]]),
+    bloque('Pendientes vinculados', [['Lista', pv]]),
     bloque('Quejas y dudas', [['Asociadas', q]]),
   ].join('') + '</div>';
 }
@@ -161,6 +172,23 @@ async function paginaAgenda(query, admin) {
   const domingo = sumarDias(lunes, 6);
 
   const filasSemana = await filasDelRango(lunes, domingo);
+  const todosPend = await cargarPendientes();
+  const porServ = {};
+  todosPend.forEach(p => { if (p.ID_Programacion) (porServ[p.ID_Programacion] = porServ[p.ID_Programacion] || []).push(p); });
+  filasSemana.forEach(r => {
+    const l = porServ[r.ID_Programacion] || [];
+    r._accion = l.some(p => p.Estado === 'Abierto') || (!l.length && r.Requiere_Accion_Correctiva === 'Sí' && r.Estado_Correccion === 'Pendiente');
+  });
+  const enFecha = todosPend.filter(p => {
+    if (p.Estado !== 'Abierto') return false;
+    const f = normalizarFecha(p.Fecha_Limite);
+    return f === fecha || (fecha === hoy && fechaValida(f) && f < hoy);
+  });
+  const franja = enFecha.length ? `<div class="aviso" style="background:#fff7ed">📌 <b>Pendientes (${enFecha.length})</b> · <a href="/pendientes">Ver todos</a><br>${enFecha.map(p => {
+    const f = normalizarFecha(p.Fecha_Limite);
+    return `${esc(p.ID_Pendiente)} — ${esc(p.Titulo)} · ${esc(p.Responsable)}${p.Hora_Inicio ? ' · ' + esc(p.Hora_Inicio) : ''}${fechaValida(f) && f < hoy ? ' · <b>vencido</b>' : ''}`;
+  }).join('<br>')}</div>` : '';
+
   const delDia = filasSemana.filter(r => r._fecha === fecha);
   const quejas = await quejasPorServicio(new Set(delDia.map(r => r.ID_Programacion)));
   const cambios = await cambiosPorServicio(new Set(delDia.map(r => r.ID_Programacion)));
@@ -205,7 +233,7 @@ async function paginaAgenda(query, admin) {
     return `<tr class="${r._estado === 'Cancelado' ? 'canc' : ''}">
       <td>${esc(horario)}</td><td>${esc(tipoDe(r))}</td><td>${esc(r.Cliente)}${equipo}</td><td>${esc(r.Empleado)}</td>
       <td><span class="est ${esc(r._estado)}">${esc(r._estado)}</span>${r.Registro_Retroactivo === 'Sí' ? ` <span class="est" style="background:#fecaca" title="${esc(r.Motivo_Retroactivo)}">Retroactivo</span>` : ''}${r.Origen_Registro === 'Manual' ? ' ✍️' : ''}${accionPendiente(r) ? ' ⚠️' : ''}</td>
-      <td><details><summary>Detalle</summary>${lineaDeVida(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion])}</details></td>
+      <td><details><summary>Detalle</summary>${lineaDeVida(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion], porServ[r.ID_Programacion])}</details></td>
       <td>${acciones(r)}</td></tr>`;
     
   }).join('') : '<tr><td colspan="7" style="text-align:center;color:#888;padding:24px;">No hay servicios para esta fecha o filtro.</td></tr>';
@@ -228,6 +256,7 @@ async function paginaAgenda(query, admin) {
 <div class="semana">${tira}</div>
 <div class="aviso">${aviso}</div>
 ${ed ? ed.editorHtml(fecha, maestrosDatos, delDia) : ''}
+${franja}
 <form class="filtros" method="GET" action="/agenda"><input type="hidden" name="fecha" value="${fecha}">
   ${sel('cliente', 'Todos los clientes', unicos('Cliente'))}${sel('empleado', 'Todos los empleados', unicos('Empleado'))}
   ${sel('estado', 'Todos los estados', ESTADOS)}${sel('tipo', 'Todos los tipos', ['Limpieza', 'Inspeccion'])}
