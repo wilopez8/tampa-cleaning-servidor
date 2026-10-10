@@ -256,6 +256,13 @@ Las escrituras de pendientes usan su propia cola en memoria (mismo patrón que l
 - **Retirar `CLAVE_ADMIN` y `/enviar-programacion`** una vez que todos usen la agenda para enviar.
 - **Bloqueo de login y colas de escrituras en memoria** (agenda y pendientes) — funcionan porque hay una sola instancia del servidor; si algún día se escala a varias instancias, habría que moverlos a un almacenamiento compartido.
 
+**Del mapa de problemas original** (los dolores que motivaron el sistema; aún sin resolver del todo):
+
+- **Nómina: horas y millas automáticas** — el registro ya es atómico (cada check-in es una fila en `REGISTRO_TURNOS`, y las horas reales quedan en la fila del servicio), pero todavía no se calculan las horas trabajadas por empleado ni el millaje entre servicios; el millaje se sigue sacando a mano en Google Maps.
+- **Historial de calidad al programar** — las quejas (`QUEJAS`) y las inspecciones solo se ven en el detalle de cada servicio. El objetivo original era ver el historial de quejas/observaciones **del cliente y del empleado** en el editor, al momento de programar.
+- **Cobranza: servicios pendientes por cliente** — al registrar un pago no se ve qué servicios tiene pendientes ese cliente; hoy hay que buscarlos a mano en la agenda. No está en el servidor.
+- **Tareas recurrentes** (ej. "aspirar los viernes" en oficinas) — los pendientes cubren tareas puntuales con seguimiento por WhatsApp, pero no se repiten solos: alguien tiene que crear cada uno. Falta la recurrencia programada.
+
 ---
 
 ## 10. Cómo hacer cambios de aquí en adelante
