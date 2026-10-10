@@ -113,7 +113,7 @@ function lineaDeVida(r, quejas, cambios) {
     bloque('Programación', [['ID', r.ID_Programacion], ['Horario', horario], ['Dirección', r.Direccion], ['Mapa', maps],
       ['Descripción', r.Descripcion_Servicio], ['Instrucciones', r.Instrucciones], ['Observaciones del día', r.Observaciones_Puntuales],
       ['Creado por', r.Creado_Por && `${r.Creado_Por} (${r.Fecha_Creacion})`], ['Modificado por', r.Modificado_Por && `${r.Modificado_Por} (${r.Fecha_Modificacion})`],
-      ['Cancelación', r.Cancelado === 'Sí' ? (r.Motivo_Cancelacion || 'Sí') : '']
+      ['Cancelación', r.Cancelado === 'Sí' ? (r.Motivo_Cancelacion || 'Sí') : ''],
       ['Retroactivo', r.Registro_Retroactivo === 'Sí' ? 'Sí — ' + r.Motivo_Retroactivo : ''], 
       ['Origen del registro', r.Origen_Registro] ]),
     bloque('Envío y confirmación', [['Envío', r.Estado_Envio], ['Confirmación', r.Estado_Confirmacion], ['Motivo "No puedo"', r.Motivo_No_Puede], ['Fecha/hora', r.Fecha_Hora_Confirmacion]]),
