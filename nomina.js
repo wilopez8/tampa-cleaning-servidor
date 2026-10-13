@@ -266,6 +266,7 @@ function cerrar({ empleado, semana, admin }) {
     const total = r2(montoH + mas - menos); // Fase 2 sumará aquí las millas
     const id = `LIQ-${lunes.replace(/-/g, '')}-${p2(liqs.filter(l => l._semana === lunes).length + 1)}`;
 
+    await asegurarHoja('NOMINA_DIAS', ND_HEADERS);
     await agregarFilas('NOMINA_DIAS', rows.map(c => [
       id, lunes, empleado, c.r.ID_Programacion, c.r._fecha, c.r.Cliente, c.r.Tipo_Servicio || 'Limpieza',
       t12(c.prog.ini), t12(c.prog.fin), t12(c.real.ini), t12(c.real.fin), t12(c.pago.ini), t12(c.pago.fin),
