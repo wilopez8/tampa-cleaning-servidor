@@ -1,13 +1,13 @@
 # Arquitectura — Sistema Tampa Cleaning
 
-**Última actualización:** 9 de octubre de 2026
+**Última actualización:** 13 de octubre de 2026
 **Propósito de este documento:** referencia técnica para entender cómo funciona el sistema, qué piezas lo componen y cómo se conectan.
 
 ---
 
 ## 1. Resumen en una frase
 
-Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su ubicación (check-in), confirmar su programación y reportar novedades. Un **servidor propio en Node.js** (hosteado en Render) procesa esos mensajes, valida la información contra **Google Sheets** (que funciona como base de datos central), y notifica a gerencia por WhatsApp cuando algo requiere atención. El cierre de cada servicio (checklist, insumos, comentario — o la evaluación por áreas, si el servicio es una inspección de calidad) se completa en una **página web propia**, generada por el mismo servidor — no se usa ninguna herramienta externa de formularios. Los administradores programan, editan, reasignan y cancelan servicios desde una **agenda web** protegida con clave (`/agenda`), también generada por el servidor. Desde esa misma sesión asignan **pendientes** (tareas sueltas como acciones correctivas o diligencias) que el empleado recibe por WhatsApp y cierra respondiendo "Ok".
+Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su ubicación (check-in), confirmar su programación y reportar novedades. Un **servidor propio en Node.js** (hosteado en Render) procesa esos mensajes, valida la información contra **Google Sheets** (que funciona como base de datos central), y notifica a gerencia por WhatsApp cuando algo requiere atención. El cierre de cada servicio (checklist, insumos, comentario — o la evaluación por áreas, si el servicio es una inspección de calidad) se completa en una **página web propia**, generada por el mismo servidor — no se usa ninguna herramienta externa de formularios. Los administradores programan, editan, reasignan y cancelan servicios desde una **agenda web** protegida con clave (`/agenda`), también generada por el servidor. Desde esa misma sesión asignan **pendientes** (tareas sueltas como acciones correctivas o diligencias) que el empleado recibe por WhatsApp y cierra respondiendo "Ok". Además calculan la **nómina semanal** (`/nomina`): horas pagadas por servicio a partir de lo programado y del check-in, propinas/bonos/descuentos, y cierre de la liquidación de cada empleado.
 
 ---
 
@@ -18,6 +18,7 @@ Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su 
 3. **Cierre de servicio propio:** el cierre se resuelve con una **página HTML generada por el propio servidor** — mismo patrón que todo lo demás, sin depender de configuración externa.
 4. **Versión actual — agenda de administración:** la programación ya no se llena a mano en el Sheets. Se agregó un panel web (`/agenda`) con inicio de sesión por administrador, validaciones antes de guardar, envío por WhatsApp desde el mismo panel y registro de todo cambio hecho después de enviar. Mismo principio: HTML generado por el servidor, sin frameworks ni herramientas externas.
 5. **Pendientes y registro retroactivo:** se agregó un módulo de **pendientes** (tareas fuera de la programación diaria, con seguimiento por WhatsApp) para cubrir, entre otras cosas, el seguimiento de acciones correctivas de las inspecciones. Las fechas pasadas de la agenda dejaron de ser de solo lectura: ahora admiten **registro retroactivo** (con motivo obligatorio, marcado y sin enviar WhatsApp).
+6. **Nómina semanal (fase 1 — horas):** se agregó `/nomina`, que calcula lo que se paga a cada empleado por semana (lunes a domingo) con los datos que ya existían en `PROGRAMACION_DIARIA` (horario programado + horas reales del check-in). Permite ajustes manuales con motivo, conceptos adicionales (propinas, bonos, descuentos) y cerrar la liquidación de cada empleado, que queda congelada en el Sheets. El millaje queda para la fase 2.
 
 ---
 
@@ -27,7 +28,7 @@ Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su 
 |---|---|---|
 | **WhatsApp** | Interfaz que usan los empleados y gerencia | App de WhatsApp de cada persona |
 | **Twilio** | Traduce entre WhatsApp y el servidor (recibe mensajes entrantes, envía salientes) | Cuenta en twilio.com — actualmente en modo **Sandbox** (pendiente migrar a número verificado) |
-| **Servidor Node.js** | Toda la lógica de negocio y las páginas web del sistema (formulario de cierre, login, agenda, pendientes) | Hosteado en Render.com (`tampa-cleaning-servidor.onrender.com`), código en GitHub |
+| **Servidor Node.js** | Toda la lógica de negocio y las páginas web del sistema (formulario de cierre, login, agenda, pendientes, nómina) | Hosteado en Render.com (`tampa-cleaning-servidor.onrender.com`), código en GitHub |
 | **Google Sheets** | Base de datos central | `Tampa_Cleaning_BUILD` (Google Drive) |
 | **Google Cloud (cuenta de servicio)** | Permite que el servidor lea/escriba en Sheets sin intervención humana | Proyecto `tampa-cleaning-509423` |
 
@@ -37,12 +38,13 @@ Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su 
 
 ```
 tampa-cleaning-servidor/
-├── index.js       → Rutas HTTP: webhook de Twilio, programación, formulario de cierre / inspección, login, agenda, pendientes
+├── index.js       → Rutas HTTP: webhook de Twilio, programación, formulario de cierre / inspección, login, agenda, pendientes (las de nómina las registra nomina.js)
 ├── logica.js      → Lógica de negocio de WhatsApp: check-in, envío de programación, confirmaciones, avisos de cambio, cierre
 ├── auth.js        → Inicio de sesión de administradores (claves, cookie firmada, bloqueo por intentos fallidos)
 ├── agenda.js      → Página /agenda: vista semanal/diaria, filtros, "línea de vida" de cada servicio, franja de pendientes del día
 ├── edicion.js     → Editor de la agenda: validaciones, crear/editar/reasignar, cancelar, guardar y enviar, registro retroactivo
 ├── pendientes.js  → Pendientes: página /pendientes, envío y recordatorios por WhatsApp, respuestas "Ok"/"Pendiente", página del empleado
+├── nomina.js      → Nómina semanal: página /nomina, cálculo de horas pagadas, ajustes, conceptos adicionales, cierre/reapertura de liquidaciones (registra sus rutas con nomina.rutas(app, auth))
 ├── sheets.js      → Módulo genérico de lectura/escritura a Google Sheets (con caché corta opcional)
 ├── package.json   → Dependencias: express, googleapis, twilio (el login usa `crypto`, incluido en Node)
 ├── CLAUDE.md      → Guía para Claude Code (resumen técnico del repositorio)
@@ -67,12 +69,18 @@ tampa-cleaning-servidor/
 | `POST /pendientes/cerrar` | Sesión | Marca un pendiente como Resuelto (nota opcional) |
 | `POST /pendientes/cancelar` | Sesión | Cancela un pendiente con motivo |
 | `POST /pendientes/recordar` | Sesión | Reenvía recordatorio de un pendiente (`id`) o de todos los abiertos de un empleado (`responsable`) |
+| `GET /nomina?fecha=&empleado=` | Sesión | Nómina de la semana que contiene `fecha` (resumen por empleado; con `empleado`, su detalle) |
+| `POST /nomina/ajustar` | Sesión | Ajusta el horario pagado de un servicio, lo marca "Sin pago" o quita el ajuste (motivo obligatorio) |
+| `POST /nomina/concepto` | Sesión | Agrega una propina, bono, descuento u otro concepto a la semana de un empleado |
+| `POST /nomina/concepto/anular` | Sesión | Anula un concepto (motivo obligatorio) |
+| `POST /nomina/cerrar` | Sesión | Cierra (congela) la liquidación semanal de un empleado |
+| `POST /nomina/reabrir` | Sesión | Reabre una liquidación cerrada (motivo obligatorio) |
 | `GET/POST /pendiente?id=` | — (link único por pendiente) | Página del empleado para marcar el pendiente como resuelto o "sigue pendiente" |
 | `GET /test-sheets` | — | Prueba de conexión con Sheets |
 
 ### 4.2 Caché de lectura (`sheets.js`)
 
-`leerHoja(nombre)` sigue leyendo en vivo por defecto. Con `leerHoja(nombre, { cache: true })` devuelve datos de hasta **45 segundos** — lo usa solo la vista de la agenda para no releer el Sheets en cada clic. Toda escritura (`agregarFila`, `agregarFilas`, `actualizarCelda`, `actualizarCeldas`) invalida la caché de esa hoja. Las operaciones que **escriben** (guardar, cancelar, enviar) siempre releen en vivo antes de validar. La caché vive en memoria del proceso: se pierde al redesplegar, sin consecuencias.
+`leerHoja(nombre)` sigue leyendo en vivo por defecto. Con `leerHoja(nombre, { cache: true })` devuelve datos de hasta **45 segundos** — lo usan las vistas de la agenda y de la nómina (`PROGRAMACION_DIARIA`, `EMPLEADOS`, `CONFIG_NOMINA`) para no releer el Sheets en cada clic. Toda escritura (`agregarFila`, `agregarFilas`, `actualizarCelda`, `actualizarCeldas`) invalida la caché de esa hoja. Las operaciones que **escriben** (guardar, cancelar, enviar) siempre releen en vivo antes de validar. La caché vive en memoria del proceso: se pierde al redesplegar, sin consecuencias.
 
 Funciones nuevas en `sheets.js`: `actualizarCeldas` (varias celdas en una sola llamada), `agregarFilas` (varias filas a la vez), `asegurarHoja` (crea una pestaña con encabezados si no existe), `invalidarCache`, `edadCacheSegundos`.
 
@@ -211,13 +219,39 @@ Cada resolución o "sigue abierto" avisa a gerencia (✅ rutina) con la nota.
 
 Las escrituras de pendientes usan su propia cola en memoria (mismo patrón que la agenda). Las tres hojas de pendientes **se crean solas** con sus encabezados la primera vez que se usan.
 
+### 6.10 Nómina semanal (`/nomina`, `nomina.js`)
+
+**Fase 1: horas, propinas, bonos y descuentos.** El millaje todavía no se calcula (la línea "Millas" existe en los totales, siempre en $0, marcada "próxima fase"). La nómina **no envía WhatsApp** a nadie.
+
+**Vista.** Semana de lunes a domingo, con navegación (←, Esta semana, →, selector de fecha) y el mismo botón "Actualizar" de la agenda (misma caché de 45 s). Se llega desde el enlace **Nómina** en la cabecera de la agenda. Arriba, un **resumen por empleado**: servicios, horas pagadas, monto por horas, propinas y bonos, descuentos, total, cuántos servicios están "por revisar" y si la liquidación está Abierta o Cerrada. Al hacer clic en un empleado se ve su **detalle**: un renglón por servicio con lo programado, lo real (check-in, con ✍️ si fue registro manual), lo pagado, horas, tarifa, monto y estado; sus conceptos adicionales; y la caja de totales.
+
+**Cálculo de cada servicio** (los cancelados se ignoran):
+- **Horas pagadas** = desde el **inicio más tarde** hasta el **fin más temprano** entre lo programado (`Hora_Inicio`/`Hora_Fin`, o `Horario` si faltan) y lo real (`Hora_Entrada_Real`/`Hora_Salida_Real`). Es decir: no se paga llegar antes ni quedarse después de lo programado, y sí se descuenta llegar tarde o salir antes. Los turnos que cruzan medianoche se manejan.
+- **Tarifa** = columna `Tarifa_Hora` de `EMPLEADOS` (buscada por `Nombre`). Los **sábados** se suma `Recargo_Sabado_Hora` por hora (por defecto $1). Si falta la columna `Tarifa_Hora`, la página lo advierte y todo sale en $0.
+- **Estados:** `Calculado` (automático), `Ajustado` (lo fijó un administrador), `Sin pago` ($0 a propósito) o `Revisar` — sin check-in de entrada o de salida, sin horario programado, u horas pagadas ≤ 0. Un servicio de un empleado sin tarifa también cuenta como "por revisar". Lo que está en `Revisar` paga $0 hasta que se ajuste.
+
+**Ajustes (botón "Ajustar").** El administrador fija inicio/fin pagado con motivo obligatorio, o marca **"Sin pago"**. Dejar inicio y fin vacíos **quita el ajuste** y vuelve al cálculo automático. Cada ajuste se agrega como fila nueva en `NOMINA_AJUSTES` (nunca se edita): vale la **última** fila de cada `ID_Programacion`, y queda guardada como referencia lo programado y lo real de ese momento. No se puede ajustar un servicio de una semana ya cerrada para ese empleado.
+
+**Conceptos adicionales ("+ Agregar concepto").** Tipo (`Propina`, `Bono`, `Descuento`, `Otro`), descripción obligatoria, monto > 0 y, opcionalmente, el servicio relacionado. Reciben un ID `PAG-AAAAMMDD-NN` (por día de creación) y se guardan en `PAGOS_ADICIONALES`. Los descuentos restan; todo lo demás suma. Si la semana de ese empleado ya está cerrada, el concepto pasa **automáticamente a la siguiente semana abierta** y se avisa en pantalla. Se pueden **anular** con motivo (nunca se borran), salvo que pertenezcan a una liquidación cerrada.
+
+**Cierre de liquidación.** "Cerrar liquidación de …" solo se habilita si **no queda ningún servicio por revisar**. Al cerrar (siempre con datos frescos, sin caché):
+1. Se guarda una **foto** de cada servicio calculado en `NOMINA_DIAS` (programado, real, pagado, minutos, tarifa, recargo, monto, estado, motivo del ajuste).
+2. Se agrega la liquidación en `LIQUIDACIONES` con ID `LIQ-<lunes AAAAMMDD>-NN`, `Estado = Cerrada`, totales, quién y cuándo.
+3. Los conceptos de la semana quedan marcados con ese `ID_Liquidacion`.
+
+Una liquidación cerrada se muestra desde la foto, **no** desde el cálculo en vivo; si después cambiaron la agenda, la tarifa o la configuración, aparece un aviso ⚠️ de que el cálculo en vivo ya no coincide, pero lo cerrado no se toca. **Reabrir** pide motivo y marca la liquidación como `Reabierta` (con quién, cuándo y por qué); desde ahí vuelve el cálculo en vivo, y al cerrar de nuevo se crea una liquidación nueva (siguiente `NN`) — la anterior y su foto quedan como historial.
+
+**Configuración (`CONFIG_NOMINA`).** Pestaña `Clave` / `Valor` / `Descripcion` que se crea sola con valores por defecto: `Recargo_Sabado_Hora` = 1 (en uso) y, para la fase 2 de millas, `Tarifa_Milla` = 0.37, `Umbral_Millas_Dia` = 10, `Servicios_Pago_Siempre` = 2 y `Umbral_Tarifa_Fija` = 20 (todavía no se usan). Los valores se cambian directamente en el Sheets.
+
+Agregar concepto, anular, cerrar y reabrir pasan por una cola en memoria propia de la nómina (mismo patrón que agenda y pendientes), para no generar IDs repetidos ni cerrar dos veces la misma semana.
+
 ---
 
 ## 7. Estructura de las hojas de Google Sheets relevantes
 
 | Hoja | Contiene |
 |---|---|
-| `EMPLEADOS` | Nombre, número de WhatsApp (columna `ID_Telegram`, heredada), `Rol`, `Estatus` (solo los `Activo` aparecen en la agenda) |
+| `EMPLEADOS` | Nombre, número de WhatsApp (columna `ID_Telegram`, heredada), `Rol`, `Estatus` (solo los `Activo` aparecen en la agenda), `Tarifa_Hora` (USD por hora, para la nómina — se crea a mano) |
 | `CLIENTES` | Nombre (columna `clientes`), `Direccion`, `Google Maps`, `Descripcion_Servicio`, `Instrucciones`, `Cliente Vigente/Vencido`. Es la fuente **en vivo** de dirección/instrucciones cuando la fila de programación no las trae |
 | `SITIOS` | `Nombre_Cliente`, coordenadas GPS (`Latitud`, `Longitud`) y radio de tolerancia para geofencing, `Checklist_Tareas` (lista separada por comas) para el formulario de cierre, `Estatus` |
 | `PROGRAMACION_DIARIA` | El corazón del sistema — un renglón por servicio, con columnas para programación, confirmación, check-in, y cierre. `Tipo_Servicio` distingue limpieza de `Inspeccion`; las inspecciones usan además `Resultado_Inspeccion`, `Requiere_Accion_Correctiva` y `Estado_Correccion` (todas opcionales — si la columna no existe, el servidor simplemente no la escribe). Ver columnas de la agenda abajo |
@@ -226,11 +260,16 @@ Las escrituras de pendientes usan su propia cola en memoria (mismo patrón que l
 | `CAMBIOS_PROGRAMACION` | Bitácora de cambios hechos desde la agenda (incluidos los retroactivos): `Fecha_Hora`, `ID_Programacion`, `Fecha_Servicio`, `Tipo_Cambio`, `Detalle`, `Realizado_Por`, `Empleado_Notificado`, `Aviso_Enviado`. **El servidor la crea sola** (con encabezados) la primera vez que registra un cambio |
 | `PENDIENTES` | **Nueva.** Un renglón por pendiente: `ID_Pendiente`, `Tipo`, `Titulo`, `Observaciones`, `Cliente`, `ID_Programacion` (servicio vinculado, opcional), `Responsable`, `Fecha_Limite`, `Hora_Inicio`, `Hora_Fin`, `Prioridad`, `Estado` (`Abierto` / `Resuelto` / `Cancelado`), `Estado_Envio` (`Borrador` / `Enviado`), `Creado_Por`, `Fecha_Creacion`, `Notas_Seguimiento`, `Fecha_Cierre`, `Cerrado_Por` (quién y por qué vía: WhatsApp, Enlace o Agenda web), `Nota_Cierre`, `Ultimo_Recordatorio`. Se escribe por nombre de columna. **Se crea sola** |
 | `PENDIENTES_MENSAJES` | **Nueva.** Relaciona cada WhatsApp enviado con su pendiente: `SID`, `ID_Pendiente`, `Fecha_Hora`, `Tipo_Envio`. Es lo que permite reconocer una respuesta por Reply. **Se crea sola** |
-| `PENDIENTES_HISTORIAL` | **Nueva.** Bitácora de eventos de cada pendiente: `Fecha_Hora`, `ID_Pendiente`, `Evento`, `Detalle`, `Realizado_Por`. **Se crea sola** |
+| `PENDIENTES_HISTORIAL` | Bitácora de eventos de cada pendiente: `Fecha_Hora`, `ID_Pendiente`, `Evento`, `Detalle`, `Realizado_Por`. **Se crea sola** |
+| `CONFIG_NOMINA` | **Nueva.** Parámetros de la nómina (`Clave`, `Valor`, `Descripcion`). **Se crea sola** con valores por defecto |
+| `NOMINA_AJUSTES` | **Nueva.** Bitácora de ajustes de horas pagadas: `Fecha_Hora`, `ID_Programacion`, `Empleado`, `Fecha_Servicio`, `Pago_Inicio`, `Pago_Fin` (`SIN PAGO` = sin pago; ambos vacíos = quitar ajuste), `Motivo`, `Ajustado_Por`, `Referencia`. Vale la última fila de cada servicio. **Se crea sola** |
+| `PAGOS_ADICIONALES` | **Nueva.** Propinas, bonos, descuentos y otros: `ID_Concepto`, `Semana_Inicio`, `Empleado`, `Fecha`, `Tipo`, `Descripcion`, `Monto`, `ID_Programacion`, `Creado_Por`, `Fecha_Creacion`, `Estado` (`Activo` / `Anulado`), `Anulado_Por`, `Motivo_Anulacion`, `ID_Liquidacion`. **Se crea sola** |
+| `LIQUIDACIONES` | **Nueva.** Una fila por cierre semanal de un empleado: `ID_Liquidacion`, `Semana_Inicio`, `Empleado`, `Estado` (`Cerrada` / `Reabierta`), `Servicios`, `Minutos`, `Monto_Horas`, `Monto_Millas`, `Monto_Propinas_Bonos`, `Monto_Descuentos`, `Total`, `Cerrado_Por`, `Fecha_Cierre`, `Reabierto_Por`, `Fecha_Reapertura`, `Motivo_Reapertura`. **Se crea sola** |
+| `NOMINA_DIAS` | **Nueva.** Foto congelada de cada servicio al cerrar una liquidación (programado, real, pagado, minutos, tarifa, recargo de sábado, monto, estado, millas — en 0 hasta la fase 2 — y motivo del ajuste). **Se crea sola** |
 
 **Columnas de `PROGRAMACION_DIARIA` que exige la agenda.** A diferencia del resto del sistema (donde las columnas son opcionales), la agenda **se niega a guardar** si falta alguna de estas: `ID_Programacion`, `Fecha_Servicio`, `Tipo_Servicio`, `Cliente`, `Empleado`, `Horario`, `Hora_Inicio`, `Hora_Fin`, `Observaciones_Puntuales`, `Estado_Envio`, `Estado_Confirmacion`, `Creado_Por`, `Fecha_Creacion`, `Modificado_Por`, `Fecha_Modificacion`, `Cancelado`, `Motivo_Cancelacion`. Las filas nuevas se escriben por **nombre de columna** (no por posición), así que el orden de las columnas puede cambiar sin romper nada.
 
-**Columnas adicionales para el registro retroactivo:** `Registro_Retroactivo` (Sí / vacío), `Motivo_Retroactivo`, `Origen_Registro` (`Manual` cuando las horas reales las escribió un administrador). Solo se exigen al guardar en una fecha pasada. `PENDIENTES_MENSAJES` usa posiciones fijas (columna A = SID, B = ID_Pendiente) y `PENDIENTES_HISTORIAL` se escribe en orden fijo: no reordenar sus columnas.
+**Columnas adicionales para el registro retroactivo:** `Registro_Retroactivo` (Sí / vacío), `Motivo_Retroactivo`, `Origen_Registro` (`Manual` cuando las horas reales las escribió un administrador). Solo se exigen al guardar en una fecha pasada. `PENDIENTES_MENSAJES` usa posiciones fijas (columna A = SID, B = ID_Pendiente) y `PENDIENTES_HISTORIAL` se escribe en orden fijo: no reordenar sus columnas. Lo mismo para las hojas de nómina (`NOMINA_AJUSTES`, `PAGOS_ADICIONALES`, `LIQUIDACIONES`, `NOMINA_DIAS`): las filas nuevas se escriben en el orden fijo de sus encabezados (aunque se leen por nombre de columna), así que tampoco se deben reordenar.
 
 ---
 
@@ -254,11 +293,12 @@ Las escrituras de pendientes usan su propia cola en memoria (mismo patrón que l
 - **Acciones correctivas → pendientes automáticos** — hoy el seguimiento se hace con pendientes (ver 6.9), pero el administrador los crea a mano a partir del aviso de la inspección. `Estado_Correccion` no se actualiza al resolver el pendiente; la agenda ya no lo necesita cuando hay pendientes vinculados, pero la columna queda desactualizada en el Sheets.
 - **Recordatorios automáticos de pendientes** — por ahora solo existen los manuales (botón "Recordar"); no hay aviso automático de vencidos.
 - **Retirar `CLAVE_ADMIN` y `/enviar-programacion`** una vez que todos usen la agenda para enviar.
-- **Bloqueo de login y colas de escrituras en memoria** (agenda y pendientes) — funcionan porque hay una sola instancia del servidor; si algún día se escala a varias instancias, habría que moverlos a un almacenamiento compartido.
+- **Nómina fase 2: millas** — calcular el millaje entre los servicios del día y pagarlo según `CONFIG_NOMINA` (`Tarifa_Milla`, `Umbral_Millas_Dia`, `Servicios_Pago_Siempre`, `Umbral_Tarifa_Fija`). Las columnas `Monto_Millas` / `Millas_Pagadas` ya existen y hoy se guardan en 0.
+- **Bloqueo de login y colas de escrituras en memoria** (agenda, pendientes y nómina) — funcionan porque hay una sola instancia del servidor; si algún día se escala a varias instancias, habría que moverlos a un almacenamiento compartido.
 
 **Del mapa de problemas original** (los dolores que motivaron el sistema; aún sin resolver del todo):
 
-- **Nómina: horas y millas automáticas** — el registro ya es atómico (cada check-in es una fila en `REGISTRO_TURNOS`, y las horas reales quedan en la fila del servicio), pero todavía no se calculan las horas trabajadas por empleado ni el millaje entre servicios; el millaje se sigue sacando a mano en Google Maps.
+- **Nómina: horas y millas automáticas** — **horas resueltas** con `/nomina` (ver 6.10): horas pagadas por servicio, recargo de sábado, propinas/bonos/descuentos y cierre semanal. **Falta el millaje** entre servicios (fase 2); hoy se sigue sacando a mano en Google Maps.
 - **Historial de calidad al programar** — las quejas (`QUEJAS`) y las inspecciones solo se ven en el detalle de cada servicio. El objetivo original era ver el historial de quejas/observaciones **del cliente y del empleado** en el editor, al momento de programar.
 - **Cobranza: servicios pendientes por cliente** — al registrar un pago no se ve qué servicios tiene pendientes ese cliente; hoy hay que buscarlos a mano en la agenda. No está en el servidor.
 - **Tareas recurrentes** (ej. "aspirar los viernes" en oficinas) — los pendientes cubren tareas puntuales con seguimiento por WhatsApp, pero no se repiten solos: alguien tiene que crear cada uno. Falta la recurrencia programada.
@@ -267,7 +307,7 @@ Las escrituras de pendientes usan su propia cola en memoria (mismo patrón que l
 
 ## 10. Cómo hacer cambios de aquí en adelante
 
-1. Editar el archivo correspondiente (`index.js`, `logica.js`, `agenda.js`, `edicion.js`, `pendientes.js`, `auth.js` o `sheets.js`) local o directo en GitHub.
+1. Editar el archivo correspondiente (`index.js`, `logica.js`, `agenda.js`, `edicion.js`, `pendientes.js`, `nomina.js`, `auth.js` o `sheets.js`) local o directo en GitHub.
 2. Subir el cambio a la rama `main` del repositorio.
 3. Render redespliega automáticamente al detectar el cambio.
 4. Revisar la pestaña "Logs" del servicio en Render para confirmar que el despliegue fue exitoso.
