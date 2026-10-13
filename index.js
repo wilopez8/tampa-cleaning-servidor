@@ -316,14 +316,7 @@ app.post('/agenda/enviar', auth.requiereAdmin, async (req, res) => {
   }
 });
 
-app.get('/nomina', auth.requiereAdmin, async (req, res) => {
-  try { res.set('Content-Type', 'text/html; charset=utf-8'); res.send(await nomina.paginaNomina(req.query, req.admin)); }
-  catch (err) { console.error('Error en GET /nomina:', err); res.status(500).send('Error cargando la nómina: ' + err.message); }
-});
-app.post('/nomina/ajustar', auth.requiereAdmin, async (req, res) => {
-  try { res.json(await nomina.ajustar({ id: req.body.id, inicio: req.body.inicio, fin: req.body.fin, motivo: req.body.motivo, admin: req.admin })); }
-  catch (err) { console.error('Error en POST /nomina/ajustar:', err); res.status(500).json({ ok: false, general: 'Error: ' + err.message }); }
-});
+nomina.rutas(app, auth);
 
 app.get('/pendientes', auth.requiereAdmin, async (req, res) => {
   try { res.set('Content-Type', 'text/html; charset=utf-8'); res.send(await pend.paginaPendientes(req.query, req.admin)); }
