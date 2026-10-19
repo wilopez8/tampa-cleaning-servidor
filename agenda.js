@@ -241,9 +241,9 @@ async function paginaAgenda(query, admin) {
   const edad = edadCacheSegundos('PROGRAMACION_DIARIA');
   const volver = esc('/agenda?' + new URLSearchParams({ fecha, ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)) }).toString());
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Agenda ${fecha}</title><style>${CSS}${ed ? ed.CSS_EDITOR : ''}</style></head><body>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Agenda ${fecha}</title><style>${CSS}${ed ? ed.CSS_EDITOR : ''}${require('./menu').MENU_CSS}</style></head><body>
 <div class="top"><h2 style="margin:0;">Agenda — ${diaSemana(fecha)} ${fecha}</h2>
-    <div>${esc(admin)} · <a href="/nomina">Nómina</a> · <a href="/pendientes">Pendientes</a> · <a href="/nomina">Nómina</a> · <a href="/logout">Cerrar sesión</a>
+  ${require('./menu').menuHtml('/agenda', admin)}</div>
 <div class="nav">
   <a class="btn" href="/agenda?fecha=${sumarDias(fecha, -1)}">←</a>
   <a class="btn hoy" href="/agenda?fecha=${hoy}">Hoy</a>

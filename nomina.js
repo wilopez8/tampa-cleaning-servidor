@@ -1,6 +1,7 @@
 const { leerHoja, agregarFila, agregarFilas, actualizarCeldas, asegurarHoja, invalidarCache, edadCacheSegundos } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida, sumarDias, inicioSemana, diaSemana, filasDelRango } = require('./agenda');
 const millas = require('./millas');
+const menu = require('./menu');
 
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const enc = s => encodeURIComponent(s).replace(/'/g, '%27');
@@ -541,9 +542,9 @@ async function paginaNomina(query, admin) {
   }
 
   const sufijo = emp ? '&empleado=' + enc(emp) : '';
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Nómina ${lunes}</title><style>${CSS}</style></head><body>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Nómina ${lunes}</title><style>${CSS}${menu.MENU_CSS}</style></head><body>
 <div class="top"><h2 style="margin:0;">Nómina — semana ${lunes} → ${domingo}</h2>
-  <div>${esc(admin)} · <a href="/agenda">Agenda</a> · <a href="/pendientes">Pendientes</a> · <a href="/logout">Cerrar sesión</a></div></div>
+${menu.menuHtml('/nomina', admin)}</div>
 <div class="nav">
   <a class="btn" href="${q(sumarDias(lunes, -7), emp)}">←</a>
   <a class="btn hoy" href="${q(hoy, emp)}">Esta semana</a>
