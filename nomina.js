@@ -1,5 +1,6 @@
 const { leerHoja, agregarFila, agregarFilas, actualizarCeldas, asegurarHoja, invalidarCache, edadCacheSegundos } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida, sumarDias, inicioSemana, diaSemana, filasDelRango } = require('./agenda');
+const millas = require('./millas');
 
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const enc = s => encodeURIComponent(s).replace(/'/g, '%27');
@@ -11,10 +12,10 @@ const r2 = x => Math.round(x * 100) / 100;
 const CONFIG_HEADERS = ['Clave', 'Valor', 'Descripcion'];
 const CONFIG_DEFAULTS = [
   ['Recargo_Sabado_Hora', '1', 'USD adicionales por cada hora trabajada en sábado'],
-  ['Tarifa_Milla', '0.37', 'Fase 2: USD por milla'],
-  ['Umbral_Millas_Dia', '10', 'Fase 2: el día paga millas solo si el total de millas pagadas (sin el regreso) llega a este número'],
-  ['Servicios_Pago_Siempre', '2', 'Fase 2: con esta cantidad de servicios en el día, los tramos se pagan siempre'],
-  ['Umbral_Tarifa_Fija', '20', 'Fase 2: por encima de estas millas el administrador fija un monto'],
+  ['Tarifa_Milla', '0.37', 'USD por milla'],
+  ['Umbral_Millas_Dia', '10', 'El día paga millas solo si el total de millas pagadas (sin el regreso) llega a este número'],
+  ['Servicios_Pago_Siempre', '2', 'Con esta cantidad de servicios en el día, las millas se pagan siempre'],
+  ['Umbral_Tarifa_Fija', '20', 'Por encima de estas millas pagadas el administrador escribe el monto del día'],
 ];
 const AJ_HEADERS = ['Fecha_Hora', 'ID_Programacion', 'Empleado', 'Fecha_Servicio', 'Pago_Inicio', 'Pago_Fin', 'Motivo', 'Ajustado_Por', 'Referencia'];
 const PA_HEADERS = ['ID_Concepto', 'Semana_Inicio', 'Empleado', 'Fecha', 'Tipo', 'Descripcion', 'Monto', 'ID_Programacion', 'Creado_Por', 'Fecha_Creacion', 'Estado', 'Anulado_Por', 'Motivo_Anulacion', 'ID_Liquidacion'];
@@ -172,13 +173,24 @@ function calcular(r, ajuste, tarifa, cfg) {
 }
 const necesitaRevision = c => c.estado === 'Revisar' || c.sinTarifa;
 
-async function calcularEmpleado(empleado, lunes) {
+async function datosEmpleado(empleado, lunes) {
   const [filas, cfg, tar, ajustes] = await Promise.all([filasDelRango(lunes, sumarDias(lunes, 6)), cargarConfig(), cargarTarifas(), cargarAjustes()]);
-  return filas.filter(r => r._estado !== 'Cancelado' && String(r.Empleado || '').trim() === empleado)
-    .map(r => calcular(r, ajustes[r.ID_Programacion], tar.mapa[empleado], cfg));
+  const propias = filas.filter(r => String(r.Empleado || '').trim() === empleado);
+  const rows = propias.filter(r => r._estado !== 'Cancelado').map(r => calcular(r, ajustes[r.ID_Programacion], tar.mapa[empleado], cfg));
+  const canceladas = propias.filter(r => r._estado === 'Cancelado');
+  return { rows, canceladas, cfg };
 }
 
 // ---------- acciones ----------
+async function buscarServicio(id) {
+  const datos = await leerHoja('PROGRAMACION_DIARIA');
+  if (!datos.length) return null;
+  const h = datos[0], ix = n => h.indexOf(n);
+  const f = datos.slice(1).find(x => x[ix('ID_Programacion')] === id);
+  if (!f) return null;
+  return { f, ix, empleado: String(f[ix('Empleado')] || '').trim(), fecha: normalizarFecha(f[ix('Fecha_Servicio')]), cancelado: f[ix('Cancelado')] === 'Sí' };
+}
+
 async function ajustar({ id, inicio, fin, sinPago, motivo, admin }) {
   id = String(id || '').trim();
   inicio = String(inicio || '').trim(); fin = String(fin || '').trim();
@@ -191,17 +203,41 @@ async function ajustar({ id, inicio, fin, sinPago, motivo, admin }) {
       if (a === b) return { ok: false, general: 'El inicio y el fin no pueden ser iguales (usa "Sin pago").' };
     }
   }
-  const datos = await leerHoja('PROGRAMACION_DIARIA');
-  if (!datos.length) return { ok: false, general: 'PROGRAMACION_DIARIA está vacía.' };
-  const h = datos[0], ix = n => h.indexOf(n);
-  const f = datos.slice(1).find(x => x[ix('ID_Programacion')] === id);
-  if (!f) return { ok: false, general: 'Servicio no encontrado.' };
-  if (f[ix('Cancelado')] === 'Sí') return { ok: false, general: 'El servicio está cancelado.' };
-  const empleado = String(f[ix('Empleado')] || '').trim();
-  const fechaServ = normalizarFecha(f[ix('Fecha_Servicio')]);
-  if (cerradaDe(await cargarLiquidaciones(), inicioSemana(fechaServ), empleado)) return { ok: false, general: 'La liquidación de esa semana está cerrada. Reábrela primero.' };
+  const s = await buscarServicio(id);
+  if (!s) return { ok: false, general: 'Servicio no encontrado.' };
+  if (s.cancelado) return { ok: false, general: 'El servicio está cancelado.' };
+  if (cerradaDe(await cargarLiquidaciones(), inicioSemana(s.fecha), s.empleado)) return { ok: false, general: 'La liquidación de esa semana está cerrada. Reábrela primero.' };
+  const ix = s.ix, f = s.f;
   const referencia = `Prog: ${f[ix('Horario')] || ''} | Real: ${f[ix('Hora_Entrada_Real')] || '—'} → ${f[ix('Hora_Salida_Real')] || '—'}`;
-  await agregarFila('NOMINA_AJUSTES', [ahora(), id, empleado, fechaServ, sinPago ? 'SIN PAGO' : inicio, sinPago ? 'SIN PAGO' : fin, String(motivo).trim(), admin, referencia]);
+  await agregarFila('NOMINA_AJUSTES', [ahora(), id, s.empleado, s.fecha, sinPago ? 'SIN PAGO' : inicio, sinPago ? 'SIN PAGO' : fin, String(motivo).trim(), admin, referencia]);
+  return { ok: true };
+}
+
+async function marcarParada({ id, cuenta, motivo, admin }) {
+  id = String(id || '').trim(); cuenta = String(cuenta || '').trim();
+  if (!['Sí', 'No', ''].includes(cuenta)) return { ok: false, general: 'Opción no válida.' };
+  if (String(motivo || '').trim().length < 3) return { ok: false, general: 'El motivo es obligatorio.' };
+  const s = await buscarServicio(id);
+  if (!s) return { ok: false, general: 'Servicio no encontrado.' };
+  if (cerradaDe(await cargarLiquidaciones(), inicioSemana(s.fecha), s.empleado)) return { ok: false, general: 'La liquidación de esa semana está cerrada. Reábrela primero.' };
+  await millas.registrarParada({ id, empleado: s.empleado, fecha: s.fecha, cuenta, motivo: String(motivo).trim(), admin });
+  return { ok: true };
+}
+
+async function ajustarMillasDia({ empleado, fecha, monto, motivo, admin }) {
+  empleado = String(empleado || '').trim();
+  if (!fechaValida(fecha)) return { ok: false, general: 'Fecha no válida.' };
+  if (String(motivo || '').trim().length < 3) return { ok: false, general: 'El motivo es obligatorio.' };
+  const tar = await cargarTarifas();
+  if (!Object.prototype.hasOwnProperty.call(tar.mapa, empleado)) return { ok: false, general: 'Empleado no encontrado en EMPLEADOS.' };
+  let m = '';
+  if (String(monto ?? '').trim() !== '') {
+    m = numero(monto);
+    if (!(m >= 0)) return { ok: false, general: 'El monto no es válido.' };
+    m = r2(m);
+  }
+  if (cerradaDe(await cargarLiquidaciones(), inicioSemana(fecha), empleado)) return { ok: false, general: 'La liquidación de esa semana está cerrada. Reábrela primero.' };
+  await millas.registrarAjusteMillas({ empleado, fecha, monto: m, motivo: String(motivo).trim(), admin });
   return { ok: true };
 }
 
@@ -250,20 +286,28 @@ function cerrar({ empleado, semana, admin }) {
     empleado = String(empleado || '').trim();
     if (!fechaValida(semana)) return { ok: false, general: 'Semana no válida.' };
     const lunes = inicioSemana(semana);
-    ['PROGRAMACION_DIARIA', 'EMPLEADOS', 'CONFIG_NOMINA'].forEach(invalidarCache); // cierre siempre con datos frescos
+    ['PROGRAMACION_DIARIA', 'EMPLEADOS', 'CONFIG_NOMINA', 'SITIOS'].forEach(invalidarCache); // cierre siempre con datos frescos
     const [liqs, conceptos] = await Promise.all([cargarLiquidaciones(), cargarConceptos()]);
     if (cerradaDe(liqs, lunes, empleado)) return { ok: false, general: 'Esta liquidación ya está cerrada.' };
-    const rows = await calcularEmpleado(empleado, lunes);
+    const { rows, canceladas, cfg } = await datosEmpleado(empleado, lunes);
     const cerrados = idsCerrados(liqs);
     const cons = conceptos.filter(c => c._semana === lunes && c.Empleado === empleado && conceptoAbierto(c, cerrados));
-    if (!rows.length && !cons.length) return { ok: false, general: 'No hay servicios ni conceptos para cerrar.' };
+
     const pend = rows.filter(necesitaRevision).length;
     if (pend) return { ok: false, general: `Hay ${pend} servicio(s) por revisar (sin check-in o sin tarifa). Ajústalos o márcalos "Sin pago".` };
+
+    const ctx = await millas.cargarContexto();
+    const dias = await millas.calcularMillasEmpleado({ empleado, rows, canceladas, cfg, ctx });
+    try { await millas.volcarDistancias(ctx.dist); } catch (e) { console.error('No se pudo guardar DISTANCIAS:', e.message); }
+    const pendM = dias.filter(d => d.estado === 'Revisar').length;
+    if (pendM) return { ok: false, general: `Hay ${pendM} día(s) con millas por revisar.` };
+    const montoM = r2(dias.reduce((a, d) => a + d.monto, 0));
+    if (!rows.length && !cons.length && !montoM) return { ok: false, general: 'No hay servicios, millas ni conceptos para cerrar.' };
 
     const minutos = rows.reduce((a, c) => a + c.min, 0);
     const montoH = r2(rows.reduce((a, c) => a + c.monto, 0));
     const { mas, menos } = sumaCons(cons);
-    const total = r2(montoH + mas - menos); // Fase 2 sumará aquí las millas
+    const total = r2(montoH + montoM + mas - menos);
     const id = `LIQ-${lunes.replace(/-/g, '')}-${p2(liqs.filter(l => l._semana === lunes).length + 1)}`;
 
     await asegurarHoja('NOMINA_DIAS', ND_HEADERS);
@@ -272,7 +316,8 @@ function cerrar({ empleado, semana, admin }) {
       t12(c.prog.ini), t12(c.prog.fin), t12(c.real.ini), t12(c.real.fin), t12(c.pago.ini), t12(c.pago.fin),
       c.min, c.tarifa, c.sabado ? c.recargo : 0, c.efectiva, c.monto, c.estado, 0, 0, c.ajuste ? c.ajuste.motivo : '',
     ]));
-    await agregarFila('LIQUIDACIONES', [id, lunes, empleado, 'Cerrada', rows.length, minutos, montoH, 0, mas, menos, total, admin, ahora(), '', '', '']);
+    await millas.guardarSnapshot({ id, lunes, empleado, dias });
+    await agregarFila('LIQUIDACIONES', [id, lunes, empleado, 'Cerrada', rows.length, minutos, montoH, montoM, mas, menos, total, admin, ahora(), '', '', '']);
     if (cons.length) {
       const col = conceptos.h.indexOf('ID_Liquidacion') + 1;
       await actualizarCeldas('PAGOS_ADICIONALES', cons.map(c => ({ fila: c._fila, columna: col, valor: id })));
@@ -336,15 +381,21 @@ function tcPedirMotivo(titulo,fn){$('mt').textContent=titulo;$('mm').value='';$(
 function tcMotivoOk(){var m=$('mm').value.trim();if(m.length<3){$('me').textContent='El motivo es obligatorio.';return;}motivoFn(m);}
 function tcAnular(b){var id=b.dataset.id;tcPedirMotivo('Anular concepto '+id,function(m){post('/nomina/concepto/anular',{id:id,motivo:m},'me');});}
 function tcReabrir(){tcPedirMotivo('Reabrir la liquidación de '+EMP,function(m){post('/nomina/reabrir',{empleado:EMP,semana:SEM,motivo:m},'me');});}
-function tcCerrar(){if(!confirm('¿Cerrar la liquidación de '+EMP+'? Quedará congelada (puedes reabrirla con motivo).'))return;post('/nomina/cerrar',{empleado:EMP,semana:SEM},'ce2');}`;
+function tcCerrar(){if(!confirm('¿Cerrar la liquidación de '+EMP+'? Quedará congelada (puedes reabrirla con motivo).'))return;post('/nomina/cerrar',{empleado:EMP,semana:SEM},'ce2');}
+var parId=null;
+function tcParada(b){parId=b.dataset.id;$('pt').textContent=b.dataset.t;$('pc').value=b.dataset.cuenta;$('pm').value='';$('pe').textContent='';$('dlgp').showModal();}
+function tcGuardarParada(){var m=$('pm').value.trim();if(m.length<3){$('pe').textContent='El motivo es obligatorio.';return;}post('/nomina/parada',{id:parId,cuenta:$('pc').value,motivo:m},'pe');}
+var mmFecha=null;
+function tcMillas(b){mmFecha=b.dataset.fecha;$('mmt').textContent=b.dataset.t;$('mmv').value=b.dataset.monto;$('mmm').value='';$('mme').textContent='';$('dlgmm').showModal();}
+function tcGuardarMillas(){var m=$('mmm').value.trim();if(m.length<3){$('mme').textContent='El motivo es obligatorio.';return;}post('/nomina/millas/ajustar',{empleado:EMP,fecha:mmFecha,monto:$('mmv').value,motivo:m},'mme');}`;
 
 async function paginaNomina(query, admin) {
   const hoy = hoyFlorida();
   const fecha = fechaValida(query.fecha) ? query.fecha : hoy;
   const lunes = inicioSemana(fecha), domingo = sumarDias(lunes, 6);
 
-  const [filas, cfg, tar, ajustes, liqs, conceptos] = await Promise.all([
-    filasDelRango(lunes, domingo), cargarConfig(), cargarTarifas(), cargarAjustes(), cargarLiquidaciones(), cargarConceptos()]);
+  const [filas, cfg, tar, ajustes, liqs, conceptos, ctx] = await Promise.all([
+    filasDelRango(lunes, domingo), cargarConfig(), cargarTarifas(), cargarAjustes(), cargarLiquidaciones(), cargarConceptos(), millas.cargarContexto()]);
 
   const cerrados = idsCerrados(liqs);
   const cerradas = {};
@@ -352,37 +403,46 @@ async function paginaNomina(query, admin) {
   const consAbiertos = {};
   conceptos.filter(c => c._semana === lunes && conceptoAbierto(c, cerrados)).forEach(c => { (consAbiertos[c.Empleado] = consAbiertos[c.Empleado] || []).push(c); });
 
-  const grupos = {};
-  filas.filter(r => r._estado !== 'Cancelado' && r.Empleado).forEach(r => {
+  const grupos = {}, cancelados = {};
+  filas.filter(r => r.Empleado).forEach(r => {
     const nombre = r.Empleado.trim();
-    (grupos[nombre] = grupos[nombre] || []).push(calcular(r, ajustes[r.ID_Programacion], tar.mapa[nombre], cfg));
+    if (r._estado === 'Cancelado') (cancelados[nombre] = cancelados[nombre] || []).push(r);
+    else (grupos[nombre] = grupos[nombre] || []).push(calcular(r, ajustes[r.ID_Programacion], tar.mapa[nombre], cfg));
   });
   Object.values(grupos).forEach(g => g.sort((a, b) => a.r._fecha.localeCompare(b.r._fecha) || (a.prog.ini ?? 0) - (b.prog.ini ?? 0)));
-  const nombres = [...new Set([...Object.keys(grupos), ...Object.keys(consAbiertos), ...Object.keys(cerradas)])].sort((a, b) => a.localeCompare(b));
+  const nombres = [...new Set([...Object.keys(grupos), ...Object.keys(cancelados), ...Object.keys(consAbiertos), ...Object.keys(cerradas)])].sort((a, b) => a.localeCompare(b));
   const emp = nombres.includes(query.empleado) ? query.empleado : '';
+
+  // millas de los empleados abiertos (los cerrados usan su copia congelada)
+  const millasEmp = {};
+  await Promise.all(nombres.filter(n => !cerradas[n]).map(async n => {
+    millasEmp[n] = await millas.calcularMillasEmpleado({ empleado: n, rows: grupos[n] || [], canceladas: cancelados[n] || [], cfg, ctx });
+  }));
+  try { await millas.volcarDistancias(ctx.dist); } catch (e) { console.error('No se pudo guardar DISTANCIAS:', e.message); }
 
   const q = (f, e) => `/nomina?fecha=${f}${e ? '&empleado=' + enc(e) : ''}`;
   const tot = n => {
     const l = cerradas[n];
     if (l) return { cerrada: true, n: numero(l.Servicios) || 0, min: numero(l.Minutos) || 0, montoH: numero(l.Monto_Horas) || 0, millas: numero(l.Monto_Millas) || 0, mas: numero(l.Monto_Propinas_Bonos) || 0, menos: numero(l.Monto_Descuentos) || 0, total: numero(l.Total) || 0, rev: 0 };
-    const g = grupos[n] || [], s = sumaCons(consAbiertos[n] || []);
-    const montoH = r2(g.reduce((a, c) => a + c.monto, 0));
-    return { cerrada: false, n: g.length, min: g.reduce((a, c) => a + c.min, 0), montoH, millas: 0, mas: s.mas, menos: s.menos, total: r2(montoH + s.mas - s.menos), rev: g.filter(necesitaRevision).length };
+    const g = grupos[n] || [], dm = millasEmp[n] || [], s = sumaCons(consAbiertos[n] || []);
+    const montoH = r2(g.reduce((a, c) => a + c.monto, 0)), montoM = r2(dm.reduce((a, d) => a + d.monto, 0));
+    return { cerrada: false, n: g.length, min: g.reduce((a, c) => a + c.min, 0), montoH, millas: montoM, mas: s.mas, menos: s.menos, total: r2(montoH + montoM + s.mas - s.menos),
+      rev: g.filter(necesitaRevision).length + dm.filter(d => d.estado === 'Revisar').length };
   };
 
   // ----- resumen -----
-  const G = { min: 0, montoH: 0, mas: 0, menos: 0, total: 0, rev: 0 };
+  const G = { min: 0, montoH: 0, millas: 0, mas: 0, menos: 0, total: 0, rev: 0 };
   const resumen = nombres.map(n => {
     const t = tot(n);
     Object.keys(G).forEach(k => { G[k] += t[k]; });
-    return `<tr><td><a href="${q(lunes, n)}">${esc(n)}</a></td><td class="num">${t.n}</td><td class="num">${fmtDur(t.min)}</td><td class="num">${usd(t.montoH)}</td>
+    return `<tr><td><a href="${q(lunes, n)}">${esc(n)}</a></td><td class="num">${t.n}</td><td class="num">${fmtDur(t.min)}</td><td class="num">${usd(t.montoH)}</td><td class="num">${usd(t.millas)}</td>
       <td class="num">${usd(t.mas)}</td><td class="num neg">${t.menos ? '− ' + usd(t.menos) : usd(0)}</td><td class="num"><b>${usd(t.total)}</b></td>
       <td class="num">${t.rev ? `<span class="est rev">${t.rev}</span>` : '0'}</td><td>${t.cerrada ? '<span class="est cer">Cerrada</span>' : '<span class="est">Abierta</span>'}</td></tr>`;
-  }).join('') || '<tr><td colspan="9" style="text-align:center;color:#888;padding:20px;">No hay servicios ni conceptos esta semana.</td></tr>';
+  }).join('') || '<tr><td colspan="10" style="text-align:center;color:#888;padding:20px;">No hay servicios ni conceptos esta semana.</td></tr>';
 
   // ----- bloques reutilizables -----
   const caja = t => `<table style="width:360px;"><tr><td>Horas</td><td class="num">${usd(t.montoH)}</td></tr>
-    <tr><td>Millas <small>(próxima fase)</small></td><td class="num">${usd(t.millas)}</td></tr>
+    <tr><td>Millas</td><td class="num">${usd(t.millas)}</td></tr>
     <tr><td>Propinas y bonos</td><td class="num">${usd(t.mas)}</td></tr>
     <tr><td>Descuentos</td><td class="num neg">− ${usd(t.menos)}</td></tr>
     <tfoot><tr><td>TOTAL A PAGAR</td><td class="num">${usd(t.total)}</td></tr></tfoot></table>`;
@@ -401,12 +461,13 @@ async function paginaNomina(query, admin) {
     const liq = cerradas[emp];
     scriptVars = `var EMP=${jsonSeguro(emp)};var SEM=${jsonSeguro(lunes)};`;
     if (liq) {
-      const snap = (await cargarTabla('NOMINA_DIAS', ND_HEADERS)).filter(s => s.ID_Liquidacion === liq.ID_Liquidacion);
+      const [snap, snapM] = await Promise.all([cargarTabla('NOMINA_DIAS', ND_HEADERS), millas.leerSnapshot(liq.ID_Liquidacion)]);
+      const snapDias = snap.filter(s => s.ID_Liquidacion === liq.ID_Liquidacion);
       const consLiq = conceptos.filter(c => c.ID_Liquidacion === liq.ID_Liquidacion && c.Estado === 'Activo');
-      const idsVivos = g.map(c => c.r.ID_Programacion).sort().join(','), idsSnap = snap.map(s => s.ID_Programacion).sort().join(',');
+      const idsVivos = g.map(c => c.r.ID_Programacion).sort().join(','), idsSnap = snapDias.map(s => s.ID_Programacion).sort().join(',');
       const montoVivo = r2(g.reduce((a, c) => a + c.monto, 0));
       const difiere = idsVivos !== idsSnap || Math.abs(montoVivo - (numero(liq.Monto_Horas) || 0)) > 0.005;
-      const filasSnap = snap.map(s => {
+      const filasSnap = snapDias.map(s => {
         const f = normalizarFecha(s.Fecha_Servicio);
         const pi = minutosDe(s.Pago_Inicio), pf = minutosDe(s.Pago_Fin);
         return `<tr><td>${diaSemana(f)} ${f.slice(8)}</td><td>${esc(s.Cliente)}<br><small>${esc(s.Tipo_Servicio)}</small></td>
@@ -416,12 +477,14 @@ async function paginaNomina(query, admin) {
           <td><span class="est ${s.Estado_Calculo === 'Sin pago' ? 'sp' : (s.Estado_Calculo === 'Ajustado' ? 'aj' : 'ok')}" title="${esc(s.Motivo_Ajuste)}">${esc(s.Estado_Calculo)}</span></td></tr>`;
       }).join('');
       detalle = `<h3>${esc(emp)} <span class="est cer">Cerrada por ${esc(liq.Cerrado_Por)} · ${esc(liq.Fecha_Cierre)}</span></h3>
-        ${difiere ? '<div class="aviso y">⚠️ El cálculo en vivo ya no coincide con lo cerrado (cambió la agenda, la tarifa o la configuración). Lo cerrado no se modifica; reabre la liquidación si quieres recalcular.</div>' : ''}
+        ${difiere ? '<div class="aviso y">⚠️ El cálculo de horas en vivo ya no coincide con lo cerrado (cambió la agenda, la tarifa o la configuración). Lo cerrado no se modifica; reabre la liquidación si quieres recalcular.</div>' : ''}
         <table><tr><th>Día</th><th>Servicio</th><th>Programado</th><th>Real (check-in)</th><th>Pagado</th><th class="num">Horas</th><th class="num">Tarifa</th><th class="num">Monto</th><th>Estado</th></tr>${filasSnap}</table>
+        ${millas.tablaCerrada(snapM)}
         ${conceptosHtml(consLiq, false)}
         ${caja(tot(emp))}
         <button class="btn warn" onclick="tcReabrir()">Reabrir liquidación</button>`;
     } else {
+      const dm = millasEmp[emp] || [];
       const filasHtml = g.map(c => {
         const r = c.r;
         const cls = c.estado === 'Revisar' ? 'rev' : (c.estado === 'Ajustado' ? 'aj' : (c.estado === 'Sin pago' ? 'sp' : 'ok'));
@@ -439,22 +502,35 @@ async function paginaNomina(query, admin) {
           <td><span class="est ${cls}"${titulo}>${esc(c.estado)}</span>${c.nota ? `<br><small>${esc(c.nota)}</small>` : ''}${c.sinTarifa ? '<br><small>Sin tarifa</small>' : ''}</td>
           <td><button class="btn" data-id="${esc(r.ID_Programacion)}" data-t="${esc(r.Cliente + ' · ' + r._fecha)}" data-ini="${f24(c.pago.ini ?? c.prog.ini)}" data-fin="${f24(c.pago.fin ?? c.prog.fin)}" onclick="tcAjustar(this)">Ajustar</button></td></tr>`;
       }).join('') || '<tr><td colspan="10" style="text-align:center;color:#999;">Sin servicios esta semana</td></tr>';
-      const bloquea = g.filter(necesitaRevision).length;
+      const bloqueaH = g.filter(necesitaRevision).length, bloqueaM = dm.filter(d => d.estado === 'Revisar').length;
       const opcionesServ = g.map(c => `<option value="${esc(c.r.ID_Programacion)}">${diaSemana(c.r._fecha)} ${c.r._fecha.slice(8)} · ${esc(c.r.Cliente)}</option>`).join('');
+      const pendTxt = [bloqueaH ? bloqueaH + ' servicio(s) por revisar' : '', bloqueaM ? bloqueaM + ' día(s) con millas por revisar' : ''].filter(Boolean).join(' · ');
       detalle = `<h3>${esc(emp)}</h3>
         <table><tr><th>Día</th><th>Servicio</th><th>Programado</th><th>Real (check-in)</th><th>Pagado</th><th class="num">Horas</th><th class="num">Tarifa</th><th class="num">Monto</th><th>Estado</th><th></th></tr>${filasHtml}</table>
+        ${millas.tablaAbierta(dm)}
         ${conceptosHtml(consAbiertos[emp] || [], true)}
         <button class="btn" onclick="tcConcepto()">+ Agregar concepto</button>
         <div style="margin-top:14px;">${caja(tot(emp))}</div>
-        <button class="btn hoy" onclick="tcCerrar()" ${bloquea ? 'disabled' : ''}>Cerrar liquidación de ${esc(emp)}</button>
-        <span id="ce2" style="color:#b91c1c;font-size:13px;margin-left:8px;">${bloquea ? bloquea + ' servicio(s) por revisar' : ''}</span>
+        <button class="btn hoy" onclick="tcCerrar()" ${(bloqueaH || bloqueaM) ? 'disabled' : ''}>Cerrar liquidación de ${esc(emp)}</button>
+        <span id="ce2" style="color:#b91c1c;font-size:13px;margin-left:8px;">${esc(pendTxt)}</span>
         <dialog id="dlgc"><h3 style="margin-top:0;">Agregar concepto</h3>
           <label>Tipo<select id="ct">${TIPOS.map(t => `<option>${t}</option>`).join('')}</select></label>
           <label>Descripción (obligatoria)<input type="text" id="cd" maxlength="200"></label>
           <label>Monto (USD)<input type="number" id="cmn" min="0" step="0.01"></label>
           <label>Servicio relacionado (opcional)<select id="cs"><option value="">— Ninguno —</option>${opcionesServ}</select></label>
           <p id="ce" style="color:#b91c1c;font-size:13px;"></p>
-          <button class="btn hoy" onclick="tcGuardarConcepto()">Guardar</button> <button class="btn" onclick="$('dlgc').close()">Cancelar</button></dialog>`;
+          <button class="btn hoy" onclick="tcGuardarConcepto()">Guardar</button> <button class="btn" onclick="$('dlgc').close()">Cancelar</button></dialog>
+        <dialog id="dlgp"><h3 id="pt" style="margin-top:0;"></h3>
+          <label>¿Cuenta como parada?<select id="pc"><option value="">Automático (según horas y check-in)</option><option value="Sí">Sí, pagar el desplazamiento</option><option value="No">No, no pagar el desplazamiento</option></select></label>
+          <label>Motivo (obligatorio)<input type="text" id="pm" maxlength="200"></label>
+          <p id="pe" style="color:#b91c1c;font-size:13px;"></p>
+          <button class="btn hoy" onclick="tcGuardarParada()">Guardar</button> <button class="btn" onclick="$('dlgp').close()">Cancelar</button></dialog>
+        <dialog id="dlgmm"><h3 id="mmt" style="margin-top:0;"></h3>
+          <label>Monto de millas del día (USD)<input type="number" id="mmv" min="0" step="0.01"></label>
+          <label>Motivo (obligatorio)<input type="text" id="mmm" maxlength="200"></label>
+          <p style="font-size:12px;color:#777;">Deja el monto vacío para volver al cálculo automático.</p>
+          <p id="mme" style="color:#b91c1c;font-size:13px;"></p>
+          <button class="btn hoy" onclick="tcGuardarMillas()">Guardar</button> <button class="btn" onclick="$('dlgmm').close()">Cancelar</button></dialog>`;
     }
   }
 
@@ -471,10 +547,10 @@ async function paginaNomina(query, admin) {
     <span style="font-size:12px;color:#777;">Datos de hace ${edadCacheSegundos('PROGRAMACION_DIARIA') ?? 0} s</span>
     <input type="hidden" name="volver" value="${esc(q(fecha, emp))}"><button class="btn">Actualizar</button></form>
 </div>
-<div class="aviso">Pagado = inicio más tarde y fin más temprano entre lo programado y el check-in. Sin check-in: queda en cero hasta que lo ajustes. Al cerrar un empleado, sus valores quedan congelados. Las millas llegan en la siguiente fase.</div>
+<div class="aviso">Horas: inicio más tarde y fin más temprano entre lo programado y el check-in. Millas: se pagan todos los tramos menos el regreso a casa. Lo que falta por revisar queda en $0 y bloquea el cierre. Al cerrar un empleado, sus valores quedan congelados.</div>
 ${tar.hayColumna ? '' : '<div class="aviso r">Falta la columna <b>Tarifa_Hora</b> en la hoja EMPLEADOS: todos los montos salen en $0.00.</div>'}
-<table><tr><th>Empleado</th><th class="num">Servicios</th><th class="num">Horas pagadas</th><th class="num">Monto horas</th><th class="num">Propinas y bonos</th><th class="num">Descuentos</th><th class="num">Total</th><th class="num">Por revisar</th><th>Estado</th></tr>${resumen}
-<tfoot><tr><td>Total</td><td></td><td class="num">${fmtDur(G.min)}</td><td class="num">${usd(G.montoH)}</td><td class="num">${usd(G.mas)}</td><td class="num neg">− ${usd(G.menos)}</td><td class="num">${usd(G.total)}</td><td class="num">${G.rev}</td><td></td></tr></tfoot></table>
+<table><tr><th>Empleado</th><th class="num">Servicios</th><th class="num">Horas pagadas</th><th class="num">Monto horas</th><th class="num">Millas</th><th class="num">Propinas y bonos</th><th class="num">Descuentos</th><th class="num">Total</th><th class="num">Por revisar</th><th>Estado</th></tr>${resumen}
+<tfoot><tr><td>Total</td><td></td><td class="num">${fmtDur(G.min)}</td><td class="num">${usd(G.montoH)}</td><td class="num">${usd(G.millas)}</td><td class="num">${usd(G.mas)}</td><td class="num neg">− ${usd(G.menos)}</td><td class="num">${usd(G.total)}</td><td class="num">${G.rev}</td><td></td></tr></tfoot></table>
 ${detalle}
 <dialog id="dlg"><h3 id="dt" style="margin-top:0;"></h3>
   <label>Inicio pagado<input type="time" id="di"></label>
@@ -502,6 +578,8 @@ function rutas(app, auth) {
     catch (err) { console.error('Error en GET /nomina:', err); res.status(500).send('Error cargando la nómina: ' + err.message); }
   });
   api('/nomina/ajustar', (b, admin) => ajustar({ id: b.id, inicio: b.inicio, fin: b.fin, sinPago: !!b.sinPago, motivo: b.motivo, admin }));
+  api('/nomina/parada', (b, admin) => marcarParada({ id: b.id, cuenta: b.cuenta, motivo: b.motivo, admin }));
+  api('/nomina/millas/ajustar', (b, admin) => ajustarMillasDia({ empleado: b.empleado, fecha: b.fecha, monto: b.monto, motivo: b.motivo, admin }));
   api('/nomina/concepto', (b, admin) => agregarConcepto({ empleado: b.empleado, semana: b.semana, tipo: b.tipo, descripcion: b.descripcion, monto: b.monto, idServicio: b.idServicio, admin }));
   api('/nomina/concepto/anular', (b, admin) => anularConcepto({ id: b.id, motivo: b.motivo, admin }));
   api('/nomina/cerrar', (b, admin) => cerrar({ empleado: b.empleado, semana: b.semana, admin }));

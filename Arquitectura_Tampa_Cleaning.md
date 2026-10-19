@@ -1,6 +1,6 @@
 # Arquitectura — Sistema Tampa Cleaning
 
-**Última actualización:** 13 de octubre de 2026
+**Última actualización:** 19 de octubre de 2026
 **Propósito de este documento:** referencia técnica para entender cómo funciona el sistema, qué piezas lo componen y cómo se conectan.
 
 ---
@@ -19,6 +19,7 @@ Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su 
 4. **Versión actual — agenda de administración:** la programación ya no se llena a mano en el Sheets. Se agregó un panel web (`/agenda`) con inicio de sesión por administrador, validaciones antes de guardar, envío por WhatsApp desde el mismo panel y registro de todo cambio hecho después de enviar. Mismo principio: HTML generado por el servidor, sin frameworks ni herramientas externas.
 5. **Pendientes y registro retroactivo:** se agregó un módulo de **pendientes** (tareas fuera de la programación diaria, con seguimiento por WhatsApp) para cubrir, entre otras cosas, el seguimiento de acciones correctivas de las inspecciones. Las fechas pasadas de la agenda dejaron de ser de solo lectura: ahora admiten **registro retroactivo** (con motivo obligatorio, marcado y sin enviar WhatsApp).
 6. **Nómina semanal (fase 1 — horas):** se agregó `/nomina`, que calcula lo que se paga a cada empleado por semana (lunes a domingo) con los datos que ya existían en `PROGRAMACION_DIARIA` (horario programado + horas reales del check-in). Permite ajustes manuales con motivo, conceptos adicionales (propinas, bonos, descuentos) y cerrar la liquidación de cada empleado, que queda congelada en el Sheets. El millaje queda para la fase 2.
+7. **Nómina fase 2 — millas (en construcción):** se agregó `millas.js`, que calcula el recorrido diario de cada empleado (casa → servicios → casa) con la **API de Google Routes** y guarda las distancias en una hoja-caché (`DISTANCIAS`) para no volver a consultar el mismo trayecto. El módulo ya está en el repositorio, pero **todavía no está conectado** a `/nomina` (ver 6.10 y 9).
 
 ---
 
@@ -45,6 +46,7 @@ tampa-cleaning-servidor/
 ├── edicion.js     → Editor de la agenda: validaciones, crear/editar/reasignar, cancelar, guardar y enviar, registro retroactivo
 ├── pendientes.js  → Pendientes: página /pendientes, envío y recordatorios por WhatsApp, respuestas "Ok"/"Pendiente", página del empleado
 ├── nomina.js      → Nómina semanal: página /nomina, cálculo de horas pagadas, ajustes, conceptos adicionales, cierre/reapertura de liquidaciones (registra sus rutas con nomina.rutas(app, auth))
+├── millas.js      → Nómina fase 2 (aún sin conectar): distancias con Google Routes + caché en DISTANCIAS, cálculo de millas por día, ajustes de paradas y de monto, foto al cerrar, tablas HTML de millas
 ├── sheets.js      → Módulo genérico de lectura/escritura a Google Sheets (con caché corta opcional)
 ├── package.json   → Dependencias: express, googleapis, twilio (el login usa `crypto`, incluido en Node)
 ├── CLAUDE.md      → Guía para Claude Code (resumen técnico del repositorio)
@@ -97,6 +99,7 @@ Funciones nuevas en `sheets.js`: `actualizarCeldas` (varias celdas en una sola l
 | `CLAVE_ADMIN` | Protege la ruta antigua `/enviar-programacion` |
 | `CLAVE_ADMIN_1` … `CLAVE_ADMIN_4` | Clave personal de cada administrador para entrar a la agenda (1 = Wilmar Lopez, 2 = Carolina Gallego, 3 = Andres Madrid, 4 = Claudia Lopez). El orden es fijo y las cuatro deben ser distintas. Si una no está definida, ese administrador simplemente no puede entrar |
 | `SESSION_SECRET` | Firma las cookies de sesión. **Obligatoria, mínimo 32 caracteres** — sin ella el login falla. Cambiarla cierra la sesión de todos |
+| `GOOGLE_MAPS_API_KEY` | Clave de Google Maps Platform con la **Routes API** habilitada, para calcular millas (`millas.js`). Aún no hace falta en producción: crearla en Render **antes** de conectar las millas a `/nomina`. Si falta, los días con millas quedan en "Revisar" con el mensaje "Falta GOOGLE_MAPS_API_KEY en Render". Requiere Node 18+ (usa `fetch`) |
 
 **Pendiente de seguridad:** la clave privada de Google y el Auth Token de Twilio se compartieron en el chat de esta conversación en algún momento durante la configuración — conviene regenerar ambas credenciales cuando haya tiempo (Google Cloud Console y Twilio Console, respectivamente, tienen un botón para esto sin romper nada más).
 
@@ -245,13 +248,22 @@ Una liquidación cerrada se muestra desde la foto, **no** desde el cálculo en v
 
 Agregar concepto, anular, cerrar y reabrir pasan por una cola en memoria propia de la nómina (mismo patrón que agenda y pendientes), para no generar IDs repetidos ni cerrar dos veces la misma semana.
 
+**Fase 2: millas (`millas.js` — en construcción, todavía no conectado a `/nomina`).** La lógica ya está escrita; falta integrarla en la página y en el cierre (ver sección 9). Cómo calcula:
+- **Recorrido del día:** por cada empleado y día, se arma la ruta **Casa → servicio 1 → … → servicio N → Casa**, con los servicios ordenados por hora de entrada real (o la programada si no hay check-in). La casa sale de la columna `Direccion_Residencia` de `EMPLEADOS` y cada sitio de las coordenadas de `SITIOS`. Se pagan todos los tramos **menos el regreso a casa** ("Mi. pagadas"); "Mi. total" incluye el regreso solo como referencia.
+- **Qué servicios cuentan como parada:** los que no están cancelados ni en "Sin pago". Un servicio en `Revisar` (sin check-in) deja el día en **Revisar** hasta que se ajusten sus horas o se indique con el botón **"Parada"** si cuenta o no. Ese botón también permite incluir un servicio cancelado (ej. el empleado sí se desplazó) o excluir uno normal; se guarda en `NOMINA_PARADAS` (vale la última fila de cada servicio; `Cuenta` distinto de Sí/No quita el ajuste).
+- **Regla de pago** (parámetros de `CONFIG_NOMINA`): si las millas pagadas superan `Umbral_Tarifa_Fija` (20), el día queda en **Revisar** y el administrador escribe el monto. Si no, se paga `millas pagadas × Tarifa_Milla` (0.37) cuando el día tiene **exactamente** `Servicios_Pago_Siempre` (2) paradas o cuando las millas pagadas llegan a `Umbral_Millas_Dia` (10); en cualquier otro caso el día paga $0.
+- **Ajustar monto:** el administrador puede fijar el monto de millas de un día con motivo; se agrega una fila en `NOMINA_MILLAS_AJUSTES` (vale la última por empleado y fecha; monto vacío quita el ajuste). El día queda `Ajustado` y se sigue mostrando el cálculo automático como referencia.
+- **Otros motivos de "Revisar":** falta la dirección de residencia del empleado (o la columna), un sitio sin coordenadas, o Google no pudo calcular un tramo.
+- **Distancias y caché (`DISTANCIAS`):** cada tramo se pide a la **Google Routes API** (en carro, sin tráfico) y se guarda en `DISTANCIAS` con los dos puntos (`CASA: <empleado>` / `SITIO: <cliente>`, ordenados — la distancia se trata como simétrica) y una **huella** (dirección o coordenadas). Si la dirección de la casa o las coordenadas del sitio cambian, la huella deja de coincidir y el tramo se recalcula. Una fila con `Fuente = Manual` **nunca** se sobrescribe — sirve para corregir a mano una distancia. Las distancias nuevas se escriben al Sheets en una sola operación al final (`volcarDistancias`) para no pasarse de la cuota de escritura.
+- **Al cerrar la liquidación** se guarda una foto de los tramos en `NOMINA_TRAMOS` y del resumen por día en `NOMINA_MILLAS_DIA`; una liquidación cerrada muestra las millas desde esa foto. Las liquidaciones cerradas antes de la fase 2 muestran un aviso de que no tienen detalle de millas.
+
 ---
 
 ## 7. Estructura de las hojas de Google Sheets relevantes
 
 | Hoja | Contiene |
 |---|---|
-| `EMPLEADOS` | Nombre, número de WhatsApp (columna `ID_Telegram`, heredada), `Rol`, `Estatus` (solo los `Activo` aparecen en la agenda), `Tarifa_Hora` (USD por hora, para la nómina — se crea a mano) |
+| `EMPLEADOS` | Nombre, número de WhatsApp (columna `ID_Telegram`, heredada), `Rol`, `Estatus` (solo los `Activo` aparecen en la agenda), `Tarifa_Hora` (USD por hora, para la nómina — se crea a mano), `Direccion_Residencia` (punto de salida y regreso para las millas — se crea a mano) |
 | `CLIENTES` | Nombre (columna `clientes`), `Direccion`, `Google Maps`, `Descripcion_Servicio`, `Instrucciones`, `Cliente Vigente/Vencido`. Es la fuente **en vivo** de dirección/instrucciones cuando la fila de programación no las trae |
 | `SITIOS` | `Nombre_Cliente`, coordenadas GPS (`Latitud`, `Longitud`) y radio de tolerancia para geofencing, `Checklist_Tareas` (lista separada por comas) para el formulario de cierre, `Estatus` |
 | `PROGRAMACION_DIARIA` | El corazón del sistema — un renglón por servicio, con columnas para programación, confirmación, check-in, y cierre. `Tipo_Servicio` distingue limpieza de `Inspeccion`; las inspecciones usan además `Resultado_Inspeccion`, `Requiere_Accion_Correctiva` y `Estado_Correccion` (todas opcionales — si la columna no existe, el servidor simplemente no la escribe). Ver columnas de la agenda abajo |
@@ -266,10 +278,15 @@ Agregar concepto, anular, cerrar y reabrir pasan por una cola en memoria propia 
 | `PAGOS_ADICIONALES` | **Nueva.** Propinas, bonos, descuentos y otros: `ID_Concepto`, `Semana_Inicio`, `Empleado`, `Fecha`, `Tipo`, `Descripcion`, `Monto`, `ID_Programacion`, `Creado_Por`, `Fecha_Creacion`, `Estado` (`Activo` / `Anulado`), `Anulado_Por`, `Motivo_Anulacion`, `ID_Liquidacion`. **Se crea sola** |
 | `LIQUIDACIONES` | **Nueva.** Una fila por cierre semanal de un empleado: `ID_Liquidacion`, `Semana_Inicio`, `Empleado`, `Estado` (`Cerrada` / `Reabierta`), `Servicios`, `Minutos`, `Monto_Horas`, `Monto_Millas`, `Monto_Propinas_Bonos`, `Monto_Descuentos`, `Total`, `Cerrado_Por`, `Fecha_Cierre`, `Reabierto_Por`, `Fecha_Reapertura`, `Motivo_Reapertura`. **Se crea sola** |
 | `NOMINA_DIAS` | **Nueva.** Foto congelada de cada servicio al cerrar una liquidación (programado, real, pagado, minutos, tarifa, recargo de sábado, monto, estado, millas — en 0 hasta la fase 2 — y motivo del ajuste). **Se crea sola** |
+| `DISTANCIAS` | **Nueva (fase 2).** Caché de distancias en millas entre puntos: `Punto_A`, `Punto_B`, `Millas`, `Fuente` (`Google` / `Manual`), `Huella`, `Fecha`. Se puede corregir a mano poniendo `Fuente = Manual`. **Se crea sola** |
+| `NOMINA_PARADAS` | **Nueva (fase 2).** Bitácora de "¿este servicio cuenta como parada?": `Fecha_Hora`, `ID_Programacion`, `Empleado`, `Fecha_Servicio`, `Cuenta` (Sí / No / otro = quitar), `Motivo`, `Ajustado_Por`. Vale la última fila de cada servicio. **Se crea sola** |
+| `NOMINA_MILLAS_AJUSTES` | **Nueva (fase 2).** Montos de millas fijados a mano: `Fecha_Hora`, `Empleado`, `Fecha_Servicio`, `Monto` (vacío = quitar), `Motivo`, `Ajustado_Por`. Vale la última fila por empleado y fecha. **Se crea sola** |
+| `NOMINA_TRAMOS` | **Nueva (fase 2).** Foto de cada tramo al cerrar: `ID_Liquidacion`, `Semana_Inicio`, `Empleado`, `Fecha`, `Orden`, `Origen`, `Destino`, `Millas`, `Pagado`, `Fuente`. **Se crea sola** |
+| `NOMINA_MILLAS_DIA` | **Nueva (fase 2).** Foto del resumen de millas por día al cerrar: `ID_Liquidacion`, `Semana_Inicio`, `Empleado`, `Fecha`, `Paradas`, `Millas_Pagadas`, `Millas_Total`, `Monto_Millas`, `Estado`, `Motivo_Ajuste`, `Notas`. **Se crea sola** |
 
 **Columnas de `PROGRAMACION_DIARIA` que exige la agenda.** A diferencia del resto del sistema (donde las columnas son opcionales), la agenda **se niega a guardar** si falta alguna de estas: `ID_Programacion`, `Fecha_Servicio`, `Tipo_Servicio`, `Cliente`, `Empleado`, `Horario`, `Hora_Inicio`, `Hora_Fin`, `Observaciones_Puntuales`, `Estado_Envio`, `Estado_Confirmacion`, `Creado_Por`, `Fecha_Creacion`, `Modificado_Por`, `Fecha_Modificacion`, `Cancelado`, `Motivo_Cancelacion`. Las filas nuevas se escriben por **nombre de columna** (no por posición), así que el orden de las columnas puede cambiar sin romper nada.
 
-**Columnas adicionales para el registro retroactivo:** `Registro_Retroactivo` (Sí / vacío), `Motivo_Retroactivo`, `Origen_Registro` (`Manual` cuando las horas reales las escribió un administrador). Solo se exigen al guardar en una fecha pasada. `PENDIENTES_MENSAJES` usa posiciones fijas (columna A = SID, B = ID_Pendiente) y `PENDIENTES_HISTORIAL` se escribe en orden fijo: no reordenar sus columnas. Lo mismo para las hojas de nómina (`NOMINA_AJUSTES`, `PAGOS_ADICIONALES`, `LIQUIDACIONES`, `NOMINA_DIAS`): las filas nuevas se escriben en el orden fijo de sus encabezados (aunque se leen por nombre de columna), así que tampoco se deben reordenar.
+**Columnas adicionales para el registro retroactivo:** `Registro_Retroactivo` (Sí / vacío), `Motivo_Retroactivo`, `Origen_Registro` (`Manual` cuando las horas reales las escribió un administrador). Solo se exigen al guardar en una fecha pasada. `PENDIENTES_MENSAJES` usa posiciones fijas (columna A = SID, B = ID_Pendiente) y `PENDIENTES_HISTORIAL` se escribe en orden fijo: no reordenar sus columnas. Lo mismo para las hojas de nómina (`NOMINA_AJUSTES`, `PAGOS_ADICIONALES`, `LIQUIDACIONES`, `NOMINA_DIAS`, y las de millas: `DISTANCIAS`, `NOMINA_PARADAS`, `NOMINA_MILLAS_AJUSTES`, `NOMINA_TRAMOS`, `NOMINA_MILLAS_DIA`): las filas nuevas se escriben en el orden fijo de sus encabezados (aunque se leen por nombre de columna), así que tampoco se deben reordenar.
 
 ---
 
@@ -279,6 +296,7 @@ Agregar concepto, anular, cerrar y reabrir pasan por una cola en memoria propia 
 |---|---|---|
 | Twilio (WhatsApp) | ~$1–5 USD | Depende de cuántos mensajes inicia el negocio (no el empleado). Los avisos de cambio/cancelación, los pendientes y sus recordatorios suman mensajes salientes |
 | Google Sheets API | $0 | Gratuito |
+| Google Maps Platform (Routes API) | Probablemente $0 | Solo cuando se conecten las millas. Cada par de puntos se consulta una sola vez (queda en `DISTANCIAS`), así que el volumen debería quedar dentro de la cuota gratuita mensual — confirmar en la consola de Google Cloud y poner un límite de cuota |
 | Render (Starter recomendado) | $7 USD/mes | El plan gratis "duerme" tras 15 min sin uso — no recomendado para producción real |
 
 ---
@@ -293,12 +311,12 @@ Agregar concepto, anular, cerrar y reabrir pasan por una cola en memoria propia 
 - **Acciones correctivas → pendientes automáticos** — hoy el seguimiento se hace con pendientes (ver 6.9), pero el administrador los crea a mano a partir del aviso de la inspección. `Estado_Correccion` no se actualiza al resolver el pendiente; la agenda ya no lo necesita cuando hay pendientes vinculados, pero la columna queda desactualizada en el Sheets.
 - **Recordatorios automáticos de pendientes** — por ahora solo existen los manuales (botón "Recordar"); no hay aviso automático de vencidos.
 - **Retirar `CLAVE_ADMIN` y `/enviar-programacion`** una vez que todos usen la agenda para enviar.
-- **Nómina fase 2: millas** — calcular el millaje entre los servicios del día y pagarlo según `CONFIG_NOMINA` (`Tarifa_Milla`, `Umbral_Millas_Dia`, `Servicios_Pago_Siempre`, `Umbral_Tarifa_Fija`). Las columnas `Monto_Millas` / `Millas_Pagadas` ya existen y hoy se guardan en 0.
+- **Nómina fase 2: conectar las millas** — la lógica ya está en `millas.js` (ver 6.10), pero `nomina.js` todavía no la usa: la línea "Millas" sigue en $0 "(próxima fase)" y `Monto_Millas` / `Millas_Pagadas` se guardan en 0. Falta: (1) en `nomina.js`, cargar el contexto (`cargarContexto`), calcular por empleado (`calcularMillasEmpleado`), sumar el monto al total, guardar las distancias nuevas (`volcarDistancias`) y mostrar `tablaAbierta` / `tablaCerrada` en el detalle; (2) rutas `POST` para registrar parada y ajuste de monto (`registrarParada`, `registrarAjusteMillas`), dentro de la cola de la nómina y bloqueadas en semanas cerradas; (3) las funciones de navegador `tcParada` y `tcMillas` que llaman los botones; (4) al cerrar, exigir que ningún día de millas esté en "Revisar", guardar `guardarSnapshot` y escribir `Monto_Millas`; (5) crear `GOOGLE_MAPS_API_KEY` en Render y la columna `Direccion_Residencia` en `EMPLEADOS`.
 - **Bloqueo de login y colas de escrituras en memoria** (agenda, pendientes y nómina) — funcionan porque hay una sola instancia del servidor; si algún día se escala a varias instancias, habría que moverlos a un almacenamiento compartido.
 
 **Del mapa de problemas original** (los dolores que motivaron el sistema; aún sin resolver del todo):
 
-- **Nómina: horas y millas automáticas** — **horas resueltas** con `/nomina` (ver 6.10): horas pagadas por servicio, recargo de sábado, propinas/bonos/descuentos y cierre semanal. **Falta el millaje** entre servicios (fase 2); hoy se sigue sacando a mano en Google Maps.
+- **Nómina: horas y millas automáticas** — **horas resueltas** con `/nomina` (ver 6.10): horas pagadas por servicio, recargo de sábado, propinas/bonos/descuentos y cierre semanal. **Millaje en construcción** (fase 2, `millas.js` listo pero sin conectar); mientras tanto se sigue sacando a mano en Google Maps.
 - **Historial de calidad al programar** — las quejas (`QUEJAS`) y las inspecciones solo se ven en el detalle de cada servicio. El objetivo original era ver el historial de quejas/observaciones **del cliente y del empleado** en el editor, al momento de programar.
 - **Cobranza: servicios pendientes por cliente** — al registrar un pago no se ve qué servicios tiene pendientes ese cliente; hoy hay que buscarlos a mano en la agenda. No está en el servidor.
 - **Tareas recurrentes** (ej. "aspirar los viernes" en oficinas) — los pendientes cubren tareas puntuales con seguimiento por WhatsApp, pero no se repiten solos: alguien tiene que crear cada uno. Falta la recurrencia programada.
@@ -307,11 +325,11 @@ Agregar concepto, anular, cerrar y reabrir pasan por una cola en memoria propia 
 
 ## 10. Cómo hacer cambios de aquí en adelante
 
-1. Editar el archivo correspondiente (`index.js`, `logica.js`, `agenda.js`, `edicion.js`, `pendientes.js`, `nomina.js`, `auth.js` o `sheets.js`) local o directo en GitHub.
+1. Editar el archivo correspondiente (`index.js`, `logica.js`, `agenda.js`, `edicion.js`, `pendientes.js`, `nomina.js`, `millas.js`, `auth.js` o `sheets.js`) local o directo en GitHub.
 2. Subir el cambio a la rama `main` del repositorio.
 3. Render redespliega automáticamente al detectar el cambio.
 4. Revisar la pestaña "Logs" del servicio en Render para confirmar que el despliegue fue exitoso.
 
 **Importante:** siempre usar "Nueva versión" al reimplementar cambios que dependan de configuración externa — con Render esto es automático, no aplica el mismo cuidado que sí hacía falta con Apps Script.
 
-**Si se agrega una variable de entorno** (como `SESSION_SECRET` o las `CLAVE_ADMIN_N`), hay que crearla en Render (*Environment*) **antes** de subir el código que la usa.
+**Si se agrega una variable de entorno** (como `SESSION_SECRET`, las `CLAVE_ADMIN_N` o `GOOGLE_MAPS_API_KEY`), hay que crearla en Render (*Environment*) **antes** de subir el código que la usa.
