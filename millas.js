@@ -21,9 +21,10 @@ const MA_HEADERS = ['Fecha_Hora', 'Empleado', 'Fecha_Servicio', 'Monto', 'Motivo
 const TR_HEADERS = ['ID_Liquidacion', 'Semana_Inicio', 'Empleado', 'Fecha', 'Orden', 'Origen', 'Destino', 'Millas', 'Pagado', 'Fuente'];
 const MD_HEADERS = ['ID_Liquidacion', 'Semana_Inicio', 'Empleado', 'Fecha', 'Paradas', 'Millas_Pagadas', 'Millas_Total', 'Monto_Millas', 'Estado', 'Motivo_Ajuste', 'Notas'];
 
+const aseguradas = new Set();
 async function cargarTabla(nombre, headers) {
-  await asegurarHoja(nombre, headers);
-  const d = await leerHoja(nombre);
+  if (!aseguradas.has(nombre)) { await asegurarHoja(nombre, headers); aseguradas.add(nombre); }
+  const d = await leerHoja(nombre, { cache: true });
   const lista = [];
   lista.h = (d[0] && d[0].length) ? d[0] : headers;
   for (let i = 1; i < d.length; i++) {

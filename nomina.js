@@ -69,9 +69,10 @@ const usd = n => '$' + (n || 0).toFixed(2);
 const sec = (t, c) => `<details class="sec" open><summary>${t}</summary>${c}</details>`;
 
 // ---------- lectura de hojas ----------
+const aseguradas = new Set();
 async function cargarTabla(nombre, headers) {
-  await asegurarHoja(nombre, headers);
-  const d = await leerHoja(nombre);
+  if (!aseguradas.has(nombre)) { await asegurarHoja(nombre, headers); aseguradas.add(nombre); }
+  const d = await leerHoja(nombre, { cache: true });
   const lista = [];
   lista.h = (d[0] && d[0].length) ? d[0] : headers;
   for (let i = 1; i < d.length; i++) {
@@ -83,7 +84,7 @@ async function cargarTabla(nombre, headers) {
 }
 
 async function cargarConfig() {
-  await asegurarHoja('CONFIG_NOMINA', CONFIG_HEADERS);
+  if (!aseguradas.has('CONFIG_NOMINA')) { await asegurarHoja('CONFIG_NOMINA', CONFIG_HEADERS); aseguradas.add('CONFIG_NOMINA'); }
   let datos = await leerHoja('CONFIG_NOMINA', { cache: true });
   if (datos.length < 2) { await agregarFilas('CONFIG_NOMINA', CONFIG_DEFAULTS); datos = [CONFIG_HEADERS, ...CONFIG_DEFAULTS]; }
   const h = datos[0], iK = h.indexOf('Clave'), iV = h.indexOf('Valor');
@@ -287,7 +288,7 @@ function cerrar({ empleado, semana, admin }) {
     empleado = String(empleado || '').trim();
     if (!fechaValida(semana)) return { ok: false, general: 'Semana no válida.' };
     const lunes = inicioSemana(semana);
-    ['PROGRAMACION_DIARIA', 'EMPLEADOS', 'CONFIG_NOMINA', 'SITIOS'].forEach(invalidarCache); // cierre siempre con datos frescos
+    ['PROGRAMACION_DIARIA', 'EMPLEADOS', 'CONFIG_NOMINA', 'SITIOS', 'LIQUIDACIONES', 'PAGOS_ADICIONALES', 'NOMINA_AJUSTES', 'NOMINA_PARADAS', 'NOMINA_MILLAS_AJUSTES', 'DISTANCIAS'].forEach(invalidarCache); // cierre siempre con datos frescos
     const [liqs, conceptos] = await Promise.all([cargarLiquidaciones(), cargarConceptos()]);
     if (cerradaDe(liqs, lunes, empleado)) return { ok: false, general: 'Esta liquidación ya está cerrada.' };
     const { rows, canceladas, cfg } = await datosEmpleado(empleado, lunes);
