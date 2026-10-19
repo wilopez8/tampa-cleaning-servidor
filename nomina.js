@@ -66,6 +66,7 @@ function f24(min) {
 const t12 = m => (m === null || m === undefined) ? '' : f12(m);
 const fmtDur = min => `${Math.floor(min / 60)} h ${p2(min % 60)} min`;
 const usd = n => '$' + (n || 0).toFixed(2);
+const sec = (t, c) => `<details class="sec" open><summary>${t}</summary>${c}</details>`;
 
 // ---------- lectura de hojas ----------
 async function cargarTabla(nombre, headers) {
@@ -366,7 +367,9 @@ th{background:#f1f3f5;} tfoot td{font-weight:700;background:#f9fafb;}
 small{color:#777;}
 dialog{border:1px solid #ccc;border-radius:10px;padding:18px;max-width:360px;width:90%;}
 dialog label{display:block;margin:10px 0;font-size:14px;}
-dialog input,dialog select{width:100%;padding:8px;font-size:15px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;}`;
+dialog input,dialog select{width:100%;padding:8px;font-size:15px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;}
+details.sec{margin-bottom:14px;} details.sec>summary{cursor:pointer;font-weight:700;font-size:15px;padding:8px 12px;background:#e8ebf0;border-radius:6px;margin-bottom:8px;}
+td details summary{cursor:pointer;color:#1d4ed8;}`;
 
 const SCRIPT = `
 function $(i){return document.getElementById(i);}
@@ -387,7 +390,8 @@ function tcParada(b){parId=b.dataset.id;$('pt').textContent=b.dataset.t;$('pc').
 function tcGuardarParada(){var m=$('pm').value.trim();if(m.length<3){$('pe').textContent='El motivo es obligatorio.';return;}post('/nomina/parada',{id:parId,cuenta:$('pc').value,motivo:m},'pe');}
 var mmFecha=null;
 function tcMillas(b){mmFecha=b.dataset.fecha;$('mmt').textContent=b.dataset.t;$('mmv').value=b.dataset.monto;$('mmm').value='';$('mme').textContent='';$('dlgmm').showModal();}
-function tcGuardarMillas(){var m=$('mmm').value.trim();if(m.length<3){$('mme').textContent='El motivo es obligatorio.';return;}post('/nomina/millas/ajustar',{empleado:EMP,fecha:mmFecha,monto:$('mmv').value,motivo:m},'mme');}`;
+function tcGuardarMillas(){var m=$('mmm').value.trim();if(m.length<3){$('mme').textContent='El motivo es obligatorio.';return;}post('/nomina/millas/ajustar',{empleado:EMP,fecha:mmFecha,monto:$('mmv').value,motivo:m},'mme');}
+function tcTodo(a){document.querySelectorAll('details.sec').forEach(function(d){d.open=a;});}`;
 
 async function paginaNomina(query, admin) {
   const hoy = hoyFlorida();
@@ -447,7 +451,7 @@ async function paginaNomina(query, admin) {
     <tr><td>Descuentos</td><td class="num neg">− ${usd(t.menos)}</td></tr>
     <tfoot><tr><td>TOTAL A PAGAR</td><td class="num">${usd(t.total)}</td></tr></tfoot></table>`;
 
-  const conceptosHtml = (lista, editable) => `<h4>Otros conceptos</h4><table>
+  const conceptosHtml = (lista, editable) => `<table>
     <tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Servicio</th><th class="num">Monto</th><th>Registrado por</th><th></th></tr>
     ${lista.length ? lista.map(c => `<tr><td>${esc(normalizarFecha(c.Fecha))}</td><td>${esc(c.Tipo)}</td><td>${esc(c.Descripcion)}</td><td><small>${esc(c.ID_Programacion)}</small></td>
       <td class="num ${c.Tipo === 'Descuento' ? 'neg' : ''}">${c.Tipo === 'Descuento' ? '− ' : ''}${usd(c._monto)}</td><td>${esc(c.Creado_Por)}</td>
@@ -478,9 +482,10 @@ async function paginaNomina(query, admin) {
       }).join('');
       detalle = `<h3>${esc(emp)} <span class="est cer">Cerrada por ${esc(liq.Cerrado_Por)} · ${esc(liq.Fecha_Cierre)}</span></h3>
         ${difiere ? '<div class="aviso y">⚠️ El cálculo de horas en vivo ya no coincide con lo cerrado (cambió la agenda, la tarifa o la configuración). Lo cerrado no se modifica; reabre la liquidación si quieres recalcular.</div>' : ''}
-        <table><tr><th>Día</th><th>Servicio</th><th>Programado</th><th>Real (check-in)</th><th>Pagado</th><th class="num">Horas</th><th class="num">Tarifa</th><th class="num">Monto</th><th>Estado</th></tr>${filasSnap}</table>
-        ${millas.tablaCerrada(snapM)}
-        ${conceptosHtml(consLiq, false)}
+        <div style="margin-bottom:8px;"><button class="btn" onclick="tcTodo(true)">Abrir todo</button> <button class="btn" onclick="tcTodo(false)">Cerrar todo</button></div>
+        ${sec('Horas (servicios)', `<table><tr><th>Día</th><th>Servicio</th><th>Programado</th><th>Real (check-in)</th><th>Pagado</th><th class="num">Horas</th><th class="num">Tarifa</th><th class="num">Monto</th><th>Estado</th></tr>${filasSnap}</table>`)}
+        ${sec('Millas', millas.tablaCerrada(snapM))}
+        ${sec('Otros conceptos', conceptosHtml(consLiq, false))}
         ${caja(tot(emp))}
         <button class="btn warn" onclick="tcReabrir()">Reabrir liquidación</button>`;
     } else {
@@ -506,10 +511,10 @@ async function paginaNomina(query, admin) {
       const opcionesServ = g.map(c => `<option value="${esc(c.r.ID_Programacion)}">${diaSemana(c.r._fecha)} ${c.r._fecha.slice(8)} · ${esc(c.r.Cliente)}</option>`).join('');
       const pendTxt = [bloqueaH ? bloqueaH + ' servicio(s) por revisar' : '', bloqueaM ? bloqueaM + ' día(s) con millas por revisar' : ''].filter(Boolean).join(' · ');
       detalle = `<h3>${esc(emp)}</h3>
-        <table><tr><th>Día</th><th>Servicio</th><th>Programado</th><th>Real (check-in)</th><th>Pagado</th><th class="num">Horas</th><th class="num">Tarifa</th><th class="num">Monto</th><th>Estado</th><th></th></tr>${filasHtml}</table>
-        ${millas.tablaAbierta(dm)}
-        ${conceptosHtml(consAbiertos[emp] || [], true)}
-        <button class="btn" onclick="tcConcepto()">+ Agregar concepto</button>
+        <div style="margin-bottom:8px;"><button class="btn" onclick="tcTodo(true)">Abrir todo</button> <button class="btn" onclick="tcTodo(false)">Cerrar todo</button></div>
+        ${sec('Horas (servicios)', `<table><tr><th>Día</th><th>Servicio</th><th>Programado</th><th>Real (check-in)</th><th>Pagado</th><th class="num">Horas</th><th class="num">Tarifa</th><th class="num">Monto</th><th>Estado</th><th></th></tr>${filasHtml}</table>`)}
+        ${sec('Millas', millas.tablaAbierta(dm))}
+        ${sec('Otros conceptos', conceptosHtml(consAbiertos[emp] || [], true) + '<button class="btn" onclick="tcConcepto()">+ Agregar concepto</button>')}
         <div style="margin-top:14px;">${caja(tot(emp))}</div>
         <button class="btn hoy" onclick="tcCerrar()" ${(bloqueaH || bloqueaM) ? 'disabled' : ''}>Cerrar liquidación de ${esc(emp)}</button>
         <span id="ce2" style="color:#b91c1c;font-size:13px;margin-left:8px;">${esc(pendTxt)}</span>

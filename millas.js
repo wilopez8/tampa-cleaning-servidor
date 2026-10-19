@@ -248,7 +248,7 @@ async function leerSnapshot(id) {
 const badge = e => `<span class="est ${e === 'Revisar' ? 'rev' : e === 'Ajustado' ? 'aj' : e === 'Calculado' ? 'ok' : ''}">${esc(e)}</span>`;
 
 function tablaAbierta(dias) {
-  if (!dias.length) return '<h4>Millas</h4><div class="aviso">Sin servicios para calcular millas esta semana.</div>';
+  if (!dias.length) return '<div class="aviso">Sin servicios para calcular millas esta semana.</div>';
   let tp = 0, tt = 0, tm = 0;
   const filas = dias.map(d => {
     tp += d.millasPagadas; tt += d.millasTotal; tm += d.monto;
@@ -257,17 +257,19 @@ function tablaAbierta(dias) {
     const tramos = d.tramos.map(t => `<div><small>${esc(t.origen)} → ${esc(t.destino)}: ${t.error ? `<span class="neg">${esc(t.error)}</span>` : (t.millas ?? 0).toFixed(1) + ' mi'}${t.pagado ? '' : ' · regreso, no se paga'}</small></div>`).join('');
     const nota = d.estado === 'Revisar' ? `<br><small class="neg">${esc(d.nota)}</small>`
       : d.estado === 'Ajustado' ? `<br><small>${esc(d.nota)} · automático: ${d.auto === null ? '—' : usd(d.auto)}${d.aviso ? ' · ⚠ ' + esc(d.aviso) : ''}</small>` : '';
-    return `<tr><td>${diaSemana(d.fecha)} ${d.fecha.slice(8)}</td><td>${items}</td><td>${tramos || '<small>—</small>'}</td>
+    return `<tr><td>${diaSemana(d.fecha)} ${d.fecha.slice(8)}</td>
+      <td><details${d.estado === 'Revisar' ? ' open' : ''}><summary><small>${d.paradas} parada(s) · ${d.items.length} servicio(s)</small></summary>${items}</details></td>
+      <td><details><summary><small>Ver recorrido</small></summary>${tramos || '<small>—</small>'}</details></td>
       <td class="num">${d.millasPagadas.toFixed(1)}</td><td class="num">${d.millasTotal.toFixed(1)}</td><td class="num">${usd(d.monto)}</td>
       <td>${badge(d.estado)}${nota}</td>
       <td><button class="btn" data-fecha="${esc(d.fecha)}" data-monto="${d.monto}" data-t="${esc('Millas del ' + d.fecha)}" onclick="tcMillas(this)">Ajustar monto</button></td></tr>`;
   }).join('');
-  return `<h4>Millas</h4><table><tr><th>Día</th><th>Paradas (✔ cuenta · ✖ no cuenta)</th><th>Recorrido</th><th class="num">Mi. pagadas</th><th class="num">Mi. total (con regreso)</th><th class="num">Monto</th><th>Estado</th><th></th></tr>${filas}
+  return `<table><tr><th>Día</th><th>Paradas (✔ cuenta · ✖ no cuenta)</th><th>Recorrido</th><th class="num">Mi. pagadas</th><th class="num">Mi. total (con regreso)</th><th class="num">Monto</th><th>Estado</th><th></th></tr>${filas}
     <tfoot><tr><td colspan="3">Total semana</td><td class="num">${r2(tp).toFixed(1)}</td><td class="num">${r2(tt).toFixed(1)}</td><td class="num">${usd(r2(tm))}</td><td colspan="2"></td></tr></tfoot></table>`;
 }
 
 function tablaCerrada(snap) {
-  if (!snap.dias.length) return '<h4>Millas</h4><div class="aviso">Esta liquidación no guarda detalle de millas (se cerró antes de la Fase 2).</div>';
+  if (!snap.dias.length) return '<div class="aviso">Esta liquidación no guarda detalle de millas (se cerró antes de la Fase 2).</div>';
   const filas = snap.dias.map(d => {
     const f = normalizarFecha(d.Fecha);
     const tr = snap.tramos.filter(t => normalizarFecha(t.Fecha) === f).sort((a, b) => (numero(a.Orden) || 0) - (numero(b.Orden) || 0))
@@ -276,7 +278,7 @@ function tablaCerrada(snap) {
       <td class="num">${(numero(d.Millas_Pagadas) || 0).toFixed(1)}</td><td class="num">${(numero(d.Millas_Total) || 0).toFixed(1)}</td>
       <td class="num">${usd(numero(d.Monto_Millas) || 0)}</td><td>${badge(d.Estado)}${d.Motivo_Ajuste ? `<br><small>${esc(d.Motivo_Ajuste)}</small>` : ''}</td></tr>`;
   }).join('');
-  return `<h4>Millas</h4><table><tr><th>Día</th><th class="num">Paradas</th><th>Recorrido</th><th class="num">Mi. pagadas</th><th class="num">Mi. total (con regreso)</th><th class="num">Monto</th><th>Estado</th></tr>${filas}</table>`;
+  return `<table><tr><th>Día</th><th class="num">Paradas</th><th>Recorrido</th><th class="num">Mi. pagadas</th><th class="num">Mi. total (con regreso)</th><th class="num">Monto</th><th>Estado</th></tr>${filas}</table>`;
 }
 
 module.exports = { cargarContexto, calcularMillasEmpleado, volcarDistancias, registrarParada, registrarAjusteMillas, guardarSnapshot, leerSnapshot, tablaAbierta, tablaCerrada };

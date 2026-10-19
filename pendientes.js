@@ -273,7 +273,7 @@ async function paginaPendientes(query, admin) {
   }).join('') : '<tr><td colspan="8" style="text-align:center;color:#888;padding:24px;">No hay pendientes con este filtro.</td></tr>';
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Pendientes</title><style>${CSS}</style></head><body>
-<div class="top"><h2 style="margin:0;">Pendientes</h2><div>${esc(admin)} · <a href="/agenda">Agenda</a> · <a href="/logout">Cerrar sesión</a></div></div>
+<div class="top"><h2 style="margin:0;">Pendientes</h2><div>${esc(admin)} · <a href="/agenda">Agenda</a> · <a href="/nomina">Nómina</a> · <a href="/logout">Cerrar sesión</a>
 <section class="box"><h3 style="margin:0 0 10px;">Nuevos pendientes <small>(se guardan como Borrador)</small></h3>
 <table><thead><tr><th>Tipo</th><th>Título</th><th>Cliente</th><th>ID servicio</th><th>Responsable</th><th>Fecha</th><th>Horario</th><th>Prioridad</th><th>Observaciones</th><th>Validación</th><th></th></tr></thead><tbody id="gc"></tbody></table>
 <div style="margin-top:10px;display:flex;gap:10px;align-items:center;"><button class="btn" id="mas">+ Fila</button><button class="btn ok" id="gu">Guardar borrador</button><button class="btn ok" id="en">Guardar y enviar al equipo</button><span id="msg" class="mal"></span></div></section>
