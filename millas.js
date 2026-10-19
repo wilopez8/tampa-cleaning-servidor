@@ -265,7 +265,7 @@ function tablaAbierta(dias) {
       <td>${badge(d.estado)}${nota}</td>
       <td><button class="btn" data-fecha="${esc(d.fecha)}" data-monto="${d.monto}" data-t="${esc('Millas del ' + d.fecha)}" onclick="tcMillas(this)">Ajustar monto</button></td></tr>`;
   }).join('');
-  return `<table><tr><th>Día</th><th>Paradas (✔ cuenta · ✖ no cuenta)</th><th>Recorrido</th><th class="num">Mi. pagadas</th><th class="num">Mi. total (con regreso)</th><th class="num">Monto</th><th>Estado</th><th></th></tr>${filas}
+  return `<table class="tm"><tr><th>Día</th><th>Paradas (✔ cuenta · ✖ no cuenta)</th><th>Recorrido</th><th class="num">Mi. pagadas</th><th class="num">Mi. total (con regreso)</th><th class="num">Monto</th><th>Estado</th><th></th></tr>${filas}
     <tfoot><tr><td colspan="3">Total semana</td><td class="num">${r2(tp).toFixed(1)}</td><td class="num">${r2(tt).toFixed(1)}</td><td class="num">${usd(r2(tm))}</td><td colspan="2"></td></tr></tfoot></table>`;
 }
 

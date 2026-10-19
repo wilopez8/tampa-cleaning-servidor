@@ -371,7 +371,12 @@ dialog{border:1px solid #ccc;border-radius:10px;padding:18px;max-width:360px;wid
 dialog label{display:block;margin:10px 0;font-size:14px;}
 dialog input,dialog select{width:100%;padding:8px;font-size:15px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;}
 details.sec{margin-bottom:14px;} details.sec>summary{cursor:pointer;font-weight:700;font-size:15px;padding:8px 12px;background:#e8ebf0;border-radius:6px;margin-bottom:8px;}
-td details summary{cursor:pointer;color:#1d4ed8;}`;
+td details summary{cursor:pointer;color:#1d4ed8;}
+table.tm{table-layout:fixed;}
+table.tm th:nth-child(1){width:7%;} table.tm th:nth-child(2){width:23%;} table.tm th:nth-child(3){width:23%;}
+table.tm th:nth-child(4){width:8%;} table.tm th:nth-child(5){width:10%;} table.tm th:nth-child(6){width:8%;}
+table.tm th:nth-child(7){width:12%;} table.tm th:nth-child(8){width:9%;}
+table.tm td{overflow-wrap:anywhere;} table.tm .btn{white-space:normal;}`;
 
 const SCRIPT = `
 function $(i){return document.getElementById(i);}
