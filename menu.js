@@ -1,5 +1,5 @@
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const ITEMS = [['/agenda', 'Agenda'], ['/pendientes', 'Pendientes'], ['/nomina', 'Nómina']];
+const ITEMS = [['/agenda', 'Agenda'], ['/pendientes', 'Pendientes'], ['/nomina', 'Nómina'], ['/cartera', 'Cartera']];
 
 const MENU_CSS = `
 nav.tcmenu{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0;padding:0;}
