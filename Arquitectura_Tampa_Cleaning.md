@@ -1,13 +1,13 @@
 # Arquitectura — Sistema Tampa Cleaning
 
-**Última actualización:** 19 de octubre de 2026
+**Última actualización:** 20 de octubre de 2026
 **Propósito de este documento:** referencia técnica para entender cómo funciona el sistema, qué piezas lo componen y cómo se conectan.
 
 ---
 
 ## 1. Resumen en una frase
 
-Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su ubicación (check-in), confirmar su programación y reportar novedades. Un **servidor propio en Node.js** (hosteado en Render) procesa esos mensajes, valida la información contra **Google Sheets** (que funciona como base de datos central), y notifica a gerencia por WhatsApp cuando algo requiere atención. El cierre de cada servicio (checklist, insumos, comentario — o la evaluación por áreas, si el servicio es una inspección de calidad) se completa en una **página web propia**, generada por el mismo servidor — no se usa ninguna herramienta externa de formularios. Los administradores programan, editan, reasignan y cancelan servicios desde una **agenda web** protegida con clave (`/agenda`), también generada por el servidor. Desde esa misma sesión asignan **pendientes** (tareas sueltas como acciones correctivas o diligencias) que el empleado recibe por WhatsApp y cierra respondiendo "Ok". Además calculan la **nómina semanal** (`/nomina`): horas pagadas por servicio a partir de lo programado y del check-in, millas recorridas entre servicios (con Google Routes), propinas/bonos/descuentos, y cierre de la liquidación de cada empleado.
+Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su ubicación (check-in), confirmar su programación y reportar novedades. Un **servidor propio en Node.js** (hosteado en Render) procesa esos mensajes, valida la información contra **Google Sheets** (que funciona como base de datos central), y notifica a gerencia por WhatsApp cuando algo requiere atención. El cierre de cada servicio (checklist, insumos, comentario — o la evaluación por áreas, si el servicio es una inspección de calidad) se completa en una **página web propia**, generada por el mismo servidor — no se usa ninguna herramienta externa de formularios. Los administradores programan, editan, reasignan y cancelan servicios desde una **agenda web** protegida con clave (`/agenda`), también generada por el servidor. Desde esa misma sesión asignan **pendientes** (tareas sueltas como acciones correctivas o diligencias) que el empleado recibe por WhatsApp y cierra respondiendo "Ok". Además calculan la **nómina semanal** (`/nomina`): horas pagadas por servicio a partir de lo programado y del check-in, millas recorridas entre servicios (con Google Routes), propinas/bonos/descuentos, y cierre de la liquidación de cada empleado; la liquidación cerrada se le comparte al empleado con un **enlace firmado** (`/liquidacion`) para que vea su detalle sin iniciar sesión.
 
 ---
 
@@ -20,6 +20,7 @@ Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su 
 5. **Pendientes y registro retroactivo:** se agregó un módulo de **pendientes** (tareas fuera de la programación diaria, con seguimiento por WhatsApp) para cubrir, entre otras cosas, el seguimiento de acciones correctivas de las inspecciones. Las fechas pasadas de la agenda dejaron de ser de solo lectura: ahora admiten **registro retroactivo** (con motivo obligatorio, marcado y sin enviar WhatsApp).
 6. **Nómina semanal (fase 1 — horas):** se agregó `/nomina`, que calcula lo que se paga a cada empleado por semana (lunes a domingo) con los datos que ya existían en `PROGRAMACION_DIARIA` (horario programado + horas reales del check-in). Permite ajustes manuales con motivo, conceptos adicionales (propinas, bonos, descuentos) y cerrar la liquidación de cada empleado, que queda congelada en el Sheets. El millaje queda para la fase 2.
 7. **Nómina fase 2 — millas:** se agregó `millas.js`, que calcula el recorrido diario de cada empleado (casa → servicios → casa) con la **API de Google Routes** y guarda las distancias en una hoja-caché (`DISTANCIAS`) para no volver a consultar el mismo trayecto. Está conectado a `/nomina`: las millas suman al total, se pueden ajustar por parada o por día, bloquean el cierre si quedan por revisar y se congelan al cerrar (ver 6.10). En el mismo cambio, las páginas de administración (agenda, pendientes, nómina) pasaron a compartir un **menú de navegación** común (`menu.js`).
+8. **Liquidación visible para el empleado:** cada liquidación cerrada tiene un **enlace propio** (`/liquidacion?t=…`) con un token firmado que vence a los 60 días, para que el empleado vea sus horas, millas, conceptos y total sin cuenta ni clave. El enlace no se envía por Twilio: el administrador copia un mensaje ya redactado con el botón "Copiar mensaje con enlace" y lo manda él mismo.
 
 ---
 
@@ -45,7 +46,7 @@ tampa-cleaning-servidor/
 ├── agenda.js      → Página /agenda: vista semanal/diaria, filtros, "línea de vida" de cada servicio, franja de pendientes del día
 ├── edicion.js     → Editor de la agenda: validaciones, crear/editar/reasignar, cancelar, guardar y enviar, registro retroactivo
 ├── pendientes.js  → Pendientes: página /pendientes, envío y recordatorios por WhatsApp, respuestas "Ok"/"Pendiente", página del empleado
-├── nomina.js      → Nómina semanal: página /nomina, cálculo de horas pagadas, ajustes, conceptos adicionales, millas, cierre/reapertura de liquidaciones (registra sus rutas con nomina.rutas(app, auth))
+├── nomina.js      → Nómina semanal: página /nomina, cálculo de horas pagadas, ajustes, conceptos adicionales, millas, cierre/reapertura de liquidaciones, página /liquidacion del empleado con enlace firmado (registra sus rutas con nomina.rutas(app, auth))
 ├── millas.js      → Millas de la nómina (lo usa nomina.js): distancias con Google Routes + caché en DISTANCIAS, cálculo de millas por día, registro de paradas y ajustes de monto, foto al cerrar, tablas HTML de millas
 ├── menu.js        → Menú de navegación común de las páginas de administración (Agenda · Pendientes · Nómina · Cerrar sesión): MENU_CSS y menuHtml(rutaActual, admin)
 ├── sheets.js      → Módulo genérico de lectura/escritura a Google Sheets (con caché corta opcional)
@@ -80,6 +81,7 @@ tampa-cleaning-servidor/
 | `POST /nomina/concepto/anular` | Sesión | Anula un concepto (motivo obligatorio) |
 | `POST /nomina/cerrar` | Sesión | Cierra (congela) la liquidación semanal de un empleado |
 | `POST /nomina/reabrir` | Sesión | Reabre una liquidación cerrada (motivo obligatorio) |
+| `GET /liquidacion?t=` | — (token firmado, vence a los 60 días) | Página del empleado con el detalle de su liquidación cerrada (solo lectura) |
 | `GET/POST /pendiente?id=` | — (link único por pendiente) | Página del empleado para marcar el pendiente como resuelto o "sigue pendiente" |
 | `GET /test-sheets` | — | Prueba de conexión con Sheets |
 
@@ -101,7 +103,7 @@ Funciones nuevas en `sheets.js`: `actualizarCeldas` (varias celdas en una sola l
 | `TWILIO_AUTH_TOKEN` | Autentica las llamadas a la API de Twilio |
 | `CLAVE_ADMIN` | Protege la ruta antigua `/enviar-programacion` |
 | `CLAVE_ADMIN_1` … `CLAVE_ADMIN_4` | Clave personal de cada administrador para entrar a la agenda (1 = Wilmar Lopez, 2 = Carolina Gallego, 3 = Andres Madrid, 4 = Claudia Lopez). El orden es fijo y las cuatro deben ser distintas. Si una no está definida, ese administrador simplemente no puede entrar |
-| `SESSION_SECRET` | Firma las cookies de sesión. **Obligatoria, mínimo 32 caracteres** — sin ella el login falla. Cambiarla cierra la sesión de todos |
+| `SESSION_SECRET` | Firma las cookies de sesión. **Obligatoria, mínimo 32 caracteres** — sin ella el login falla. Cambiarla cierra la sesión de todos **e invalida todos los enlaces de liquidación** ya enviados a empleados (`/liquidacion`) |
 | `GOOGLE_MAPS_API_KEY` | Clave de Google Maps Platform con la **Routes API** habilitada, para calcular millas (`millas.js`). **Necesaria** desde que las millas están conectadas a `/nomina`. Si falta, los días con millas quedan en "Revisar" con el mensaje "Falta GOOGLE_MAPS_API_KEY en Render". Requiere Node 18+ (usa `fetch`) |
 
 **Pendiente de seguridad:** la clave privada de Google y el Auth Token de Twilio se compartieron en el chat de esta conversación en algún momento durante la configuración — conviene regenerar ambas credenciales cuando haya tiempo (Google Cloud Console y Twilio Console, respectivamente, tienen un botón para esto sin romper nada más).
@@ -250,6 +252,12 @@ Se puede cerrar una semana que solo tenga millas (sin servicios ni conceptos), p
 
 Una liquidación cerrada se muestra desde la foto, **no** desde el cálculo en vivo; si después cambiaron la agenda, la tarifa o la configuración, aparece un aviso ⚠️ de que el cálculo de **horas** en vivo ya no coincide (las millas no se comparan), pero lo cerrado no se toca. **Reabrir** pide motivo y marca la liquidación como `Reabierta` (con quién, cuándo y por qué); desde ahí vuelve el cálculo en vivo, y al cerrar de nuevo se crea una liquidación nueva (siguiente `NN`) — la anterior y su foto quedan como historial.
 
+**Enlace para el empleado (`/liquidacion`).** En el detalle de una liquidación cerrada aparece el botón **"Copiar mensaje con enlace"**, que copia al portapapeles (o muestra para copiar, si el navegador no lo permite) un mensaje del tipo *"Hola <empleado>, esta es tu liquidación de la semana <lunes> al <domingo> (el enlace vale 60 días): <URL>"*. El administrador lo pega y lo envía por WhatsApp él mismo; el servidor no lo manda. Cómo funciona:
+- El enlace lleva un token `t` = datos (`ID_Liquidacion` + vencimiento, en base64url) + firma HMAC-SHA256. La clave de firma se deriva de `SESSION_SECRET`, así que no hace falta otra variable de entorno; si cambia `SESSION_SECRET`, todos los enlaces dejan de servir. La firma se compara en tiempo constante y el enlace vence a los **60 días** (`DIAS_ENLACE`). Cada clic en el botón genera un token nuevo, con 60 días desde ese momento.
+- La página no pide sesión, muestra solo **una** liquidación (la del token), se sirve con `Cache-Control: no-store`, `Referrer-Policy: no-referrer` y `noindex`, y se lee desde la **foto** congelada: servicios con horario pagado y horas (`NOMINA_DIAS`), millas pagadas por día con sus tramos (`NOMINA_TRAMOS` / `NOMINA_MILLAS_DIA`, indicando si la oficina ajustó el monto), conceptos activos y el resumen con el total. No muestra tarifas, check-ins ni motivos de ajuste.
+- Si el token es inválido, venció o la liquidación no existe: "Este enlace no es válido o venció". Si la liquidación fue **reabierta**: "Esta liquidación está en revisión" — al volver a cerrar se crea una liquidación nueva con otro ID, así que hay que mandarle al empleado el **enlace nuevo** (el viejo queda mostrando "en revisión").
+- No hay forma de revocar un enlace puntual antes de que venza, salvo reabrir la liquidación (o cambiar `SESSION_SECRET`, que afecta a todos).
+
 **Configuración (`CONFIG_NOMINA`).** Pestaña `Clave` / `Valor` / `Descripcion` que se crea sola con valores por defecto: `Recargo_Sabado_Hora` = 1 y, para las millas, `Tarifa_Milla` = 0.37, `Umbral_Millas_Dia` = 10, `Servicios_Pago_Siempre` = 2 y `Umbral_Tarifa_Fija` = 20. Los valores se cambian directamente en el Sheets. (Las descripciones de una pestaña creada antes de la fase 2 todavía dicen "Fase 2:"; no afecta el cálculo.)
 
 Agregar concepto, anular, cerrar y reabrir pasan por una cola en memoria propia de la nómina (mismo patrón que agenda y pendientes), para no generar IDs repetidos ni cerrar dos veces la misma semana. Los ajustes de horas, de paradas y de monto de millas solo agregan filas a su bitácora, así que no pasan por la cola; todos se rechazan si la semana de ese empleado está cerrada.
@@ -319,6 +327,7 @@ Agregar concepto, anular, cerrar y reabrir pasan por una cola en memoria propia 
 - **Retirar `CLAVE_ADMIN` y `/enviar-programacion`** una vez que todos usen la agenda para enviar.
 - **Millas: revisar la regla de "Servicios_Pago_Siempre"** — hoy el pago fijo se aplica solo cuando el día tiene **exactamente** 2 paradas; un día con 3 o más paradas y menos de 10 millas paga $0. Confirmar si la intención era "2 o más".
 - **Millas: requisitos de datos** — confirmar que `GOOGLE_MAPS_API_KEY` existe en Render y que cada empleado activo tiene `Direccion_Residencia` en `EMPLEADOS`; sin eso los días quedan en "Revisar" y bloquean el cierre.
+- **Envío automático del enlace de liquidación** — hoy el administrador copia el mensaje y lo manda a mano; podría enviarse por Twilio al cerrar (requiere plantilla aprobada una vez se migre a WhatsApp Business).
 - **Bloqueo de login y colas de escrituras en memoria** (agenda, pendientes y nómina) — funcionan porque hay una sola instancia del servidor; si algún día se escala a varias instancias, habría que moverlos a un almacenamiento compartido.
 
 **Del mapa de problemas original** (los dolores que motivaron el sistema; aún sin resolver del todo). *Ya resuelto: nómina con horas y millas automáticas (`/nomina`, ver 6.10) — el millaje ya no se saca a mano en Google Maps.*
