@@ -1,6 +1,6 @@
 const express = require('express');
 const { leerHoja } = require('./sheets');
-const { procesarCheckIn, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION, enviarWhatsApp  } = require('./logica');
+const { procesarCheckIn, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION, enviarWhatsApp  } = require('./logica');
 const app = express();
 app.set('trust proxy', 1); // Render va detrás de un proxy; así req.ip es la IP real
 const auth = require('./auth');
@@ -56,20 +56,6 @@ app.get('/test-sheets', async (req, res) => {
   }
 });
 
-// Ruta protegida para disparar el envio de la programacion de manana
-// (reemplaza al boton que teniamos en Sheets con Apps Script)
-app.get('/enviar-programacion', async (req, res) => {
-  if (req.query.clave !== process.env.CLAVE_ADMIN) {
-    return res.status(403).send('No autorizado');
-  }
-  try {
-    const enviados = await enviarProgramacionManana();
-    res.send(`Enviados: ${enviados}`);
-  } catch (err) {
-    console.error('Error en /enviar-programacion:', err);
-    res.status(500).send('Error: ' + err.message);
-  }
-});
 
 // Muestra el formulario de cierre de servicio (nuestra propia pagina, sin AppSheet)
 app.get('/cierre', async (req, res) => {

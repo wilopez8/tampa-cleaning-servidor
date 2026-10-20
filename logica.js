@@ -284,13 +284,6 @@ async function enviarProgramacionFecha(fecha, admin) {
   return { enviados, sinNumero, fallidos };
 }
 
-// Se mantiene para el enlace antiguo /enviar-programacion?clave=...
-async function enviarProgramacionManana() {
-  const manana = new Date(Date.now() + 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-  const r = await enviarProgramacionFecha(manana, 'enlace /enviar-programacion');
-  return r.enviados;
-}
-
 // ---------- Cambios posteriores al envío ----------
 const HOJA_CAMBIOS = 'CAMBIOS_PROGRAMACION';
 const ENCAB_CAMBIOS = ['Fecha_Hora', 'ID_Programacion', 'Fecha_Servicio', 'Tipo_Cambio', 'Detalle', 'Realizado_Por', 'Empleado_Notificado', 'Aviso_Enviado'];
@@ -639,4 +632,4 @@ async function datosClienteVivo(nombre) {
   return { direccion: '', maps: '', descripcion: '', instrucciones: '' };
 }
 
-module.exports = { procesarCheckIn, notificarGerencia, enviarProgramacionManana, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION, enviarProgramacionFecha, notificarCambioPostEnvio, registrarCambio, enviarWhatsApp, buscarTelefonoPorNombre, buscarEmpleadoPorTelefono, BASE_URL };
+module.exports = { procesarCheckIn, notificarGerencia, procesarRespuestaConfirmacion, procesarQuejaODuda, procesarAviso, procesarConfirmacionAviso, obtenerDatosFormularioCierre, procesarCierreFormulario, procesarInspeccionFormulario, INSUMOS_COMUNES, AREAS_INSPECCION, enviarProgramacionFecha, notificarCambioPostEnvio, registrarCambio, enviarWhatsApp, buscarTelefonoPorNombre, buscarEmpleadoPorTelefono, BASE_URL };
