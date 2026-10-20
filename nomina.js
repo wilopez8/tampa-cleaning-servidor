@@ -2,6 +2,7 @@ const { leerHoja, agregarFila, agregarFilas, actualizarCeldas, asegurarHoja, inv
 const { normalizarFecha, fechaValida, hoyFlorida, sumarDias, inicioSemana, diaSemana, filasDelRango } = require('./agenda');
 const millas = require('./millas');
 const menu = require('./menu');
+const crypto = require('crypto');
 
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const enc = s => encodeURIComponent(s).replace(/'/g, '%27');
@@ -398,7 +399,8 @@ function tcGuardarParada(){var m=$('pm').value.trim();if(m.length<3){$('pe').tex
 var mmFecha=null;
 function tcMillas(b){mmFecha=b.dataset.fecha;$('mmt').textContent=b.dataset.t;$('mmv').value=b.dataset.monto;$('mmm').value='';$('mme').textContent='';$('dlgmm').showModal();}
 function tcGuardarMillas(){var m=$('mmm').value.trim();if(m.length<3){$('mme').textContent='El motivo es obligatorio.';return;}post('/nomina/millas/ajustar',{empleado:EMP,fecha:mmFecha,monto:$('mmv').value,motivo:m},'mme');}
-function tcTodo(a){document.querySelectorAll('details.sec').forEach(function(d){d.open=a;});}`;
+function tcTodo(a){document.querySelectorAll('details.sec').forEach(function(d){d.open=a;});}
+function tcCopiar(b){var t=b.dataset.msg.replace('{URL}',location.origin+b.dataset.path);function ok(){$('cp').textContent='Copiado ✔';}function fb(){window.prompt('Copia el mensaje:',t);}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(ok,fb);}else{fb();}}`;
 
 async function paginaNomina(query, admin) {
   const hoy = hoyFlorida();
@@ -478,6 +480,8 @@ async function paginaNomina(query, admin) {
       const idsVivos = g.map(c => c.r.ID_Programacion).sort().join(','), idsSnap = snapDias.map(s => s.ID_Programacion).sort().join(',');
       const montoVivo = r2(g.reduce((a, c) => a + c.monto, 0));
       const difiere = idsVivos !== idsSnap || Math.abs(montoVivo - (numero(liq.Monto_Horas) || 0)) > 0.005;
+      const rutaEnlace = '/liquidacion?t=' + crearToken(liq.ID_Liquidacion);
+      const msgEnlace = `Hola ${emp}, esta es tu liquidación de la semana ${lunes} al ${domingo} (el enlace vale ${DIAS_ENLACE} días): {URL}`;
       const filasSnap = snapDias.map(s => {
         const f = normalizarFecha(s.Fecha_Servicio);
         const pi = minutosDe(s.Pago_Inicio), pf = minutosDe(s.Pago_Fin);
@@ -494,7 +498,7 @@ async function paginaNomina(query, admin) {
         ${sec('Millas', millas.tablaCerrada(snapM))}
         ${sec('Otros conceptos', conceptosHtml(consLiq, false))}
         ${caja(tot(emp))}
-        <button class="btn warn" onclick="tcReabrir()">Reabrir liquidación</button>`;
+        <button class="btn hoy" data-msg="${esc(msgEnlace)}" data-path="${esc(rutaEnlace)}" onclick="tcCopiar(this)">Copiar mensaje con enlace</button> <button class="btn warn" onclick="tcReabrir()">Reabrir liquidación</button> <span id="cp" style="font-size:13px;color:#2e7d32;"></span>`;
     } else {
       const dm = millasEmp[emp] || [];
       const filasHtml = g.map(c => {
@@ -579,6 +583,88 @@ ${detalle}
 </body></html>`;
 }
 
+// ---------- enlace seguro para el empleado ----------
+const DIAS_ENLACE = 60;
+const claveEnlace = () => {
+  const s = process.env.SESSION_SECRET;
+  if (!s) throw new Error('Falta SESSION_SECRET en Render');
+  return crypto.createHmac('sha256', s).update('liquidacion-empleado-v1').digest();
+};
+const b64 = b => Buffer.from(b).toString('base64url');
+function crearToken(idLiq) {
+  const p = b64(JSON.stringify({ id: idLiq, exp: Date.now() + DIAS_ENLACE * 86400000 }));
+  return p + '.' + b64(crypto.createHmac('sha256', claveEnlace()).update(p).digest());
+}
+function leerToken(t) {
+  const [p, f] = String(t || '').split('.');
+  if (!p || !f) return null;
+  const esperado = crypto.createHmac('sha256', claveEnlace()).update(p).digest();
+  let dado;
+  try { dado = Buffer.from(f, 'base64url'); } catch (e) { return null; }
+  if (dado.length !== esperado.length || !crypto.timingSafeEqual(dado, esperado)) return null;
+  try {
+    const o = JSON.parse(Buffer.from(p, 'base64url').toString());
+    return (o.id && o.exp > Date.now()) ? o : null;
+  } catch (e) { return null; }
+}
+
+const CSS_EMP = `body{font-family:-apple-system,Arial,sans-serif;margin:0 auto;padding:16px;background:#f6f7f9;color:#222;max-width:720px;}
+h2{margin:0 0 4px;} h4{margin:18px 0 6px;} small{color:#777;}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;margin-bottom:12px;}
+th,td{padding:8px 10px;text-align:left;font-size:14px;border-bottom:1px solid #eee;vertical-align:top;} th{background:#f1f3f5;}
+.num{text-align:right;white-space:nowrap;} .neg{color:#b91c1c;} tfoot td{font-weight:700;background:#f9fafb;}
+.aviso{background:#fffbeb;border-radius:6px;padding:10px 12px;font-size:14px;}`;
+const envolver = cuerpo => `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Tu liquidación</title><style>${CSS_EMP}</style></head><body>${cuerpo}</body></html>`;
+
+async function paginaLiquidacionEmpleado(token) {
+  const invalido = envolver('<div class="aviso">Este enlace no es válido o venció. Pide uno nuevo a la oficina.</div>');
+  const t = leerToken(token);
+  if (!t) return invalido;
+  const liq = (await cargarLiquidaciones()).find(l => l.ID_Liquidacion === t.id);
+  if (!liq) return invalido;
+  if (liq.Estado !== 'Cerrada') return envolver('<div class="aviso">Esta liquidación está en revisión. Pide a la oficina el enlace actualizado.</div>');
+
+  const [snap, snapM, conceptos] = await Promise.all([cargarTabla('NOMINA_DIAS', ND_HEADERS), millas.leerSnapshot(liq.ID_Liquidacion), cargarConceptos()]);
+  const lunes = liq._semana, domingo = sumarDias(lunes, 6);
+  const fch = x => normalizarFecha(x);
+
+  const servicios = snap.filter(s => s.ID_Liquidacion === liq.ID_Liquidacion)
+    .sort((a, b) => fch(a.Fecha_Servicio).localeCompare(fch(b.Fecha_Servicio)) || (minutosDe(a.Pago_Inicio) ?? 0) - (minutosDe(b.Pago_Inicio) ?? 0));
+  const filasH = servicios.map(s => {
+    const f = fch(s.Fecha_Servicio), pi = minutosDe(s.Pago_Inicio), pf = minutosDe(s.Pago_Fin);
+    return `<tr><td>${diaSemana(f)} ${f.slice(8)}</td><td>${esc(s.Cliente)}</td>
+      <td>${pi !== null ? `${f12(pi)} – ${f12(pf)}` : (s.Estado_Calculo === 'Sin pago' ? 'Sin pago' : '—')}</td>
+      <td class="num">${fmtDur(numero(s.Minutos) || 0)}</td></tr>`;
+  }).join('') || '<tr><td colspan="4" style="text-align:center;color:#999;">Sin servicios</td></tr>';
+
+  const diasM = snapM.dias.filter(d => (numero(d.Paradas) || 0) > 0 || (numero(d.Monto_Millas) || 0) > 0)
+    .sort((a, b) => fch(a.Fecha).localeCompare(fch(b.Fecha)));
+  const filasM = diasM.map(d => {
+    const f = fch(d.Fecha);
+    const tr = snapM.tramos.filter(x => fch(x.Fecha) === f && x.Pagado === 'Sí')
+      .sort((a, b) => (numero(a.Orden) || 0) - (numero(b.Orden) || 0))
+      .map(x => `<div><small>${esc(x.Origen)} → ${esc(x.Destino)}: ${(numero(x.Millas) || 0).toFixed(1)} mi</small></div>`).join('');
+    return `<tr><td>${diaSemana(f)} ${f.slice(8)}</td><td>${tr || '<small>—</small>'}${d.Estado === 'Ajustado' ? '<small>Monto ajustado por la oficina</small>' : ''}</td>
+      <td class="num">${(numero(d.Millas_Pagadas) || 0).toFixed(1)}</td><td class="num">${usd(numero(d.Monto_Millas) || 0)}</td></tr>`;
+  }).join('');
+
+  const cons = conceptos.filter(c => c.ID_Liquidacion === liq.ID_Liquidacion && c.Estado === 'Activo');
+  const filasC = cons.map(c => `<tr><td>${esc(c.Tipo)}</td><td>${esc(c.Descripcion)}</td>
+    <td class="num ${c.Tipo === 'Descuento' ? 'neg' : ''}">${c.Tipo === 'Descuento' ? '− ' : ''}${usd(c._monto)}</td></tr>`).join('');
+
+  return envolver(`<h2>${esc(liq.Empleado)}</h2><small>Liquidación de la semana ${esc(lunes)} al ${esc(domingo)}</small>
+    <h4>Horas</h4><table><tr><th>Día</th><th>Servicio</th><th>Horario pagado</th><th class="num">Horas</th></tr>${filasH}</table>
+    ${filasM ? `<h4>Millas pagadas</h4><table><tr><th>Día</th><th>Recorrido</th><th class="num">Millas</th><th class="num">Monto</th></tr>${filasM}</table>` : ''}
+    ${filasC ? `<h4>Otros conceptos</h4><table><tr><th>Tipo</th><th>Descripción</th><th class="num">Monto</th></tr>${filasC}</table>` : ''}
+    <h4>Resumen</h4><table>
+      <tr><td>Horas</td><td class="num">${usd(numero(liq.Monto_Horas) || 0)}</td></tr>
+      <tr><td>Millas</td><td class="num">${usd(numero(liq.Monto_Millas) || 0)}</td></tr>
+      <tr><td>Propinas y bonos</td><td class="num">${usd(numero(liq.Monto_Propinas_Bonos) || 0)}</td></tr>
+      <tr><td>Descuentos</td><td class="num neg">− ${usd(numero(liq.Monto_Descuentos) || 0)}</td></tr>
+      <tfoot><tr><td>TOTAL A PAGAR</td><td class="num">${usd(numero(liq.Total) || 0)}</td></tr></tfoot></table>`);
+}
+
+
 // ---------- rutas ----------
 function rutas(app, auth) {
   const api = (ruta, fn) => app.post(ruta, auth.requiereAdmin, async (req, res) => {
@@ -588,6 +674,12 @@ function rutas(app, auth) {
   app.get('/nomina', auth.requiereAdmin, async (req, res) => {
     try { res.set('Content-Type', 'text/html; charset=utf-8'); res.send(await paginaNomina(req.query, req.admin)); }
     catch (err) { console.error('Error en GET /nomina:', err); res.status(500).send('Error cargando la nómina: ' + err.message); }
+  });
+  app.get('/liquidacion', async (req, res) => {
+    try {
+      res.set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+      res.send(await paginaLiquidacionEmpleado(req.query.t));
+    } catch (err) { console.error('Error en GET /liquidacion:', err); res.status(500).send('No se pudo cargar la liquidación.'); }
   });
   api('/nomina/ajustar', (b, admin) => ajustar({ id: b.id, inicio: b.inicio, fin: b.fin, sinPago: !!b.sinPago, motivo: b.motivo, admin }));
   api('/nomina/parada', (b, admin) => marcarParada({ id: b.id, cuenta: b.cuenta, motivo: b.motivo, admin }));
