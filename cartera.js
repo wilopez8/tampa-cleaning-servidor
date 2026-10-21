@@ -311,6 +311,7 @@ th{background:#f1f3f5;} tfoot td{font-weight:700;background:#f9fafb;}
 small{color:#777;}
 .scroll{max-height:340px;overflow:auto;margin-bottom:18px;border-radius:8px;} .scroll table{margin-bottom:0;overflow:visible;}
 .res th{position:sticky;top:0;z-index:1;} .res tfoot td{position:sticky;bottom:0;}
+.tf th{position:sticky;top:0;z-index:1;} .scroll.g{max-height:calc(100vh - 250px);min-height:260px;}
 table.tc{table-layout:fixed;} table.tc td{overflow-wrap:anywhere;} table.tc .btn{white-space:normal;}
 table.tc th:nth-child(1){width:8%;} table.tc th:nth-child(2){width:33%;} table.tc th:nth-child(3){width:15%;} table.tc th:nth-child(4){width:8%;}
 table.tc th:nth-child(5){width:16%;} table.tc th:nth-child(6){width:8%;} table.tc th:nth-child(7){width:12%;}
@@ -346,7 +347,8 @@ if(m.length<3){$('de').textContent='El motivo es obligatorio.';return;}
 var url={ejecutar:'/cartera/ejecutar',cancelar:'/cartera/cancelar',anular:'/cartera/novedad/anular'}[modo];
 post(url,{id:idSel,valor:v,motivo:m},'de');}`;
 
-async function paginaCartera(query, admin) {
+async function paginaCartera(query, admin, vista) {
+  const soloClientes = vista === 'clientes';
   const hoy = hoyFlorida();
   let errSync = '';
   try { await sincronizar(query.sync === '1'); } catch (e) { console.error('Error sincronizando cartera:', e); errSync = e.message; }
@@ -382,17 +384,19 @@ async function paginaCartera(query, admin) {
   const G = { n: 0, base: 0, nov: 0, conf: 0, sin: 0 };
   clientes.forEach(k => Object.keys(G).forEach(f => { G[f] += res[k][f]; }));
 
-  const fCli = clientes.includes(query.cliente) ? query.cliente : '';
+  const fCli = String(query.cliente || '').trim();
+  const cliExacto = clientes.includes(fCli);
   const ESTADOS = ['Por confirmar', 'Ejecutado', 'Cancelado', 'Sin tarifa'];
   const fEst = ESTADOS.includes(query.estado) ? query.estado : '';
-  const url = o => '/cartera?' + Object.entries({ mes, cliente: fCli, estado: fEst, ...o }).filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+  const baseUrl = soloClientes ? '/cartera/clientes?' : '/cartera?';
+  const url = (o, b) => (b || baseUrl) + Object.entries({ mes, cliente: fCli, estado: fEst, ...o }).filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
 
-  const vis = enMes.filter(c => (!fCli || c.Cliente === fCli) && (!fEst || (fEst === 'Sin tarifa' ? c._sinTarifa : c.Estado === fEst)))
+  const vis = enMes.filter(c => (!fCli || (cliExacto ? c.Cliente === fCli : c.Cliente.toLowerCase().includes(fCli.toLowerCase()))) && (!fEst || (fEst === 'Sin tarifa' ? c._sinTarifa : c.Estado === fEst)))
     .sort((a, b) => a._fecha.localeCompare(b._fecha) || a.Cliente.localeCompare(b.Cliente));
 
   const orden = [...clientes].sort((a, b) => ((res[b].conf + res[b].sin > 0) - (res[a].conf + res[a].sin > 0)) || ((res[b].base + res[b].nov) - (res[a].base + res[a].nov)) || a.localeCompare(b));
     const filasRes = orden.map(k => { const x = res[k];
-    return `<tr data-n="${esc(k.toLowerCase())}"><td><a href="${esc('/cartera/cliente?c=' + encodeURIComponent(k) + '&mes=' + mes)}">${esc(k)}</a>${mp(k)} <a title="Filtrar los servicios de abajo" href="${esc(url({ cliente: k, estado: '' }))}">⇩</a></td><td class="num">${x.n}</td><td class="num">${usd(x.base)}</td><td class="num">${usd(x.nov)}</td><td class="num"><b>${usd(r2(x.base + x.nov))}</b></td>
+    return `<tr data-n="${esc(k.toLowerCase())}"><td><a href="${esc('/cartera/cliente?c=' + encodeURIComponent(k) + '&mes=' + mes)}">${esc(k)}</a>${mp(k)} <a title="Ver los servicios de este cliente" href="${esc('/cartera?mes=' + mes + '&cliente=' + encodeURIComponent(k))}">⇩</a></td><td class="num">${x.n}</td><td class="num">${usd(x.base)}</td><td class="num">${usd(x.nov)}</td><td class="num"><b>${usd(r2(x.base + x.nov))}</b></td>
       <td class="num">${x.conf ? `<span class="est rev">${x.conf}</span>` : '0'}</td><td class="num">${x.sin ? `<span class="est rev">${x.sin}</span>` : '0'}</td></tr>`;
   }).join('') || '<tr><td colspan="7" style="text-align:center;color:#888;padding:20px;">No hay cobros en este período.</td></tr>';
 
@@ -424,17 +428,19 @@ async function paginaCartera(query, admin) {
 <div class="nav">${mesNav}
   <a class="btn" href="${esc(url({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
   <a class="btn" href="${esc(url({ sync: '1' }))}">Sincronizar ahora</a>
+  <a class="btn${soloClientes ? '' : ' hoy'}" href="${esc('/cartera?mes=' + mes)}">Servicios</a><a class="btn${soloClientes ? ' hoy' : ''}" href="${esc('/cartera/clientes?mes=' + mes)}">Clientes</a>
 </div>
 ${errSync ? `<div class="aviso r">No se pudo sincronizar con la agenda: ${esc(errSync)}</div>` : ''}
 ${tar.hayColumna ? '' : '<div class="aviso r">Falta la columna <b>Tarifa_Servicio</b> en la hoja SITIOS: ningún servicio tendrá valor.</div>'}
-${(G.conf || G.sin) ? `<div class="aviso y">${G.conf ? `<a href="${esc(url({ estado: 'Por confirmar' }))}">${G.conf} servicio(s) por confirmar</a> (sin cerrar: márcalos Ejecutado o Cancelado).` : ''} ${G.sin ? `<a href="${esc(url({ estado: 'Sin tarifa' }))}">${G.sin} servicio(s) sin tarifa</a> (llena Tarifa_Servicio en SITIOS y pulsa Sincronizar, o registra un "Valor final").` : ''}</div>` : ''}
+${(G.conf || G.sin) ? `<div class="aviso y">${G.conf ? `<a href="${esc(url({ estado: 'Por confirmar' }, '/cartera?'))}">${G.conf} servicio(s) por confirmar</a> (sin cerrar: márcalos Ejecutado o Cancelado).` : ''} ${G.sin ? `<a href="${esc(url({ estado: 'Sin tarifa' }, '/cartera?'))}">${G.sin} servicio(s) sin tarifa</a> (llena Tarifa_Servicio en SITIOS y pulsa Sincronizar, o registra un "Valor final").` : ''}</div>` : ''}
 <div class="aviso">Se cargan los servicios desde <b>${esc(cfg.inicio)}</b> (hoja CONFIG_CARTERA). Un cobro = un cliente por día (si va un equipo, es un solo cobro). Las inspecciones no entran. Total = valor del servicio + novedades de cobro. Las novedades se registran desde la agenda.</div>
-<input type="search" placeholder="Buscar cliente..." oninput="tcBuscar(this.value)" style="padding:7px;border:1px solid #ccc;border-radius:6px;font-size:14px;margin-bottom:8px;width:260px;"><div class="scroll"><table class="res"><tr><th>Cliente</th><th class="num">Servicios ejecutados</th><th class="num">Valor servicios</th><th class="num">Novedades</th><th class="num">Total a cobrar</th><th class="num">Por confirmar</th><th class="num">Sin tarifa</th></tr>${filasRes}
-<tfoot><tr><td>Total</td><td class="num">${G.n}</td><td class="num">${usd(G.base)}</td><td class="num">${usd(G.nov)}</td><td class="num">${usd(r2(G.base + G.nov))}</td><td class="num">${G.conf}</td><td class="num">${G.sin}</td></tr></tfoot></table></div>
+${soloClientes ? `<input type="search" placeholder="Buscar cliente..." oninput="tcBuscar(this.value)" style="padding:7px;border:1px solid #ccc;border-radius:6px;font-size:14px;margin-bottom:8px;width:260px;"><div class="scroll g"><table class="res"><tr><th>Cliente</th><th class="num">Servicios ejecutados</th><th class="num">Valor servicios</th><th class="num">Novedades</th><th class="num">Total a cobrar</th><th class="num">Por confirmar</th><th class="num">Sin tarifa</th></tr>${filasRes}
+<tfoot><tr><td>Total</td><td class="num">${G.n}</td><td class="num">${usd(G.base)}</td><td class="num">${usd(G.nov)}</td><td class="num">${usd(r2(G.base + G.nov))}</td><td class="num">${G.conf}</td><td class="num">${G.sin}</td></tr></tfoot></table></div>` : ''}
+${soloClientes ? '' : `<div class="aviso" style="background:#f0fdf4;">Período: <b>${G.n}</b> servicios ejecutados · valor ${usd(G.base)} · novedades ${usd(G.nov)} · <b>total a cobrar ${usd(r2(G.base + G.nov))}</b></div>
 <form class="filtros" method="GET" action="/cartera"><input type="hidden" name="mes" value="${esc(mes)}">
-  ${sel('cliente', 'Todos los clientes', clientes, fCli)}${sel('estado', 'Todos los estados', ESTADOS, fEst)}
+  <input type="search" name="cliente" list="lstCli" value="${esc(fCli)}" placeholder="Buscar cliente..." autocomplete="off" onchange="this.form.submit()" style="padding:7px;border:1px solid #ccc;border-radius:6px;font-size:14px;width:260px;"><datalist id="lstCli">${clientes.map(k => `<option value="${esc(k)}">`).join('')}</datalist>${sel('estado', 'Todos los estados', ESTADOS, fEst)}
   <button class="btn">Filtrar</button> <a class="btn" href="${esc(url({ cliente: '', estado: '' }))}">Limpiar</a></form>
-<table class="tf"><tr><th>Fecha</th><th>Cliente / pago</th><th>Empleados</th><th>Estado</th><th class="num">Valor</th><th>Novedades</th><th class="num">Total</th><th>Acciones</th></tr>${filasDet}</table>
+<div class="scroll g"><table class="tf"><tr><th>Fecha</th><th>Cliente / pago</th><th>Empleados</th><th>Estado</th><th class="num">Valor</th><th>Novedades</th><th class="num">Total</th><th>Acciones</th></tr>${filasDet}</table></div>`}
 <dialog id="dlg"><h3 id="dt" style="margin-top:0;"></h3>
   <label id="rt">Tipo<select id="dtipo" onchange="tcTipo()">${TIPOS_NV.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
   <label id="rd">Detalle (obligatorio)<input type="text" id="dd" maxlength="200"></label>
@@ -638,6 +644,14 @@ function rutas(app, auth) {
   app.get('/cartera', auth.requiereAdmin, async (req, res) => {
     try { res.set('Content-Type', 'text/html; charset=utf-8'); res.send(await paginaCartera(req.query, req.admin)); }
     catch (e) { console.error('Error en GET /cartera:', e); res.status(500).send('Error cargando la cartera: ' + e.message); }
+  });
+  app.get('/cartera/clientes', auth.requiereAdmin, async (req, res) => {
+    try { res.set('Content-Type', 'text/html; charset=utf-8'); res.send(await paginaCartera(req.query, req.admin, 'clientes')); }
+    catch (e) { console.error('Error en GET /cartera/clientes:', e); res.status(500).send('Error cargando los clientes: ' + e.message); }
+  });
+  app.get('/cartera/clientes', auth.requiereAdmin, async (req, res) => {
+    try { res.set('Content-Type', 'text/html; charset=utf-8'); res.send(await paginaCartera(req.query, req.admin, 'clientes')); }
+    catch (e) { console.error('Error en GET /cartera/clientes:', e); res.status(500).send('Error cargando los clientes: ' + e.message); }
   });
   app.get('/cartera/cliente', auth.requiereAdmin, async (req, res) => {
     try {
