@@ -4,24 +4,29 @@ const menu = require('./menu');
 
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const r2 = x => Math.round(x * 100) / 100;
-const usd = n => '$' + (n || 0).toFixed(2);
+const usd = n => (n < 0 ? '− $' : '$') + Math.abs(n || 0).toFixed(2);
 const p2 = n => String(n).padStart(2, '0');
 const ahora = () => new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+const err = g => ({ ok: false, general: g });
 function numero(t) {
   let s = String(t ?? '').replace(/[$\s]/g, '');
   if (!s) return NaN;
+  const neg = s.startsWith('-') || s.startsWith('−'); s = s.replace(/^[-−]/, '');
   const c = s.lastIndexOf(','), p = s.lastIndexOf('.');
   if (c >= 0 && p >= 0) s = c > p ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
   else if (c >= 0) s = /^\d{1,3}(,\d{3})+$/.test(s) ? s.replace(/,/g, '') : s.replace(',', '.');
-  return parseFloat(s);
+  const n = parseFloat(s);
+  return neg ? -n : n;
 }
 const mesValido = m => /^\d{4}-(0[1-9]|1[0-2])$/.test(m || '');
 function sumarMes(m, n) { const [a, b] = m.split('-').map(Number); return new Date(Date.UTC(a, b - 1 + n, 1)).toISOString().slice(0, 7); }
 
 const CFG_H = ['Clave', 'Valor', 'Descripcion'];
-const CS_H = ['ID_Cobro', 'Clave', 'Fecha', 'Cliente', 'Pagador', 'Tipo', 'Empleados', 'IDs_Programacion', 'Estado', 'Motivo', 'Valor_Base', 'Valor_Original', 'Decision', 'Decidido_Por', 'Fecha_Decision', 'Origen', 'Fecha_Creacion'];
-const EX_H = ['ID_Extra', 'ID_Cobro', 'Descripcion', 'Monto', 'Estado', 'Creado_Por', 'Fecha_Creacion', 'Anulado_Por', 'Motivo_Anulacion'];
+const CS_H = ['ID_Cobro', 'Clave', 'Fecha', 'Cliente', 'Pagador', 'Empleados', 'IDs_Programacion', 'Estado', 'Motivo', 'Valor_Base', 'Valor_Original', 'Decision', 'Decidido_Por', 'Fecha_Decision', 'Origen', 'Fecha_Creacion'];
+const NV_H = ['ID_Novedad', 'Cliente', 'Fecha_Servicio', 'ID_Programacion', 'Tipo', 'Detalle', 'Monto', 'Estado', 'Registrado_Por', 'Fecha_Registro', 'Retroactivo', 'Anulado_Por', 'Motivo_Anulacion'];
 const BIT_H = ['Fecha_Hora', 'ID_Cobro', 'Accion', 'Detalle', 'Motivo', 'Admin'];
+const TIPOS_NV = ['Tiempo adicional', 'Trabajo adicional', 'Productos o materiales', 'Otro cobro extra', 'Valor final del servicio'];
+const TIPO_FINAL = 'Valor final del servicio';
 
 // Una sola escritura a la vez (evita IDs repetidos y filas duplicadas)
 let cola = Promise.resolve();
@@ -45,7 +50,7 @@ const poner = (hoja, lista, o, mapa) => actualizarCeldas(hoja, Object.entries(ma
   .map(([k, v]) => ({ fila: o._fila, columna: lista.h.indexOf(k) + 1, valor: v })).filter(x => x.columna > 0));
 async function bit(id, accion, detalle, motivo, admin) {
   await asegurarHoja('COBROS_BITACORA', BIT_H);
-  await agregarFila('COBROS_BITACORA', [ahora(), id, accion, detalle, motivo || '', admin]);
+  await agregarFila('COBROS_BITACORA', [ahora(), id || '', accion, detalle, motivo || '', admin]);
 }
 
 async function cargarConfig() {
@@ -66,26 +71,26 @@ async function cargarTarifas() {
   const d = await leerHoja('SITIOS', { cache: true });
   const out = { mapa: {}, hayColumna: false };
   if (d.length < 2) return out;
-  const h = d[0], iN = h.indexOf('Nombre_Cliente'), iT = h.indexOf('Tarifa_Servicio'), iP = h.indexOf('Pagador'), iE = h.indexOf('Estatus');
+  const h = d[0], iN = h.indexOf('Nombre_Cliente'), iT = h.indexOf('Tarifa_Servicio'), iP = h.indexOf('Pagador'), iE = h.indexOf('Estatus'), iM = h.indexOf('Metodo_Pago'), iNp = h.indexOf('Nota_Pago');
   out.hayColumna = iT >= 0;
   if (iN < 0) return out;
+  const val = (f, i) => i >= 0 ? String(f[i] || '').trim() : '';
   for (let i = 1; i < d.length; i++) {
     const n = String(d[i][iN] || '').trim();
     if (!n) continue;
     const activo = iE < 0 ? true : String(d[i][iE] || '').trim() === 'Activo';
     if (out.mapa[n] && out.mapa[n].activo && !activo) continue;
-    out.mapa[n] = { tarifa: iT >= 0 ? numero(d[i][iT]) : NaN, pagador: iP >= 0 ? String(d[i][iP] || '').trim() : '', activo };
+    out.mapa[n] = { tarifa: iT >= 0 ? numero(d[i][iT]) : NaN, pagador: val(d[i], iP), metodo: val(d[i], iM), nota: val(d[i], iNp), activo };
   }
   return out;
 }
 
-// ---------- generación de cobros a partir de la agenda ----------
+// ---------- generación de cobros a partir de la agenda (las inspecciones no entran) ----------
 function agrupar(filas) {
   const g = new Map();
-  filas.filter(r => r.Cliente && r.ID_Programacion).forEach(r => {
-    const tipo = r.Tipo_Servicio || 'Limpieza', cliente = r.Cliente.trim();
-    const clave = `${cliente}|${r._fecha}|${tipo}`;
-    if (!g.has(clave)) g.set(clave, { clave, cliente, fecha: r._fecha, tipo, rows: [] });
+  filas.filter(r => r.Cliente && r.ID_Programacion && (r.Tipo_Servicio || 'Limpieza') !== 'Inspeccion').forEach(r => {
+    const cliente = r.Cliente.trim(), clave = `${cliente}|${r._fecha}`;
+    if (!g.has(clave)) g.set(clave, { clave, cliente, fecha: r._fecha, rows: [] });
     g.get(clave).rows.push(r);
   });
   return [...g.values()];
@@ -93,11 +98,9 @@ function agrupar(filas) {
 const motivosCanc = g => [...new Set(g.rows.map(r => String(r.Motivo_Cancelacion || '').trim()).filter(Boolean))].join('; ');
 function evaluar(g, hoy) {
   const act = g.rows.filter(r => r._estado !== 'Cancelado');
-  const mc = motivosCanc(g);
-  if (g.tipo === 'Inspeccion') return { estado: 'No se cobra', motivo: act.length ? 'Inspección (no se cobra)' : 'Inspección cancelada' + (mc ? ': ' + mc : '') };
-  if (!act.length) return { estado: 'No se cobra', motivo: 'Cancelado' + (mc ? ': ' + mc : '') };
-  if (act.every(r => r._estado === 'Finalizado')) return { estado: 'Por cobrar', motivo: '' };
-  if (g.fecha < hoy) return { estado: 'Por definir', motivo: 'Servicio sin completar (' + [...new Set(act.filter(r => r._estado !== 'Finalizado').map(r => r._estado))].join(', ') + ')' };
+  if (!act.length) { const mc = motivosCanc(g); return { estado: 'Cancelado', motivo: 'Cancelado' + (mc ? ': ' + mc : '') }; }
+  if (act.every(r => r._estado === 'Finalizado')) return { estado: 'Ejecutado', motivo: '' };
+  if (g.fecha < hoy) return { estado: 'Por confirmar', motivo: 'Servicio sin cerrar (' + [...new Set(act.filter(r => r._estado !== 'Finalizado').map(r => r._estado))].join(', ') + ')' };
   return null; // servicio de hoy aún sin terminar: todavía no genera cobro
 }
 
@@ -132,11 +135,11 @@ function sincronizar(forzar) {
         if (!ev) continue;
         const pref = 'COB-' + g.fecha.replace(/-/g, '') + '-';
         contadores[pref] = (contadores[pref] || 0) + 1;
-        const cobra = ev.estado === 'Por cobrar';
+        const ejec = ev.estado === 'Ejecutado';
         nuevas.push(aFila(lista.h, {
-          ID_Cobro: pref + p2(contadores[pref]), Clave: g.clave, Fecha: g.fecha, Cliente: g.cliente, Pagador: t ? t.pagador : '', Tipo: g.tipo,
+          ID_Cobro: pref + p2(contadores[pref]), Clave: g.clave, Fecha: g.fecha, Cliente: g.cliente, Pagador: t ? t.pagador : '',
           Empleados: empleados, IDs_Programacion: ids, Estado: ev.estado, Motivo: ev.motivo,
-          Valor_Base: cobra ? tarifa : '', Valor_Original: cobra ? tarifa : '', Decision: 'Auto', Decidido_Por: 'Sistema', Fecha_Decision: ahora(), Origen: 'Normal', Fecha_Creacion: ahora(),
+          Valor_Base: ejec ? tarifa : '', Valor_Original: ejec ? tarifa : '', Decision: 'Auto', Decidido_Por: 'Sistema', Fecha_Decision: ahora(), Origen: 'Normal', Fecha_Creacion: ahora(),
         }));
         continue;
       }
@@ -145,8 +148,8 @@ function sincronizar(forzar) {
       if ((o.Decision || 'Auto') !== 'Auto' || !ev) continue; // lo decidido a mano no se toca
       if (o.Estado !== ev.estado) {
         set(o, 'Estado', ev.estado); set(o, 'Motivo', ev.motivo);
-        if (ev.estado === 'Por cobrar' && tarifa !== '') { set(o, 'Valor_Base', tarifa); set(o, 'Valor_Original', tarifa); }
-      } else if (o.Estado === 'Por cobrar' && !(numero(o.Valor_Base) > 0) && tarifa !== '') {
+        if (ev.estado === 'Ejecutado' && tarifa !== '') { set(o, 'Valor_Base', tarifa); set(o, 'Valor_Original', tarifa); }
+      } else if (o.Estado === 'Ejecutado' && !(numero(o.Valor_Base) > 0) && tarifa !== '') {
         set(o, 'Valor_Base', tarifa); set(o, 'Valor_Original', tarifa);
       }
     }
@@ -163,83 +166,127 @@ async function buscar(id) {
 }
 const motivoOk = m => String(m || '').trim().length >= 3;
 
-function cobrar({ id, valor, motivo, admin }) {
+function ejecutar({ id, valor, motivo, admin }) {
   return enCola(async () => {
-    if (!motivoOk(motivo)) return { ok: false, general: 'El motivo es obligatorio (mínimo 3 caracteres).' };
+    if (!motivoOk(motivo)) return err('El motivo es obligatorio (mínimo 3 caracteres).');
     const { lista, c } = await buscar(id);
-    if (!c) return { ok: false, general: 'Cobro no encontrado.' };
-    if (!(c.Estado === 'Por definir' || (c.Estado === 'No se cobra' && c.Decision === 'Manual'))) return { ok: false, general: 'Este servicio no se puede pasar a cobrar.' };
+    if (!c) return err('Cobro no encontrado.');
+    if (!(c.Estado === 'Por confirmar' || (c.Estado === 'Cancelado' && c.Decision === 'Manual'))) return err('Este servicio no se puede pasar a Ejecutado.');
     let v;
     if (String(valor ?? '').trim() !== '') {
       v = numero(valor);
-      if (!(v > 0)) return { ok: false, general: 'El valor no es válido.' };
+      if (!(v > 0)) return err('El valor no es válido.');
     } else {
       const t = (await cargarTarifas()).mapa[c.Cliente];
       v = t && t.tarifa > 0 ? t.tarifa : NaN;
-      if (!(v > 0)) return { ok: false, general: 'Este sitio no tiene tarifa en SITIOS. Escribe el valor.' };
+      if (!(v > 0)) return err('Este sitio no tiene tarifa en SITIOS. Escribe el valor.');
     }
     v = r2(v);
-    await poner('COBROS_SERVICIO', lista, c, { Estado: 'Por cobrar', Motivo: 'Manual: ' + String(motivo).trim(), Valor_Base: v, Valor_Original: c.Valor_Original || v, Decision: 'Manual', Decidido_Por: admin, Fecha_Decision: ahora() });
-    await bit(c.ID_Cobro, 'Cobrar', `${c.Estado} → Por cobrar, valor ${usd(v)}`, motivo, admin);
+    await poner('COBROS_SERVICIO', lista, c, { Estado: 'Ejecutado', Motivo: 'Manual: ' + String(motivo).trim(), Valor_Base: v, Valor_Original: c.Valor_Original || v, Decision: 'Manual', Decidido_Por: admin, Fecha_Decision: ahora() });
+    await bit(c.ID_Cobro, 'Ejecutado', `${c.Estado} → Ejecutado, valor ${usd(v)}`, motivo, admin);
     return { ok: true };
   });
 }
 
-function noCobrar({ id, motivo, admin }) {
+function cancelar({ id, motivo, admin }) {
   return enCola(async () => {
-    if (!motivoOk(motivo)) return { ok: false, general: 'El motivo es obligatorio (mínimo 3 caracteres).' };
+    if (!motivoOk(motivo)) return err('El motivo es obligatorio (mínimo 3 caracteres).');
     const { lista, c } = await buscar(id);
-    if (!c) return { ok: false, general: 'Cobro no encontrado.' };
-    if (!['Por definir', 'Por cobrar'].includes(c.Estado)) return { ok: false, general: 'Este servicio ya no se cobra.' };
-    await poner('COBROS_SERVICIO', lista, c, { Estado: 'No se cobra', Motivo: String(motivo).trim(), Decision: 'Manual', Decidido_Por: admin, Fecha_Decision: ahora() });
-    await bit(c.ID_Cobro, 'No cobrar', `${c.Estado} → No se cobra`, motivo, admin);
+    if (!c) return err('Cobro no encontrado.');
+    if (!['Por confirmar', 'Ejecutado'].includes(c.Estado)) return err('Este servicio ya está cancelado.');
+    await poner('COBROS_SERVICIO', lista, c, { Estado: 'Cancelado', Motivo: String(motivo).trim(), Decision: 'Manual', Decidido_Por: admin, Fecha_Decision: ahora() });
+    await bit(c.ID_Cobro, 'Cancelado', `${c.Estado} → Cancelado`, motivo, admin);
     return { ok: true };
   });
 }
 
-function ajustarValor({ id, valor, motivo, admin }) {
+// Novedad de cobro: se registra desde la agenda (idProgramacion) o desde cartera (idCobro)
+function registrarNovedad({ idCobro, idProgramacion, tipo, detalle, monto, admin }) {
   return enCola(async () => {
-    if (!motivoOk(motivo)) return { ok: false, general: 'El motivo es obligatorio (mínimo 3 caracteres).' };
-    const v = numero(valor);
-    if (!(v > 0)) return { ok: false, general: 'El valor no es válido.' };
-    const { lista, c } = await buscar(id);
-    if (!c) return { ok: false, general: 'Cobro no encontrado.' };
-    if (c.Estado !== 'Por cobrar') return { ok: false, general: 'Solo se ajusta el valor de un servicio por cobrar.' };
-    const nuevo = r2(v), anterior = numero(c.Valor_Base);
-    await poner('COBROS_SERVICIO', lista, c, { Valor_Base: nuevo, Valor_Original: c.Valor_Original || (anterior > 0 ? anterior : nuevo), Motivo: 'Valor ajustado: ' + String(motivo).trim() });
-    await bit(c.ID_Cobro, 'Ajustar valor', `${anterior > 0 ? usd(anterior) : 'sin valor'} → ${usd(nuevo)}`, motivo, admin);
-    return { ok: true };
-  });
-}
-
-function agregarExtra({ id, descripcion, monto, admin }) {
-  return enCola(async () => {
-    if (String(descripcion || '').trim().length < 3) return { ok: false, general: 'La descripción es obligatoria (mínimo 3 caracteres).' };
+    if (!TIPOS_NV.includes(tipo)) return err('Tipo no válido.');
+    if (String(detalle || '').trim().length < 3) return err('El detalle es obligatorio (mínimo 3 caracteres).');
+    const final = tipo === TIPO_FINAL;
     const m = numero(monto);
-    if (!(m > 0)) return { ok: false, general: 'El monto debe ser mayor que 0.' };
-    const { c } = await buscar(id);
-    if (!c) return { ok: false, general: 'Cobro no encontrado.' };
-    if (c.Estado !== 'Por cobrar') return { ok: false, general: 'Solo se agregan extras a un servicio por cobrar.' };
-    const ex = await cargarTabla('COBROS_EXTRAS', EX_H, true);
-    const pref = 'EXT-' + hoyFlorida().replace(/-/g, '') + '-';
-    const idExtra = pref + p2(ex.filter(e => e.ID_Extra.startsWith(pref)).length + 1);
-    await agregarFila('COBROS_EXTRAS', aFila(ex.h, { ID_Extra: idExtra, ID_Cobro: c.ID_Cobro, Descripcion: String(descripcion).trim(), Monto: r2(m), Estado: 'Activo', Creado_Por: admin, Fecha_Creacion: ahora() }));
-    await bit(c.ID_Cobro, 'Agregar extra', `${idExtra}: ${String(descripcion).trim()} ${usd(r2(m))}`, '', admin);
+    if (final ? !(m >= 0) : !(m > 0)) return err(final ? 'El valor final no es válido.' : 'El monto debe ser mayor que 0.');
+    const hoy = hoyFlorida();
+    const lista = await cargarTabla('COBROS_SERVICIO', CS_H, true);
+
+    let cliente, fecha, idProg = '';
+    if (idCobro) {
+      const c = lista.find(x => x.ID_Cobro === String(idCobro).trim());
+      if (!c) return err('Cobro no encontrado.');
+      cliente = c.Cliente; fecha = normalizarFecha(c.Fecha); idProg = String(c.IDs_Programacion || '').split(',')[0];
+    } else {
+      const datos = await leerHoja('PROGRAMACION_DIARIA');
+      if (!datos.length) return err('Servicio no encontrado.');
+      const h = datos[0], ix = n => h.indexOf(n);
+      const f = datos.slice(1).find(x => x[ix('ID_Programacion')] === String(idProgramacion || '').trim());
+      if (!f) return err('Servicio no encontrado.');
+      if ((f[ix('Tipo_Servicio')] || 'Limpieza') === 'Inspeccion') return err('Las inspecciones no se cobran.');
+      if (f[ix('Cancelado')] === 'Sí') return err('El servicio está cancelado.');
+      cliente = String(f[ix('Cliente')] || '').trim(); fecha = normalizarFecha(f[ix('Fecha_Servicio')]); idProg = String(idProgramacion).trim();
+    }
+    const clave = `${cliente}|${fecha}`;
+    const c = lista.find(x => x.Clave === clave);
+    if (c && c.Estado === 'Cancelado') return err('El servicio está cancelado: no genera cobro.');
+
+    const [nv, tar] = await Promise.all([cargarTabla('NOVEDADES_COBRO', NV_H, true), cargarTarifas()]);
+    let montoGuardar = r2(m), det = String(detalle).trim();
+    if (final) {
+      const activas = nv.filter(n => n.Cliente === cliente && normalizarFecha(n.Fecha_Servicio) === fecha && n.Estado === 'Activa');
+      const t = tar.mapa[cliente];
+      const base = c && numero(c.Valor_Base) > 0 ? numero(c.Valor_Base) : (t && t.tarifa > 0 ? t.tarifa : 0);
+      const actual = r2(base + activas.reduce((a, n) => a + (numero(n.Monto) || 0), 0));
+      montoGuardar = r2(m - actual);
+      if (montoGuardar === 0) return err('El total del servicio ya es ese valor.');
+      det = `Valor final ${usd(r2(m))} (antes ${usd(actual)}) — ${det}`;
+    }
+    const pref = 'NOV-' + hoy.replace(/-/g, '') + '-';
+    const id = pref + p2(nv.filter(n => n.ID_Novedad.startsWith(pref)).length + 1);
+    await agregarFila('NOVEDADES_COBRO', aFila(nv.h, { ID_Novedad: id, Cliente: cliente, Fecha_Servicio: fecha, ID_Programacion: idProg, Tipo: tipo, Detalle: det, Monto: montoGuardar, Estado: 'Activa', Registrado_Por: admin, Fecha_Registro: ahora(), Retroactivo: fecha < hoy ? 'Sí' : 'No' }));
+    await bit(c ? c.ID_Cobro : '', 'Novedad', `${id} · ${cliente} ${fecha} · ${tipo}: ${usd(montoGuardar)}`, det, admin);
     return { ok: true };
   });
 }
 
-function anularExtra({ id, motivo, admin }) {
+function anularNovedad({ id, motivo, admin }) {
   return enCola(async () => {
-    if (!motivoOk(motivo)) return { ok: false, general: 'El motivo es obligatorio (mínimo 3 caracteres).' };
-    const ex = await cargarTabla('COBROS_EXTRAS', EX_H, true);
-    const e = ex.find(x => x.ID_Extra === String(id || '').trim());
-    if (!e) return { ok: false, general: 'Extra no encontrado.' };
-    if (e.Estado !== 'Activo') return { ok: false, general: 'El extra ya estaba anulado.' };
-    await poner('COBROS_EXTRAS', ex, e, { Estado: 'Anulado', Anulado_Por: admin, Motivo_Anulacion: String(motivo).trim() });
-    await bit(e.ID_Cobro, 'Anular extra', `${e.ID_Extra}: ${e.Descripcion} ${usd(numero(e.Monto) || 0)}`, motivo, admin);
+    if (!motivoOk(motivo)) return err('El motivo es obligatorio (mínimo 3 caracteres).');
+    const nv = await cargarTabla('NOVEDADES_COBRO', NV_H, true);
+    const n = nv.find(x => x.ID_Novedad === String(id || '').trim());
+    if (!n) return err('Novedad no encontrada.');
+    if (n.Estado !== 'Activa') return err('La novedad ya estaba anulada.');
+    await poner('NOVEDADES_COBRO', nv, n, { Estado: 'Anulada', Anulado_Por: admin, Motivo_Anulacion: String(motivo).trim() });
+    const c = (await cargarTabla('COBROS_SERVICIO', CS_H, true)).find(x => x.Clave === `${n.Cliente}|${normalizarFecha(n.Fecha_Servicio)}`);
+    await bit(c ? c.ID_Cobro : '', 'Anular novedad', `${n.ID_Novedad} · ${n.Tipo}: ${usd(numero(n.Monto) || 0)}`, motivo, admin);
     return { ok: true };
   });
+}
+
+// ---------- botón y diálogo para la agenda ----------
+function botonNovedad(r) {
+  if ((r.Tipo_Servicio || 'Limpieza') === 'Inspeccion' || r._estado === 'Cancelado') return '';
+  return `<button class="btn" data-id="${esc(r.ID_Programacion)}" data-t="${esc(r.Cliente + ' · ' + r._fecha)}" onclick="nvAbrir(this)">Novedad de cobro</button>`;
+}
+function dialogoNovedad() {
+  return `<style>#nvDlg{border:1px solid #ccc;border-radius:10px;padding:18px;max-width:360px;width:90%;}#nvDlg label{display:block;margin:10px 0;font-size:14px;}#nvDlg input,#nvDlg select{width:100%;padding:8px;font-size:15px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;}</style>
+<dialog id="nvDlg"><h3 style="margin-top:0;">Novedad de cobro</h3><p id="nvT" style="margin:0 0 6px;color:#555;font-size:14px;"></p>
+  <label>Tipo<select id="nvTipo" onchange="nvTipo()">${TIPOS_NV.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
+  <label>Detalle (obligatorio)<input type="text" id="nvDet" maxlength="200"></label>
+  <label><span id="nvLbl">Monto (USD)</span><input type="number" id="nvMonto" min="0" step="0.01"></label>
+  <p style="font-size:12px;color:#777;">"Valor final del servicio": escribe lo que se va a cobrar en total ($0 = cortesía). El sistema calcula el ajuste.</p>
+  <p id="nvErr" style="color:#b91c1c;font-size:13px;"></p>
+  <button class="btn hoy" onclick="nvGuardar()">Guardar</button> <button class="btn" onclick="document.getElementById('nvDlg').close()">Cancelar</button></dialog>
+<script>
+var nvId=null;
+function nvE(i){return document.getElementById(i);}
+function nvTipo(){nvE('nvLbl').textContent=nvE('nvTipo').value==='${TIPO_FINAL}'?'Valor final a cobrar (USD)':'Monto (USD)';}
+function nvAbrir(b){nvId=b.dataset.id;nvE('nvT').textContent=b.dataset.t;nvE('nvTipo').selectedIndex=0;nvE('nvDet').value='';nvE('nvMonto').value='';nvE('nvErr').textContent='';nvTipo();nvE('nvDlg').showModal();}
+function nvGuardar(){var d=nvE('nvDet').value.trim(),v=nvE('nvMonto').value.trim();
+if(d.length<3){nvE('nvErr').textContent='El detalle es obligatorio.';return;}
+if(v===''||!(parseFloat(v)>=0)){nvE('nvErr').textContent='El monto no es válido.';return;}
+fetch('/cartera/novedad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idProgramacion:nvId,tipo:nvE('nvTipo').value,detalle:d,monto:v})}).then(function(r){return r.json();}).then(function(j){if(j.ok){nvE('nvDlg').close();alert('Novedad de cobro registrada.');}else{nvE('nvErr').textContent=j.general||'Error';}}).catch(function(){nvE('nvErr').textContent='Error de conexión';});}
+</script>`;
 }
 
 // ---------- página ----------
@@ -250,7 +297,7 @@ a{color:#1d4ed8;text-decoration:none;}
 .nav{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;}
 .btn{background:#fff;border:1px solid #ccc;border-radius:6px;padding:7px 12px;font-size:14px;cursor:pointer;color:#222;display:inline-block;}
 .mini{padding:2px 8px;font-size:12px;margin:2px 2px 0 0;}
-.hoy{background:#2e7d32;color:#fff;border-color:#2e7d32;} .warn{background:#b45309;color:#fff;border-color:#b45309;}
+.hoy{background:#2e7d32;color:#fff;border-color:#2e7d32;}
 .aviso{background:#eef2ff;border-radius:6px;padding:8px 12px;font-size:14px;margin-bottom:12px;}
 .aviso.r{background:#fef2f2;} .aviso.y{background:#fffbeb;}
 table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;margin-bottom:18px;}
@@ -258,30 +305,34 @@ th,td{padding:8px 10px;text-align:left;font-size:13px;border-bottom:1px solid #e
 th{background:#f1f3f5;} tfoot td{font-weight:700;background:#f9fafb;}
 .num{text-align:right;white-space:nowrap;} .neg{color:#b91c1c;} .anu{color:#999;text-decoration:line-through;}
 .est{padding:2px 8px;border-radius:10px;font-size:12px;background:#e5e7eb;}
-.est.ok{background:#bbf7d0;} .est.rev{background:#fecaca;} .est.sp{background:#e5e7eb;color:#555;}
+.est.ok{background:#bbf7d0;} .est.rev{background:#fecaca;} .est.cn{background:#e5e7eb;color:#555;}
+.mp{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;margin-left:4px;color:#fff;background:#6b7280;}
+.mp.efectivo{background:#15803d;} .mp.cheque{background:#a16207;} .mp.zelle{background:#7e22ce;} .mp.venmo{background:#0369a1;}
 small{color:#777;}
 .filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;} .filtros select{padding:7px;border:1px solid #ccc;border-radius:6px;font-size:14px;}
 td details summary{cursor:pointer;color:#1d4ed8;}
 dialog{border:1px solid #ccc;border-radius:10px;padding:18px;max-width:360px;width:90%;}
 dialog label{display:block;margin:10px 0;font-size:14px;}
-dialog input{width:100%;padding:8px;font-size:15px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;}`;
+dialog input,dialog select{width:100%;padding:8px;font-size:15px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;}`;
 
 const SCRIPT = `
 function $(i){return document.getElementById(i);}
 function post(url,data,errId){fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.json();}).then(function(j){if(j.ok){location.reload();}else{$(errId).textContent=j.general||'Error';}}).catch(function(){$(errId).textContent='Error de conexión';});}
 var modo=null,idSel=null;
-var AYUDA={cobrar:'Deja el valor vacío para usar la tarifa del sitio.',valor:'El valor original queda guardado.',extra:'Productos u otros cobros. Se suma al valor del servicio.',nocobrar:'',anular:''};
-function tcAbrir(b){modo=b.dataset.modo;idSel=b.dataset.id;$('dt').textContent=b.dataset.t;$('dv').value=b.dataset.v||'';$('dd').value='';$('dm').value='';$('de').textContent='';
-$('rv').style.display=(modo==='cobrar'||modo==='valor'||modo==='extra')?'block':'none';
-$('rvt').textContent=modo==='extra'?'Monto del extra (USD)':'Valor del servicio (USD)';
-$('rd').style.display=modo==='extra'?'block':'none';
-$('rm').style.display=modo==='extra'?'none':'block';
-$('dh').textContent=AYUDA[modo]||'';$('dlg').showModal();}
+var AYUDA={ejecutar:'Deja el valor vacío para usar la tarifa del sitio.',novedad:'',cancelar:'',anular:''};
+function tcTipo(){$('rvt').textContent=$('dtipo').value==='${TIPO_FINAL}'?'Valor final a cobrar (USD)':'Monto (USD)';
+$('dh').textContent=$('dtipo').value==='${TIPO_FINAL}'?'Escribe el total a cobrar ($0 = cortesía). El sistema calcula el ajuste.':'';}
+function tcAbrir(b){modo=b.dataset.modo;idSel=b.dataset.id;$('dt').textContent=b.dataset.t;$('dv').value='';$('dd').value='';$('dm').value='';$('de').textContent='';
+$('rt').style.display=modo==='novedad'?'block':'none';
+$('rd').style.display=modo==='novedad'?'block':'none';
+$('rv').style.display=(modo==='ejecutar'||modo==='novedad')?'block':'none';
+$('rm').style.display=modo==='novedad'?'none':'block';
+$('rvt').textContent=modo==='novedad'?'Monto (USD)':'Valor del servicio (USD)';
+$('dtipo').selectedIndex=0;$('dh').textContent=AYUDA[modo]||'';$('dlg').showModal();}
 function tcGuardar(){var v=$('dv').value.trim(),d=$('dd').value.trim(),m=$('dm').value.trim();
-if(modo==='extra'){if(d.length<3){$('de').textContent='La descripción es obligatoria.';return;}if(!(parseFloat(v)>0)){$('de').textContent='El monto no es válido.';return;}post('/cartera/extra',{id:idSel,descripcion:d,monto:v},'de');return;}
+if(modo==='novedad'){if(d.length<3){$('de').textContent='El detalle es obligatorio.';return;}if(v===''||!(parseFloat(v)>=0)){$('de').textContent='El monto no es válido.';return;}post('/cartera/novedad',{idCobro:idSel,tipo:$('dtipo').value,detalle:d,monto:v},'de');return;}
 if(m.length<3){$('de').textContent='El motivo es obligatorio.';return;}
-if(modo==='valor'&&!(parseFloat(v)>0)){$('de').textContent='El valor no es válido.';return;}
-var url={cobrar:'/cartera/cobrar',nocobrar:'/cartera/nocobrar',valor:'/cartera/valor',anular:'/cartera/extra/anular'}[modo];
+var url={ejecutar:'/cartera/ejecutar',cancelar:'/cartera/cancelar',anular:'/cartera/novedad/anular'}[modo];
 post(url,{id:idSel,valor:v,motivo:m},'de');}`;
 
 async function paginaCartera(query, admin) {
@@ -289,30 +340,39 @@ async function paginaCartera(query, admin) {
   let errSync = '';
   try { await sincronizar(query.sync === '1'); } catch (e) { console.error('Error sincronizando cartera:', e); errSync = e.message; }
   const mes = query.mes === 'todo' ? 'todo' : (mesValido(query.mes) ? query.mes : hoy.slice(0, 7));
-  const [cfg, tar, lista, listaEx] = await Promise.all([cargarConfig(), cargarTarifas(), cargarTabla('COBROS_SERVICIO', CS_H), cargarTabla('COBROS_EXTRAS', EX_H)]);
+  const [cfg, tar, lista, listaNv] = await Promise.all([cargarConfig(), cargarTarifas(), cargarTabla('COBROS_SERVICIO', CS_H), cargarTabla('NOVEDADES_COBRO', NV_H)]);
 
-  const extrasPor = {};
-  listaEx.filter(e => e.ID_Extra).forEach(e => { (extrasPor[e.ID_Cobro] = extrasPor[e.ID_Cobro] || []).push(e); });
+  const nvPor = {};
+  listaNv.filter(n => n.ID_Novedad).forEach(n => { const k = `${n.Cliente}|${normalizarFecha(n.Fecha_Servicio)}`; (nvPor[k] = nvPor[k] || []).push(n); });
   const cobros = lista.filter(o => o.ID_Cobro).map(o => {
-    const ext = r2((extrasPor[o.ID_Cobro] || []).filter(e => e.Estado === 'Activo').reduce((a, e) => a + (numero(e.Monto) || 0), 0));
-    const base = numero(o.Valor_Base);
-    return { ...o, _fecha: normalizarFecha(o.Fecha), _base: base > 0 ? base : 0, _ext: ext, _total: r2((base > 0 ? base : 0) + ext), _sinTarifa: o.Estado === 'Por cobrar' && !(base > 0) };
+    const f = normalizarFecha(o.Fecha);
+    const nvs = nvPor[`${o.Cliente}|${f}`] || [];
+    const activas = nvs.filter(n => n.Estado === 'Activa');
+    const nov = r2(activas.reduce((a, n) => a + (numero(n.Monto) || 0), 0));
+    const base = numero(o.Valor_Base), b = base > 0 ? base : 0;
+    return { ...o, _fecha: f, _base: b, _nov: nov, _nvs: nvs, _total: r2(b + nov), _sinTarifa: o.Estado === 'Ejecutado' && !(base > 0) && !activas.length };
   });
   const enMes = cobros.filter(c => mes === 'todo' || c._fecha.startsWith(mes));
 
-  // resumen por cliente
+  const mp = cliente => {
+    const t = tar.mapa[cliente];
+    if (!t || !t.metodo) return '<span class="mp" title="Sin método de pago en SITIOS">¿Pago?</span>';
+    const k = t.metodo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]/g, '');
+    return `<span class="mp ${k}" title="${esc(t.nota)}">${esc(t.metodo)}</span>`;
+  };
+
   const res = {};
   enMes.forEach(c => {
-    const x = res[c.Cliente] = res[c.Cliente] || { n: 0, base: 0, ext: 0, def: 0, sin: 0 };
-    if (c.Estado === 'Por cobrar') { x.n++; x.base += c._base; x.ext += c._ext; if (c._sinTarifa) x.sin++; }
-    else if (c.Estado === 'Por definir') x.def++;
+    const x = res[c.Cliente] = res[c.Cliente] || { n: 0, base: 0, nov: 0, conf: 0, sin: 0 };
+    if (c.Estado === 'Ejecutado') { x.n++; x.base += c._base; x.nov += c._nov; if (c._sinTarifa) x.sin++; }
+    else if (c.Estado === 'Por confirmar') x.conf++;
   });
   const clientes = Object.keys(res).sort((a, b) => a.localeCompare(b));
-  const G = { n: 0, base: 0, ext: 0, def: 0, sin: 0 };
+  const G = { n: 0, base: 0, nov: 0, conf: 0, sin: 0 };
   clientes.forEach(k => Object.keys(G).forEach(f => { G[f] += res[k][f]; }));
 
   const fCli = clientes.includes(query.cliente) ? query.cliente : '';
-  const ESTADOS = ['Por definir', 'Por cobrar', 'No se cobra', 'Sin tarifa'];
+  const ESTADOS = ['Por confirmar', 'Ejecutado', 'Cancelado', 'Sin tarifa'];
   const fEst = ESTADOS.includes(query.estado) ? query.estado : '';
   const url = o => '/cartera?' + Object.entries({ mes, cliente: fCli, estado: fEst, ...o }).filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
 
@@ -320,27 +380,26 @@ async function paginaCartera(query, admin) {
     .sort((a, b) => a._fecha.localeCompare(b._fecha) || a.Cliente.localeCompare(b.Cliente));
 
   const filasRes = clientes.map(k => { const x = res[k];
-    return `<tr><td><a href="${esc(url({ cliente: k, estado: '' }))}">${esc(k)}</a></td><td class="num">${x.n}</td><td class="num">${usd(x.base)}</td><td class="num">${usd(x.ext)}</td><td class="num"><b>${usd(x.base + x.ext)}</b></td>
-      <td class="num">${x.def ? `<span class="est rev">${x.def}</span>` : '0'}</td><td class="num">${x.sin ? `<span class="est rev">${x.sin}</span>` : '0'}</td></tr>`;
+    return `<tr><td><a href="${esc(url({ cliente: k, estado: '' }))}">${esc(k)}</a>${mp(k)}</td><td class="num">${x.n}</td><td class="num">${usd(x.base)}</td><td class="num">${usd(x.nov)}</td><td class="num"><b>${usd(r2(x.base + x.nov))}</b></td>
+      <td class="num">${x.conf ? `<span class="est rev">${x.conf}</span>` : '0'}</td><td class="num">${x.sin ? `<span class="est rev">${x.sin}</span>` : '0'}</td></tr>`;
   }).join('') || '<tr><td colspan="7" style="text-align:center;color:#888;padding:20px;">No hay cobros en este período.</td></tr>';
 
   const filasDet = vis.map(c => {
-    const ex = extrasPor[c.ID_Cobro] || [];
     const titulo = `${c.Cliente} · ${c._fecha}`;
-    const b = (modo, t, txt, v) => `<button class="btn mini" data-modo="${modo}" data-id="${esc(c.ID_Cobro)}" data-t="${esc(t)}" data-v="${v ?? ''}" onclick="tcAbrir(this)">${txt}</button>`;
+    const b = (m, txt) => `<button class="btn mini" data-modo="${m}" data-id="${esc(c.ID_Cobro)}" data-t="${esc(titulo)}" onclick="tcAbrir(this)">${txt}</button>`;
     let acc = '';
-    if (c.Estado === 'Por definir') acc = b('cobrar', titulo, 'Cobrar') + b('nocobrar', titulo, 'No cobrar');
-    else if (c.Estado === 'Por cobrar') acc = b('valor', titulo, 'Ajustar valor', c._base || '') + b('extra', titulo, '+ Extra') + b('nocobrar', titulo, 'No cobrar');
-    else if (c.Estado === 'No se cobra' && c.Decision === 'Manual') acc = b('cobrar', titulo, 'Cobrar');
-    const extrasHtml = ex.length ? `<details><summary><small>${ex.filter(e => e.Estado === 'Activo').length} extra(s) · ${usd(c._ext)}</small></summary>${ex.map(e => `<div${e.Estado !== 'Activo' ? ' class="anu"' : ''}><small>${esc(e.Descripcion)}: ${usd(numero(e.Monto) || 0)}${e.Estado === 'Activo'
-      ? ` <button class="btn mini" data-modo="anular" data-id="${esc(e.ID_Extra)}" data-t="${esc('Anular extra ' + e.ID_Extra)}" onclick="tcAbrir(this)">Anular</button>`
-      : ' (anulado: ' + esc(e.Motivo_Anulacion) + ')'}</small></div>`).join('')}</details>` : '<small>—</small>';
-    const cls = c.Estado === 'Por cobrar' ? (c._sinTarifa ? 'rev' : 'ok') : (c.Estado === 'Por definir' ? 'rev' : 'sp');
-    return `<tr><td>${esc(c._fecha)}</td><td>${esc(c.Cliente)}${c.Pagador && c.Pagador !== c.Cliente ? `<br><small>Paga: ${esc(c.Pagador)}</small>` : ''}<br><small>${esc(c.Tipo)}</small></td>
+    if (c.Estado === 'Por confirmar') acc = b('ejecutar', 'Ejecutado') + b('cancelar', 'Cancelar');
+    else if (c.Estado === 'Ejecutado') acc = b('novedad', '+ Novedad') + b('cancelar', 'Cancelar');
+    else if (c.Estado === 'Cancelado' && c.Decision === 'Manual') acc = b('ejecutar', 'Ejecutado');
+    const nvHtml = c._nvs.length ? `<details><summary><small>${c._nvs.filter(n => n.Estado === 'Activa').length} novedad(es) · ${usd(c._nov)}</small></summary>${c._nvs.map(n => `<div${n.Estado !== 'Activa' ? ' class="anu"' : ''}><small>${esc(n.Tipo)}: ${esc(n.Detalle)} (${usd(numero(n.Monto) || 0)}) · ${esc(n.Registrado_Por)}${n.Estado === 'Activa'
+      ? ` <button class="btn mini" data-modo="anular" data-id="${esc(n.ID_Novedad)}" data-t="${esc('Anular novedad ' + n.ID_Novedad)}" onclick="tcAbrir(this)">Anular</button>`
+      : ' · anulada: ' + esc(n.Motivo_Anulacion)}</small></div>`).join('')}</details>` : '<small>—</small>';
+    const cls = c.Estado === 'Ejecutado' ? (c._sinTarifa ? 'rev' : 'ok') : (c.Estado === 'Por confirmar' ? 'rev' : 'cn');
+    return `<tr><td>${esc(c._fecha)}</td><td>${esc(c.Cliente)}${mp(c.Cliente)}${c.Pagador && c.Pagador !== c.Cliente ? `<br><small>Paga: ${esc(c.Pagador)}</small>` : ''}</td>
       <td><small>${esc(c.Empleados)}</small></td>
       <td><span class="est ${cls}">${esc(c.Estado)}</span>${c._sinTarifa ? '<br><small class="neg">Sin tarifa en SITIOS</small>' : ''}${c.Motivo ? `<br><small>${esc(c.Motivo)}</small>` : ''}</td>
-      <td class="num">${c.Estado === 'Por cobrar' && c._base ? usd(c._base) : '—'}</td><td>${extrasHtml}</td>
-      <td class="num"><b>${c.Estado === 'Por cobrar' ? usd(c._total) : '—'}</b></td><td>${acc}</td></tr>`;
+      <td class="num">${c.Estado === 'Ejecutado' && c._base ? usd(c._base) : '—'}</td><td>${nvHtml}</td>
+      <td class="num"><b>${c.Estado === 'Ejecutado' ? usd(c._total) : '—'}</b></td><td>${acc}</td></tr>`;
   }).join('') || '<tr><td colspan="8" style="text-align:center;color:#888;padding:20px;">Sin servicios para este filtro.</td></tr>';
 
   const sel = (nombre, etiqueta, opciones, actual) => `<select name="${nombre}"><option value="">${etiqueta}</option>${opciones.map(o => `<option value="${esc(o)}"${actual === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
@@ -356,17 +415,18 @@ async function paginaCartera(query, admin) {
 </div>
 ${errSync ? `<div class="aviso r">No se pudo sincronizar con la agenda: ${esc(errSync)}</div>` : ''}
 ${tar.hayColumna ? '' : '<div class="aviso r">Falta la columna <b>Tarifa_Servicio</b> en la hoja SITIOS: ningún servicio tendrá valor.</div>'}
-${(G.def || G.sin) ? `<div class="aviso y">${G.def ? `<a href="${esc(url({ estado: 'Por definir' }))}">${G.def} servicio(s) por definir</a> (sin completar: decide si se cobran).` : ''} ${G.sin ? `<a href="${esc(url({ estado: 'Sin tarifa' }))}">${G.sin} servicio(s) sin tarifa</a> (llena Tarifa_Servicio en SITIOS y pulsa Sincronizar, o ajusta el valor).` : ''}</div>` : ''}
-<div class="aviso">Se cargan los servicios desde <b>${esc(cfg.inicio)}</b> (hoja CONFIG_CARTERA). Un cobro = un cliente por día y tipo de servicio (si va un equipo, es un solo cobro). Total a cobrar = valor del servicio + extras.</div>
-<table><tr><th>Cliente</th><th class="num">Servicios por cobrar</th><th class="num">Valor servicios</th><th class="num">Extras</th><th class="num">Total a cobrar</th><th class="num">Por definir</th><th class="num">Sin tarifa</th></tr>${filasRes}
-<tfoot><tr><td>Total</td><td class="num">${G.n}</td><td class="num">${usd(G.base)}</td><td class="num">${usd(G.ext)}</td><td class="num">${usd(G.base + G.ext)}</td><td class="num">${G.def}</td><td class="num">${G.sin}</td></tr></tfoot></table>
+${(G.conf || G.sin) ? `<div class="aviso y">${G.conf ? `<a href="${esc(url({ estado: 'Por confirmar' }))}">${G.conf} servicio(s) por confirmar</a> (sin cerrar: márcalos Ejecutado o Cancelado).` : ''} ${G.sin ? `<a href="${esc(url({ estado: 'Sin tarifa' }))}">${G.sin} servicio(s) sin tarifa</a> (llena Tarifa_Servicio en SITIOS y pulsa Sincronizar, o registra un "Valor final").` : ''}</div>` : ''}
+<div class="aviso">Se cargan los servicios desde <b>${esc(cfg.inicio)}</b> (hoja CONFIG_CARTERA). Un cobro = un cliente por día (si va un equipo, es un solo cobro). Las inspecciones no entran. Total = valor del servicio + novedades de cobro. Las novedades se registran desde la agenda.</div>
+<table><tr><th>Cliente</th><th class="num">Servicios ejecutados</th><th class="num">Valor servicios</th><th class="num">Novedades</th><th class="num">Total a cobrar</th><th class="num">Por confirmar</th><th class="num">Sin tarifa</th></tr>${filasRes}
+<tfoot><tr><td>Total</td><td class="num">${G.n}</td><td class="num">${usd(G.base)}</td><td class="num">${usd(G.nov)}</td><td class="num">${usd(r2(G.base + G.nov))}</td><td class="num">${G.conf}</td><td class="num">${G.sin}</td></tr></tfoot></table>
 <form class="filtros" method="GET" action="/cartera"><input type="hidden" name="mes" value="${esc(mes)}">
   ${sel('cliente', 'Todos los clientes', clientes, fCli)}${sel('estado', 'Todos los estados', ESTADOS, fEst)}
   <button class="btn">Filtrar</button> <a class="btn" href="${esc(url({ cliente: '', estado: '' }))}">Limpiar</a></form>
-<table><tr><th>Fecha</th><th>Cliente</th><th>Empleados</th><th>Estado</th><th class="num">Valor</th><th>Extras</th><th class="num">Total</th><th>Acciones</th></tr>${filasDet}</table>
+<table><tr><th>Fecha</th><th>Cliente / pago</th><th>Empleados</th><th>Estado</th><th class="num">Valor</th><th>Novedades</th><th class="num">Total</th><th>Acciones</th></tr>${filasDet}</table>
 <dialog id="dlg"><h3 id="dt" style="margin-top:0;"></h3>
+  <label id="rt">Tipo<select id="dtipo" onchange="tcTipo()">${TIPOS_NV.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
+  <label id="rd">Detalle (obligatorio)<input type="text" id="dd" maxlength="200"></label>
   <label id="rv"><span id="rvt">Valor (USD)</span><input type="number" id="dv" min="0" step="0.01"></label>
-  <label id="rd">Descripción del extra (obligatoria)<input type="text" id="dd" maxlength="200"></label>
   <label id="rm">Motivo (obligatorio)<input type="text" id="dm" maxlength="200"></label>
   <p id="dh" style="font-size:12px;color:#777;"></p>
   <p id="de" style="color:#b91c1c;font-size:13px;"></p>
@@ -379,17 +439,16 @@ ${(G.def || G.sin) ? `<div class="aviso y">${G.def ? `<a href="${esc(url({ estad
 function rutas(app, auth) {
   const api = (ruta, fn) => app.post(ruta, auth.requiereAdmin, async (req, res) => {
     try { res.json(await fn(req.body || {}, req.admin)); }
-    catch (err) { console.error('Error en POST ' + ruta, err); res.status(500).json({ ok: false, general: 'Error: ' + err.message }); }
+    catch (e) { console.error('Error en POST ' + ruta, e); res.status(500).json({ ok: false, general: 'Error: ' + e.message }); }
   });
   app.get('/cartera', auth.requiereAdmin, async (req, res) => {
     try { res.set('Content-Type', 'text/html; charset=utf-8'); res.send(await paginaCartera(req.query, req.admin)); }
-    catch (err) { console.error('Error en GET /cartera:', err); res.status(500).send('Error cargando la cartera: ' + err.message); }
+    catch (e) { console.error('Error en GET /cartera:', e); res.status(500).send('Error cargando la cartera: ' + e.message); }
   });
-  api('/cartera/cobrar', (b, a) => cobrar({ id: b.id, valor: b.valor, motivo: b.motivo, admin: a }));
-  api('/cartera/nocobrar', (b, a) => noCobrar({ id: b.id, motivo: b.motivo, admin: a }));
-  api('/cartera/valor', (b, a) => ajustarValor({ id: b.id, valor: b.valor, motivo: b.motivo, admin: a }));
-  api('/cartera/extra', (b, a) => agregarExtra({ id: b.id, descripcion: b.descripcion, monto: b.monto, admin: a }));
-  api('/cartera/extra/anular', (b, a) => anularExtra({ id: b.id, motivo: b.motivo, admin: a }));
+  api('/cartera/ejecutar', (b, a) => ejecutar({ id: b.id, valor: b.valor, motivo: b.motivo, admin: a }));
+  api('/cartera/cancelar', (b, a) => cancelar({ id: b.id, motivo: b.motivo, admin: a }));
+  api('/cartera/novedad', (b, a) => registrarNovedad({ idCobro: b.idCobro, idProgramacion: b.idProgramacion, tipo: b.tipo, detalle: b.detalle, monto: b.monto, admin: a }));
+  api('/cartera/novedad/anular', (b, a) => anularNovedad({ id: b.id, motivo: b.motivo, admin: a }));
 }
 
-module.exports = { rutas, paginaCartera };
+module.exports = { rutas, paginaCartera, botonNovedad, dialogoNovedad };
