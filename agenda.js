@@ -213,7 +213,8 @@ async function paginaAgenda(query, admin) {
   }).join('');
 
   const pasada = fecha < hoy;
-    const cartera = require('./cartera'); // carga diferida: evita dependencia circular  const ed = require('./edicion'); // carga diferida: evita dependencia circular
+    const ed = require('./edicion'); // carga diferida: evita dependencia circular
+    const cartera = require('./cartera'); // carga diferida: evita dependencia circular
   const maestrosDatos = ed ? await ed.maestros(false) : null;
   const aviso = pasada ? 'Fecha pasada: registro retroactivo. Exige motivo, queda marcado y no envía WhatsApp.' : 'Modo editable: los servicios nuevos se guardan como Borrador hasta enviarlos.';
 
