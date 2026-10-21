@@ -215,6 +215,7 @@ async function paginaAgenda(query, admin) {
   const pasada = fecha < hoy;
     const ed = require('./edicion'); // carga diferida: evita dependencia circular
     const cartera = require('./cartera'); // carga diferida: evita dependencia circular
+    const cobroInfo = await cartera.datosCobroDia(delDia);
   const maestrosDatos = ed ? await ed.maestros(false) : null;
   const aviso = pasada ? 'Fecha pasada: registro retroactivo. Exige motivo, queda marcado y no envía WhatsApp.' : 'Modo editable: los servicios nuevos se guardan como Borrador hasta enviarlos.';
 
@@ -234,8 +235,9 @@ async function paginaAgenda(query, admin) {
     return `<tr class="${r._estado === 'Cancelado' ? 'canc' : ''}">
       <td>${esc(horario)}</td><td>${esc(tipoDe(r))}</td><td>${esc(r.Cliente)}${equipo}</td><td>${esc(r.Empleado)}</td>
       <td><span class="est ${esc(r._estado)}">${esc(r._estado)}</span>${r.Registro_Retroactivo === 'Sí' ? ` <span class="est" style="background:#fecaca" title="${esc(r.Motivo_Retroactivo)}">Retroactivo</span>` : ''}${r.Origen_Registro === 'Manual' ? ' ✍️' : ''}${accionPendiente(r) ? ' ⚠️' : ''}</td>
-      <td><details><summary>Detalle</summary>${lineaDeVida(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion], porServ[r.ID_Programacion])}</details></td>
-      <td>${acciones(r)}${cartera.botonNovedad(r)}</td></tr>`;
+      <td><button class="btn" data-id="${esc(r.ID_Programacion)}" onclick="tcDetalle(this.dataset.id)">Detalle</button></td>
+      <td>${acciones(r)}${cartera.botonNovedad(r)}</td></tr>
+        <tr class="filadet" id="det-${esc(r.ID_Programacion)}" style="display:none"><td colspan="7">${cartera.lineaDeVidaH(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion], porServ[r.ID_Programacion], cobroInfo[r.ID_Programacion])}</td></tr>`;
     
   }).join('') : '<tr><td colspan="7" style="text-align:center;color:#888;padding:24px;">No hay servicios para esta fecha o filtro.</td></tr>';
 
