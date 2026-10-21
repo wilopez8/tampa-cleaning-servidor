@@ -309,6 +309,9 @@ th{background:#f1f3f5;} tfoot td{font-weight:700;background:#f9fafb;}
 .mp{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;margin-left:4px;color:#fff;background:#6b7280;}
 .mp.efectivo{background:#15803d;} .mp.cheque{background:#a16207;} .mp.zelle{background:#7e22ce;} .mp.venmo{background:#0369a1;}
 small{color:#777;}
+table.tf{table-layout:fixed;} table.tf td{overflow-wrap:anywhere;} table.tf .btn{white-space:normal;}
+table.tf th:nth-child(1){width:8%;} table.tf th:nth-child(2){width:17%;} table.tf th:nth-child(3){width:13%;} table.tf th:nth-child(4){width:16%;}
+table.tf th:nth-child(5){width:8%;} table.tf th:nth-child(6){width:17%;} table.tf th:nth-child(7){width:8%;} table.tf th:nth-child(8){width:13%;}
 .filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;} .filtros select{padding:7px;border:1px solid #ccc;border-radius:6px;font-size:14px;}
 td details summary{cursor:pointer;color:#1d4ed8;}
 dialog{border:1px solid #ccc;border-radius:10px;padding:18px;max-width:360px;width:90%;}
@@ -422,7 +425,7 @@ ${(G.conf || G.sin) ? `<div class="aviso y">${G.conf ? `<a href="${esc(url({ est
 <form class="filtros" method="GET" action="/cartera"><input type="hidden" name="mes" value="${esc(mes)}">
   ${sel('cliente', 'Todos los clientes', clientes, fCli)}${sel('estado', 'Todos los estados', ESTADOS, fEst)}
   <button class="btn">Filtrar</button> <a class="btn" href="${esc(url({ cliente: '', estado: '' }))}">Limpiar</a></form>
-<table><tr><th>Fecha</th><th>Cliente / pago</th><th>Empleados</th><th>Estado</th><th class="num">Valor</th><th>Novedades</th><th class="num">Total</th><th>Acciones</th></tr>${filasDet}</table>
+<table class="tf"><tr><th>Fecha</th><th>Cliente / pago</th><th>Empleados</th><th>Estado</th><th class="num">Valor</th><th>Novedades</th><th class="num">Total</th><th>Acciones</th></tr>${filasDet}</table>
 <dialog id="dlg"><h3 id="dt" style="margin-top:0;"></h3>
   <label id="rt">Tipo<select id="dtipo" onchange="tcTipo()">${TIPOS_NV.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
   <label id="rd">Detalle (obligatorio)<input type="text" id="dd" maxlength="200"></label>
