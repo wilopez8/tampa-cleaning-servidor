@@ -1,13 +1,13 @@
 # Arquitectura — Sistema Tampa Cleaning
 
-**Última actualización:** 20 de octubre de 2026
+**Última actualización:** 28 de octubre de 2026
 **Propósito de este documento:** referencia técnica para entender cómo funciona el sistema, qué piezas lo componen y cómo se conectan.
 
 ---
 
 ## 1. Resumen en una frase
 
-Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su ubicación (check-in), confirmar su programación y reportar novedades. Un **servidor propio en Node.js** (hosteado en Render) procesa esos mensajes, valida la información contra **Google Sheets** (que funciona como base de datos central), y notifica a gerencia por WhatsApp cuando algo requiere atención. El cierre de cada servicio (checklist, insumos, comentario — o la evaluación por áreas, si el servicio es una inspección de calidad) se completa en una **página web propia**, generada por el mismo servidor — no se usa ninguna herramienta externa de formularios. Los administradores programan, editan, reasignan y cancelan servicios desde una **agenda web** protegida con clave (`/agenda`), también generada por el servidor. Desde esa misma sesión asignan **pendientes** (tareas sueltas como acciones correctivas o diligencias) que el empleado recibe por WhatsApp y cierra respondiendo "Ok". Además calculan la **nómina semanal** (`/nomina`): horas pagadas por servicio a partir de lo programado y del check-in, millas recorridas entre servicios (con Google Routes), propinas/bonos/descuentos, y cierre de la liquidación de cada empleado; la liquidación cerrada se le comparte al empleado con un **enlace firmado** (`/liquidacion`) para que vea su detalle sin iniciar sesión.
+Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su ubicación (check-in), confirmar su programación y reportar novedades. Un **servidor propio en Node.js** (hosteado en Render) procesa esos mensajes, valida la información contra **Google Sheets** (que funciona como base de datos central), y notifica a gerencia por WhatsApp cuando algo requiere atención. El cierre de cada servicio (checklist, insumos, comentario — o la evaluación por áreas, si el servicio es una inspección de calidad) se completa en una **página web propia**, generada por el mismo servidor — no se usa ninguna herramienta externa de formularios. Los administradores programan, editan, reasignan y cancelan servicios desde una **agenda web** protegida con clave (`/agenda`), también generada por el servidor. Desde esa misma sesión asignan **pendientes** (tareas sueltas como acciones correctivas o diligencias) que el empleado recibe por WhatsApp y cierra respondiendo "Ok". Además calculan la **nómina semanal** (`/nomina`): horas pagadas por servicio a partir de lo programado y del check-in, millas recorridas entre servicios (con Google Routes), propinas/bonos/descuentos, y cierre de la liquidación de cada empleado; la liquidación cerrada se le comparte al empleado con un **enlace firmado** (`/liquidacion`) para que vea su detalle sin iniciar sesión. Por último, llevan la **cartera** (`/cartera`): lo que hay que cobrarle a cada cliente, generado solo a partir de los servicios de la agenda (un cobro por cliente y día, con la tarifa del sitio) más las **novedades de cobro** (tiempo o trabajo adicional, productos, valor final ajustado).
 
 ---
 
@@ -21,6 +21,7 @@ Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su 
 6. **Nómina semanal (fase 1 — horas):** se agregó `/nomina`, que calcula lo que se paga a cada empleado por semana (lunes a domingo) con los datos que ya existían en `PROGRAMACION_DIARIA` (horario programado + horas reales del check-in). Permite ajustes manuales con motivo, conceptos adicionales (propinas, bonos, descuentos) y cerrar la liquidación de cada empleado, que queda congelada en el Sheets. El millaje queda para la fase 2.
 7. **Nómina fase 2 — millas:** se agregó `millas.js`, que calcula el recorrido diario de cada empleado (casa → servicios → casa) con la **API de Google Routes** y guarda las distancias en una hoja-caché (`DISTANCIAS`) para no volver a consultar el mismo trayecto. Está conectado a `/nomina`: las millas suman al total, se pueden ajustar por parada o por día, bloquean el cierre si quedan por revisar y se congelan al cerrar (ver 6.10). En el mismo cambio, las páginas de administración (agenda, pendientes, nómina) pasaron a compartir un **menú de navegación** común (`menu.js`).
 8. **Liquidación visible para el empleado:** cada liquidación cerrada tiene un **enlace propio** (`/liquidacion?t=…`) con un token firmado que vence a los 60 días, para que el empleado vea sus horas, millas, conceptos y total sin cuenta ni clave. El enlace no se envía por Twilio: el administrador copia un mensaje ya redactado con el botón "Copiar mensaje con enlace" y lo manda él mismo.
+9. **Cartera (cobros a clientes):** se agregó `cartera.js` (`/cartera`), que convierte los servicios de la agenda en cobros por cliente y día, permite confirmar o cancelar los que quedaron sin cerrar y registrar novedades de cobro, tanto desde la cartera como desde un botón en la agenda. En el mismo cambio, el "Detalle" de la agenda pasó a mostrarse como un bloque horizontal debajo de la fila (con un bloque nuevo de **Cobro**), y se **retiró** el enlace antiguo `/enviar-programacion` junto con la variable `CLAVE_ADMIN`.
 
 ---
 
@@ -30,7 +31,7 @@ Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su 
 |---|---|---|
 | **WhatsApp** | Interfaz que usan los empleados y gerencia | App de WhatsApp de cada persona |
 | **Twilio** | Traduce entre WhatsApp y el servidor (recibe mensajes entrantes, envía salientes) | Cuenta en twilio.com — actualmente en modo **Sandbox** (pendiente migrar a número verificado) |
-| **Servidor Node.js** | Toda la lógica de negocio y las páginas web del sistema (formulario de cierre, login, agenda, pendientes, nómina) | Hosteado en Render.com (`tampa-cleaning-servidor.onrender.com`), código en GitHub |
+| **Servidor Node.js** | Toda la lógica de negocio y las páginas web del sistema (formulario de cierre, login, agenda, pendientes, nómina, cartera) | Hosteado en Render.com (`tampa-cleaning-servidor.onrender.com`), código en GitHub |
 | **Google Sheets** | Base de datos central | `Tampa_Cleaning_BUILD` (Google Drive) |
 | **Google Cloud (cuenta de servicio)** | Permite que el servidor lea/escriba en Sheets sin intervención humana | Proyecto `tampa-cleaning-509423` |
 
@@ -40,7 +41,7 @@ Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su 
 
 ```
 tampa-cleaning-servidor/
-├── index.js       → Rutas HTTP: webhook de Twilio, programación, formulario de cierre / inspección, login, agenda, pendientes (las de nómina las registra nomina.js)
+├── index.js       → Rutas HTTP: webhook de Twilio, formulario de cierre / inspección, login, agenda, pendientes (las de nómina y cartera las registran nomina.js y cartera.js)
 ├── logica.js      → Lógica de negocio de WhatsApp: check-in, envío de programación, confirmaciones, avisos de cambio, cierre
 ├── auth.js        → Inicio de sesión de administradores (claves, cookie firmada, bloqueo por intentos fallidos)
 ├── agenda.js      → Página /agenda: vista semanal/diaria, filtros, "línea de vida" de cada servicio, franja de pendientes del día
@@ -48,7 +49,8 @@ tampa-cleaning-servidor/
 ├── pendientes.js  → Pendientes: página /pendientes, envío y recordatorios por WhatsApp, respuestas "Ok"/"Pendiente", página del empleado
 ├── nomina.js      → Nómina semanal: página /nomina, cálculo de horas pagadas, ajustes, conceptos adicionales, millas, cierre/reapertura de liquidaciones, página /liquidacion del empleado con enlace firmado (registra sus rutas con nomina.rutas(app, auth))
 ├── millas.js      → Millas de la nómina (lo usa nomina.js): distancias con Google Routes + caché en DISTANCIAS, cálculo de millas por día, registro de paradas y ajustes de monto, foto al cerrar, tablas HTML de millas
-├── menu.js        → Menú de navegación común de las páginas de administración (Agenda · Pendientes · Nómina · Cerrar sesión): MENU_CSS y menuHtml(rutaActual, admin)
+├── cartera.js     → Cartera: páginas /cartera, /cartera/clientes y /cartera/cliente, sincronización de cobros desde la agenda, confirmar/cancelar cobros, novedades de cobro; también el botón y diálogo "Novedad de cobro" y la "línea de vida" horizontal (lineaDeVidaH) que usa la agenda (registra sus rutas con cartera.rutas(app, auth))
+├── menu.js        → Menú de navegación común de las páginas de administración (Agenda · Pendientes · Nómina · Cartera · Cerrar sesión): MENU_CSS y menuHtml(rutaActual, admin)
 ├── sheets.js      → Módulo genérico de lectura/escritura a Google Sheets (con caché corta opcional)
 ├── package.json   → Dependencias: express, googleapis, twilio (el login usa `crypto`, incluido en Node)
 ├── CLAUDE.md      → Guía para Claude Code (resumen técnico del repositorio)
@@ -60,7 +62,6 @@ tampa-cleaning-servidor/
 | Ruta | Protección | Para qué |
 |---|---|---|
 | `POST /webhook` | — (Twilio) | Mensajes entrantes de WhatsApp |
-| `GET /enviar-programacion?clave=` | `CLAVE_ADMIN` | Enlace antiguo: envía los Borrador de **mañana** (se mantiene por compatibilidad) |
 | `GET/POST /cierre?id=` | — (link único por servicio) | Formulario de cierre / inspección |
 | `GET/POST /login`, `GET /logout` | — | Inicio y cierre de sesión de administradores |
 | `GET /agenda?fecha=&cliente=&empleado=&estado=&tipo=` | Sesión | Agenda (HTML) |
@@ -81,13 +82,20 @@ tampa-cleaning-servidor/
 | `POST /nomina/concepto/anular` | Sesión | Anula un concepto (motivo obligatorio) |
 | `POST /nomina/cerrar` | Sesión | Cierra (congela) la liquidación semanal de un empleado |
 | `POST /nomina/reabrir` | Sesión | Reabre una liquidación cerrada (motivo obligatorio) |
+| `GET /cartera?mes=&cliente=&estado=&sync=1` | Sesión | Cartera, vista **Servicios**: un renglón por cobro del mes (`mes=AAAA-MM` o `todo`); `sync=1` fuerza la sincronización con la agenda |
+| `GET /cartera/clientes?mes=` | Sesión | Cartera, vista **Clientes**: resumen por cliente del mes |
+| `GET /cartera/cliente?c=&mes=` | Sesión | Página de un cliente: sus cobros con equipo, horas y la línea de vida de cada servicio |
+| `POST /cartera/ejecutar` | Sesión | Pasa un cobro a Ejecutado (valor opcional — si va vacío usa la tarifa del sitio; motivo obligatorio) |
+| `POST /cartera/cancelar` | Sesión | Cancela un cobro (motivo obligatorio) |
+| `POST /cartera/novedad` | Sesión | Registra una novedad de cobro, por `idCobro` (desde la cartera) o por `idProgramacion` (desde la agenda) |
+| `POST /cartera/novedad/anular` | Sesión | Anula una novedad de cobro (motivo obligatorio) |
 | `GET /liquidacion?t=` | — (token firmado, vence a los 60 días) | Página del empleado con el detalle de su liquidación cerrada (solo lectura) |
 | `GET/POST /pendiente?id=` | — (link único por pendiente) | Página del empleado para marcar el pendiente como resuelto o "sigue pendiente" |
 | `GET /test-sheets` | — | Prueba de conexión con Sheets |
 
 ### 4.2 Caché de lectura (`sheets.js`)
 
-`leerHoja(nombre)` sigue leyendo en vivo por defecto. Con `leerHoja(nombre, { cache: true })` devuelve datos de hasta **45 segundos** — lo usan las vistas de la agenda y de la nómina (`PROGRAMACION_DIARIA`, `EMPLEADOS`, `SITIOS`, `CONFIG_NOMINA` y las hojas propias de la nómina y de las millas) para no releer el Sheets en cada clic. La nómina y las millas además recuerdan qué pestañas ya verificaron con `asegurarHoja`, para no repetir esa llamada en cada carga. Toda escritura (`agregarFila`, `agregarFilas`, `actualizarCelda`, `actualizarCeldas`) invalida la caché de esa hoja. Las operaciones que **escriben** (guardar, cancelar, enviar) siempre releen en vivo antes de validar; el cierre de nómina invalida antes la caché de todas las hojas que usa. La caché vive en memoria del proceso: se pierde al redesplegar, sin consecuencias.
+`leerHoja(nombre)` sigue leyendo en vivo por defecto. Con `leerHoja(nombre, { cache: true })` devuelve datos de hasta **45 segundos** — lo usan las vistas de la agenda, la nómina y la cartera (`PROGRAMACION_DIARIA`, `EMPLEADOS`, `SITIOS`, `CONFIG_NOMINA`, `CONFIG_CARTERA` y las hojas propias de la nómina, las millas y la cartera) para no releer el Sheets en cada clic. La nómina, las millas y la cartera además recuerdan qué pestañas ya verificaron con `asegurarHoja`, para no repetir esa llamada en cada carga. Toda escritura (`agregarFila`, `agregarFilas`, `actualizarCelda`, `actualizarCeldas`) invalida la caché de esa hoja. Las operaciones que **escriben** (guardar, cancelar, enviar) siempre releen en vivo antes de validar; el cierre de nómina invalida antes la caché de todas las hojas que usa. La caché vive en memoria del proceso: se pierde al redesplegar, sin consecuencias.
 
 Funciones nuevas en `sheets.js`: `actualizarCeldas` (varias celdas en una sola llamada), `agregarFilas` (varias filas a la vez), `asegurarHoja` (crea una pestaña con encabezados si no existe), `invalidarCache`, `edadCacheSegundos`.
 
@@ -101,7 +109,6 @@ Funciones nuevas en `sheets.js`: `actualizarCeldas` (varias celdas en una sola l
 | `GOOGLE_PRIVATE_KEY` | Clave privada de esa cuenta de servicio |
 | `TWILIO_ACCOUNT_SID` | Identifica la cuenta de Twilio |
 | `TWILIO_AUTH_TOKEN` | Autentica las llamadas a la API de Twilio |
-| `CLAVE_ADMIN` | Protege la ruta antigua `/enviar-programacion` |
 | `CLAVE_ADMIN_1` … `CLAVE_ADMIN_4` | Clave personal de cada administrador para entrar a la agenda (1 = Wilmar Lopez, 2 = Carolina Gallego, 3 = Andres Madrid, 4 = Claudia Lopez). El orden es fijo y las cuatro deben ser distintas. Si una no está definida, ese administrador simplemente no puede entrar |
 | `SESSION_SECRET` | Firma las cookies de sesión. **Obligatoria, mínimo 32 caracteres** — sin ella el login falla. Cambiarla cierra la sesión de todos **e invalida todos los enlaces de liquidación** ya enviados a empleados (`/liquidacion`) |
 | `GOOGLE_MAPS_API_KEY` | Clave de Google Maps Platform con la **Routes API** habilitada, para calcular millas (`millas.js`). **Necesaria** desde que las millas están conectadas a `/nomina`. Si falta, los días con millas quedan en "Revisar" con el mensaje "Falta GOOGLE_MAPS_API_KEY en Render". Requiere Node 18+ (usa `fetch`) |
@@ -122,7 +129,7 @@ La programación se crea desde la **agenda** (ver 6.8): los servicios nuevos que
 
 El envío (`enviarProgramacionFecha`) lee el Sheets en vivo, toma todos los servicios de esa fecha que no estén enviados ni cancelados (ni marcados `Estado_Envio = No aplica`, que es como quedan los registros retroactivos), y manda a cada empleado su mensaje. El título se adapta a la fecha ("para HOY", "para mañana" o "para el DD/MM/AAAA"). Si la fila de `PROGRAMACION_DIARIA` no trae dirección, link de Maps, descripción o instrucciones, se toman **en vivo de `CLIENTES`**. Los empleados sin número quedan listados y los envíos fallidos **siguen en Borrador** para reintentar; ambos casos se avisan a gerencia (🟡) y se muestran en pantalla al administrador.
 
-El enlace antiguo `https://tampa-cleaning-servidor.onrender.com/enviar-programacion?clave=...` sigue funcionando: hace lo mismo para la fecha de mañana.
+El enlace antiguo `/enviar-programacion?clave=...` (que enviaba la programación de mañana) **ya no existe**: todo envío se hace desde la agenda. La variable `CLAVE_ADMIN` ya no se usa y se puede borrar de Render.
 
 El empleado responde **"Ok"**, **"Confirmo"** o **"No puedo"** — el servidor encuentra sola la fila pendiente de ese empleado (sin necesitar que mencione el cliente). Solo se consideran filas **ya enviadas**, **no canceladas** y con fecha **de hoy en adelante**, para que una respuesta no confirme por error un borrador o un servicio viejo.
 
@@ -172,11 +179,12 @@ Función centralizada, con tres niveles de prioridad visual:
 
 **Vista (`agenda.js`).**
 - Tira semanal (lunes a domingo) con número de servicios por día y un punto de color: 🟢 todo finalizado, 🟡 pendiente, 🔴 alerta (algún "No puede", acción correctiva pendiente, o un día pasado con servicios sin finalizar), gris sin servicios.
-- Navegación por día (←, Hoy, →, selector de fecha) y filtros por cliente, empleado, estado y tipo. En la cabecera, el menú común (`menu.js`): nombre del administrador, Agenda · Pendientes · Nómina (resaltando la página actual) y Cerrar sesión.
+- Navegación por día (←, Hoy, →, selector de fecha) y filtros por cliente, empleado, estado y tipo. En la cabecera, el menú común (`menu.js`): nombre del administrador, Agenda · Pendientes · Nómina · Cartera (resaltando la página actual) y Cerrar sesión.
 - Cada servicio muestra un **estado calculado** a partir de sus columnas: Borrador → Enviado → Confirmado / No puede → En curso → Salida (falta cierre) → Finalizado, o Cancelado. Marcas adicionales: **Retroactivo** (con el motivo al pasar el mouse), ✍️ si las horas reales se escribieron a mano (`Origen_Registro = Manual`), 👥N si varios empleados atienden el mismo cliente y tipo ese día (equipo).
 - ⚠️ **Acción pendiente:** si el servicio tiene pendientes vinculados (`PENDIENTES.ID_Programacion`), se marca mientras alguno siga `Abierto`. Si no tiene ninguno, se usa el criterio antiguo (`Requiere_Accion_Correctiva = Sí` y `Estado_Correccion = Pendiente`).
 - **Franja de pendientes:** debajo del editor se listan los pendientes abiertos cuya fecha límite es la del día mostrado; si el día mostrado es hoy, también los **vencidos**.
-- **"Detalle" (línea de vida):** todo lo que se sabe del servicio en un solo lugar — programación (con quién lo creó/modificó, cancelación, retroactivo y origen del registro), envío y confirmación, entrada, salida, cierre, inspección, avisos, cambios posteriores al envío (de `CAMBIOS_PROGRAMACION`), pendientes vinculados y quejas/dudas asociadas.
+- **"Detalle" (línea de vida):** botón que abre, en un renglón ancho debajo del servicio, todo lo que se sabe de él en bloques horizontales (4 columnas, 2 en pantallas angostas; los bloques sin datos no se muestran) — programación (con quién lo creó/modificó, cancelación, retroactivo y origen del registro), envío y confirmación, entrada, salida, cierre, inspección, avisos, **cobro** (estado en cartera, valor, total y novedades de cobro; no aparece en inspecciones), cambios posteriores al envío (de `CAMBIOS_PROGRAMACION`), pendientes vinculados y quejas/dudas asociadas. La función que lo dibuja (`lineaDeVidaH`) vive en `cartera.js` y la comparte la página de cliente de la cartera.
+- **"Novedad de cobro":** botón en las acciones de cada servicio de limpieza no cancelado; abre un diálogo para registrar una novedad (ver 6.11) sin salir de la agenda.
 - Usa la caché de 45 s; la pantalla indica la antigüedad de los datos y el botón **"Actualizar"** fuerza una lectura nueva.
 
 **Edición (`edicion.js`).** Para hoy y fechas futuras aparece una grilla "Programar servicios" (para fechas pasadas, ver *Registro retroactivo* más abajo):
@@ -271,6 +279,36 @@ Agregar concepto, anular, cerrar y reabrir pasan por una cola en memoria propia 
 - **Distancias y caché (`DISTANCIAS`):** cada tramo se pide a la **Google Routes API** (en carro, sin tráfico) y se guarda en `DISTANCIAS` con los dos puntos (`CASA: <empleado>` / `SITIO: <cliente>`, ordenados — la distancia se trata como simétrica) y una **huella** (dirección o coordenadas). Si la dirección de la casa o las coordenadas del sitio cambian, la huella deja de coincidir y el tramo se recalcula. Una fila con `Fuente = Manual` **nunca** se sobrescribe — sirve para corregir a mano una distancia. Las distancias nuevas se escriben al Sheets en una sola operación al final (`volcarDistancias`) para no pasarse de la cuota de escritura.
 - **Al cerrar la liquidación** se guarda una foto de los tramos en `NOMINA_TRAMOS` y del resumen por día en `NOMINA_MILLAS_DIA`; una liquidación cerrada muestra las millas desde esa foto. Las liquidaciones cerradas antes de la fase 2 muestran un aviso de que no tienen detalle de millas.
 
+### 6.11 Cartera (`/cartera`, `cartera.js`)
+
+Lleva lo que hay que **cobrarle a cada cliente**. No envía WhatsApp ni registra pagos recibidos: muestra qué se ejecutó y cuánto vale.
+
+**Qué es un cobro.** Un cobro = **un cliente en un día**. Si ese día va un equipo (varias filas de `PROGRAMACION_DIARIA` del mismo cliente), es un solo cobro, con todos los empleados y los `ID_Programacion` listados. Las **inspecciones no se cobran** y no entran. Cada cobro se identifica por su `Clave` = `Cliente|AAAA-MM-DD` y recibe un ID `COB-AAAAMMDD-NN` (consecutivo por **fecha del servicio**). Se guardan en `COBROS_SERVICIO`.
+
+**Sincronización con la agenda.** Cada vez que se abre una página de la cartera (como máximo una vez cada 30 s, o siempre con **"Sincronizar ahora"**), el servidor revisa los servicios desde `Fecha_Inicio_Cobros` (hoja `CONFIG_CARTERA`, por defecto el día 1 del mes en que se creó) hasta **hoy**, y para cada cliente/día decide el estado:
+- **Ejecutado** — todos los servicios no cancelados están `Finalizado`. `Valor_Base` = `Tarifa_Servicio` del sitio en `SITIOS` (si no hay tarifa, queda vacío y se completa en una sincronización posterior cuando se llene).
+- **Por confirmar** — fecha pasada con algún servicio sin cerrar (el motivo indica en qué estado quedaron).
+- **Cancelado** — todos los servicios del día cancelados (con sus motivos).
+- Un servicio de **hoy** aún sin terminar todavía no genera cobro; las fechas futuras tampoco.
+
+Los cobros con `Decision = Auto` se actualizan solos si la agenda cambia; los que un administrador decidió a mano (`Decision = Manual`) **no se tocan** — solo se refrescan la lista de empleados y de IDs. La sincronización pasa por una cola en memoria propia (mismo patrón que agenda, pendientes y nómina).
+
+**Acciones del administrador** (todas con motivo obligatorio de mínimo 3 caracteres, y registradas en `COBROS_BITACORA`):
+- **Ejecutado** — para un cobro *Por confirmar* (o uno cancelado a mano). Valor opcional: si va vacío se usa la tarifa del sitio; si el sitio no tiene tarifa, hay que escribirlo.
+- **Cancelar** — para un cobro *Por confirmar* o *Ejecutado*.
+- **+ Novedad** — ver abajo.
+
+**Novedades de cobro (`NOVEDADES_COBRO`).** Cargos que se suman al valor del servicio: `Tiempo adicional`, `Trabajo adicional`, `Productos o materiales`, `Otro cobro extra` (monto > 0), o **`Valor final del servicio`**: el administrador escribe el **total** que se va a cobrar ($0 = cortesía) y el sistema guarda la diferencia contra el total actual (puede ser negativa), con el detalle "Valor final $X (antes $Y)". Se registran desde la cartera o desde el botón **"Novedad de cobro"** de la agenda (no para inspecciones, servicios cancelados ni cobros cancelados; sí para un día cuyo cobro aún no se generó). Reciben un ID `NOV-AAAAMMDD-NN` (por **día de registro**), quedan `Retroactivo = Sí` si la fecha del servicio ya pasó, y se asocian al cobro por cliente + fecha (no por `ID_Cobro`). Se pueden **anular** con motivo; nunca se borran.
+
+**Total a cobrar** = `Valor_Base` + suma de novedades activas. Un cobro *Ejecutado* sin valor base ni novedades se marca **"Sin tarifa"**.
+
+**Vistas.**
+- **Servicios** (`/cartera`): navegación por mes (←, Este mes, →) o "Ver todo el histórico", barra con el total del período, filtro por cliente (búsqueda con autocompletado: nombre exacto o parte del nombre) y por estado (`Por confirmar`, `Ejecutado`, `Cancelado`, `Sin tarifa`). Un renglón por cobro: fecha, cliente con su **método de pago** (etiqueta de color desde `SITIOS.Metodo_Pago`, con `Nota_Pago` al pasar el mouse) y quién paga si es distinto (`SITIOS.Pagador`), empleados, estado y motivo, valor, novedades (plegables, con botón Anular), total y acciones.
+- **Clientes** (`/cartera/clientes`): una fila por cliente con servicios ejecutados, valor, novedades, total, *por confirmar* y *sin tarifa*; primero los que tienen algo por revisar, luego por total. Buscador instantáneo. El nombre lleva a la página del cliente y la flecha ⇩ a la vista Servicios filtrada.
+- **Cliente** (`/cartera/cliente?c=`): totales del cliente en el período, quién paga y la nota de pago, y un renglón por día con el equipo (horas programadas y reales de cada empleado), estado, valor, novedades, total y acciones; **"Detalle"** abre la línea de vida de cada servicio de ese día (la misma de la agenda, con el bloque de Cobro).
+
+Avisos en pantalla: falta la columna `Tarifa_Servicio` en `SITIOS`, cuántos cobros están *por confirmar* o *sin tarifa* (con enlace al filtro), o error al sincronizar.
+
 ---
 
 ## 7. Estructura de las hojas de Google Sheets relevantes
@@ -279,7 +317,7 @@ Agregar concepto, anular, cerrar y reabrir pasan por una cola en memoria propia 
 |---|---|
 | `EMPLEADOS` | Nombre, número de WhatsApp (columna `ID_Telegram`, heredada), `Rol`, `Estatus` (solo los `Activo` aparecen en la agenda), `Tarifa_Hora` (USD por hora, para la nómina — se crea a mano), `Direccion_Residencia` (punto de salida y regreso para las millas — se crea a mano) |
 | `CLIENTES` | Nombre (columna `clientes`), `Direccion`, `Google Maps`, `Descripcion_Servicio`, `Instrucciones`, `Cliente Vigente/Vencido`. Es la fuente **en vivo** de dirección/instrucciones cuando la fila de programación no las trae |
-| `SITIOS` | `Nombre_Cliente`, coordenadas GPS (`Latitud`, `Longitud`) y radio de tolerancia para geofencing, `Checklist_Tareas` (lista separada por comas) para el formulario de cierre, `Estatus` |
+| `SITIOS` | `Nombre_Cliente`, coordenadas GPS (`Latitud`, `Longitud`) y radio de tolerancia para geofencing, `Checklist_Tareas` (lista separada por comas) para el formulario de cierre, `Estatus`. Para la cartera (se crean a mano, opcionales salvo la tarifa): `Tarifa_Servicio` (USD por servicio/día), `Pagador` (si paga alguien distinto del cliente), `Metodo_Pago` (Efectivo, Cheque, Zelle, Venmo…) y `Nota_Pago` |
 | `PROGRAMACION_DIARIA` | El corazón del sistema — un renglón por servicio, con columnas para programación, confirmación, check-in, y cierre. `Tipo_Servicio` distingue limpieza de `Inspeccion`; las inspecciones usan además `Resultado_Inspeccion`, `Requiere_Accion_Correctiva` y `Estado_Correccion` (todas opcionales — si la columna no existe, el servidor simplemente no la escribe). Ver columnas de la agenda abajo |
 | `REGISTRO_TURNOS` | Bitácora de auditoría de cada check-in |
 | `QUEJAS` | Quejas y dudas, diferenciadas por columna `Tipo`, asociadas al servicio por `ID_Programacion` |
@@ -297,10 +335,14 @@ Agregar concepto, anular, cerrar y reabrir pasan por una cola en memoria propia 
 | `NOMINA_MILLAS_AJUSTES` | **Nueva (fase 2).** Montos de millas fijados a mano: `Fecha_Hora`, `Empleado`, `Fecha_Servicio`, `Monto` (vacío = quitar), `Motivo`, `Ajustado_Por`. Vale la última fila por empleado y fecha. **Se crea sola** |
 | `NOMINA_TRAMOS` | **Nueva (fase 2).** Foto de cada tramo al cerrar: `ID_Liquidacion`, `Semana_Inicio`, `Empleado`, `Fecha`, `Orden`, `Origen`, `Destino`, `Millas`, `Pagado`, `Fuente`. **Se crea sola** |
 | `NOMINA_MILLAS_DIA` | **Nueva (fase 2).** Foto del resumen de millas por día al cerrar: `ID_Liquidacion`, `Semana_Inicio`, `Empleado`, `Fecha`, `Paradas`, `Millas_Pagadas`, `Millas_Total`, `Monto_Millas`, `Estado`, `Motivo_Ajuste`, `Notas`. **Se crea sola** |
+| `CONFIG_CARTERA` | **Nueva.** Parámetros de la cartera (`Clave`, `Valor`, `Descripcion`); por ahora solo `Fecha_Inicio_Cobros` (AAAA-MM-DD). Para cargar meses anteriores, poner una fecha más antigua. **Se crea sola** |
+| `COBROS_SERVICIO` | **Nueva.** Un cobro por cliente y día: `ID_Cobro`, `Clave`, `Fecha`, `Cliente`, `Pagador`, `Empleados`, `IDs_Programacion`, `Estado` (`Ejecutado` / `Por confirmar` / `Cancelado`), `Motivo`, `Valor_Base`, `Valor_Original`, `Decision` (`Auto` / `Manual`), `Decidido_Por`, `Fecha_Decision`, `Origen`, `Fecha_Creacion`. **Se crea sola** |
+| `NOVEDADES_COBRO` | **Nueva.** `ID_Novedad`, `Cliente`, `Fecha_Servicio`, `ID_Programacion`, `Tipo`, `Detalle`, `Monto`, `Estado` (`Activa` / `Anulada`), `Registrado_Por`, `Fecha_Registro`, `Retroactivo`, `Anulado_Por`, `Motivo_Anulacion`. **Se crea sola** |
+| `COBROS_BITACORA` | **Nueva.** Bitácora de la cartera: `Fecha_Hora`, `ID_Cobro`, `Accion`, `Detalle`, `Motivo`, `Admin`. **Se crea sola** |
 
 **Columnas de `PROGRAMACION_DIARIA` que exige la agenda.** A diferencia del resto del sistema (donde las columnas son opcionales), la agenda **se niega a guardar** si falta alguna de estas: `ID_Programacion`, `Fecha_Servicio`, `Tipo_Servicio`, `Cliente`, `Empleado`, `Horario`, `Hora_Inicio`, `Hora_Fin`, `Observaciones_Puntuales`, `Estado_Envio`, `Estado_Confirmacion`, `Creado_Por`, `Fecha_Creacion`, `Modificado_Por`, `Fecha_Modificacion`, `Cancelado`, `Motivo_Cancelacion`. Las filas nuevas se escriben por **nombre de columna** (no por posición), así que el orden de las columnas puede cambiar sin romper nada.
 
-**Columnas adicionales para el registro retroactivo:** `Registro_Retroactivo` (Sí / vacío), `Motivo_Retroactivo`, `Origen_Registro` (`Manual` cuando las horas reales las escribió un administrador). Solo se exigen al guardar en una fecha pasada. `PENDIENTES_MENSAJES` usa posiciones fijas (columna A = SID, B = ID_Pendiente) y `PENDIENTES_HISTORIAL` se escribe en orden fijo: no reordenar sus columnas. Lo mismo para las hojas de nómina (`NOMINA_AJUSTES`, `PAGOS_ADICIONALES`, `LIQUIDACIONES`, `NOMINA_DIAS`, y las de millas: `DISTANCIAS`, `NOMINA_PARADAS`, `NOMINA_MILLAS_AJUSTES`, `NOMINA_TRAMOS`, `NOMINA_MILLAS_DIA`): las filas nuevas se escriben en el orden fijo de sus encabezados (aunque se leen por nombre de columna), así que tampoco se deben reordenar.
+**Columnas adicionales para el registro retroactivo:** `Registro_Retroactivo` (Sí / vacío), `Motivo_Retroactivo`, `Origen_Registro` (`Manual` cuando las horas reales las escribió un administrador). Solo se exigen al guardar en una fecha pasada. `PENDIENTES_MENSAJES` usa posiciones fijas (columna A = SID, B = ID_Pendiente) y `PENDIENTES_HISTORIAL` se escribe en orden fijo: no reordenar sus columnas. Lo mismo para las hojas de nómina (`NOMINA_AJUSTES`, `PAGOS_ADICIONALES`, `LIQUIDACIONES`, `NOMINA_DIAS`, y las de millas: `DISTANCIAS`, `NOMINA_PARADAS`, `NOMINA_MILLAS_AJUSTES`, `NOMINA_TRAMOS`, `NOMINA_MILLAS_DIA`): las filas nuevas se escriben en el orden fijo de sus encabezados (aunque se leen por nombre de columna), así que tampoco se deben reordenar. En la cartera, `COBROS_SERVICIO` y `NOVEDADES_COBRO` se escriben según los encabezados que tenga la hoja (el orden puede cambiar), pero `COBROS_BITACORA` y `CONFIG_CARTERA` se escriben en orden fijo.
 
 ---
 
@@ -324,23 +366,26 @@ Agregar concepto, anular, cerrar y reabrir pasan por una cola en memoria propia 
 - **Tablero de control** (`RESUMEN_HOY`) — pestaña en el propio Sheets con fórmulas `QUERY`, aún no construida (la agenda cubre buena parte de esa necesidad).
 - **Acciones correctivas → pendientes automáticos** — hoy el seguimiento se hace con pendientes (ver 6.9), pero el administrador los crea a mano a partir del aviso de la inspección. `Estado_Correccion` no se actualiza al resolver el pendiente; la agenda ya no lo necesita cuando hay pendientes vinculados, pero la columna queda desactualizada en el Sheets.
 - **Recordatorios automáticos de pendientes** — por ahora solo existen los manuales (botón "Recordar"); no hay aviso automático de vencidos.
-- **Retirar `CLAVE_ADMIN` y `/enviar-programacion`** una vez que todos usen la agenda para enviar.
+- **Borrar `CLAVE_ADMIN` de Render** — la ruta `/enviar-programacion` ya se retiró del código; la variable quedó sin uso.
+- **Cartera: pagos recibidos** — hoy la cartera dice cuánto se debe cobrar, pero no registra pagos ni saldo pendiente por cliente.
+- **Cartera: llenar `Tarifa_Servicio`** (y `Metodo_Pago` / `Pagador` / `Nota_Pago`) en `SITIOS` para todos los clientes activos; sin tarifa los cobros quedan "Sin tarifa".
+- **Limpieza menor:** `cartera.js` registra dos veces la ruta `GET /cartera/clientes` (inofensivo, solo responde la primera).
 - **Millas: revisar la regla de "Servicios_Pago_Siempre"** — hoy el pago fijo se aplica solo cuando el día tiene **exactamente** 2 paradas; un día con 3 o más paradas y menos de 10 millas paga $0. Confirmar si la intención era "2 o más".
 - **Millas: requisitos de datos** — confirmar que `GOOGLE_MAPS_API_KEY` existe en Render y que cada empleado activo tiene `Direccion_Residencia` en `EMPLEADOS`; sin eso los días quedan en "Revisar" y bloquean el cierre.
 - **Envío automático del enlace de liquidación** — hoy el administrador copia el mensaje y lo manda a mano; podría enviarse por Twilio al cerrar (requiere plantilla aprobada una vez se migre a WhatsApp Business).
-- **Bloqueo de login y colas de escrituras en memoria** (agenda, pendientes y nómina) — funcionan porque hay una sola instancia del servidor; si algún día se escala a varias instancias, habría que moverlos a un almacenamiento compartido.
+- **Bloqueo de login y colas de escrituras en memoria** (agenda, pendientes, nómina y cartera) — funcionan porque hay una sola instancia del servidor; si algún día se escala a varias instancias, habría que moverlos a un almacenamiento compartido.
 
 **Del mapa de problemas original** (los dolores que motivaron el sistema; aún sin resolver del todo). *Ya resuelto: nómina con horas y millas automáticas (`/nomina`, ver 6.10) — el millaje ya no se saca a mano en Google Maps.*
 
 - **Historial de calidad al programar** — las quejas (`QUEJAS`) y las inspecciones solo se ven en el detalle de cada servicio. El objetivo original era ver el historial de quejas/observaciones **del cliente y del empleado** en el editor, al momento de programar.
-- **Cobranza: servicios pendientes por cliente** — al registrar un pago no se ve qué servicios tiene pendientes ese cliente; hoy hay que buscarlos a mano en la agenda. No está en el servidor.
+- **Cobranza: servicios pendientes por cliente** — *en buena parte resuelto con la cartera (6.11)*: la página de cada cliente muestra sus servicios del mes y cuánto vale cada uno. Falta registrar el pago y ver el saldo pendiente.
 - **Tareas recurrentes** (ej. "aspirar los viernes" en oficinas) — los pendientes cubren tareas puntuales con seguimiento por WhatsApp, pero no se repiten solos: alguien tiene que crear cada uno. Falta la recurrencia programada.
 
 ---
 
 ## 10. Cómo hacer cambios de aquí en adelante
 
-1. Editar el archivo correspondiente (`index.js`, `logica.js`, `agenda.js`, `edicion.js`, `pendientes.js`, `nomina.js`, `millas.js`, `menu.js`, `auth.js` o `sheets.js`) local o directo en GitHub.
+1. Editar el archivo correspondiente (`index.js`, `logica.js`, `agenda.js`, `edicion.js`, `pendientes.js`, `nomina.js`, `millas.js`, `cartera.js`, `menu.js`, `auth.js` o `sheets.js`) local o directo en GitHub.
 2. Subir el cambio a la rama `main` del repositorio.
 3. Render redespliega automáticamente al detectar el cambio.
 4. Revisar la pestaña "Logs" del servicio en Render para confirmar que el despliegue fue exitoso.
