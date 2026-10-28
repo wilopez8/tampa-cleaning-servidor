@@ -212,6 +212,13 @@ function marcarDeposito({ id, fechaBanco, cuenta }, admin) {
   });
 }
 
+// Para la agenda: pagos aplicados al cobro de un cliente en una fecha
+async function aplicadoServicio(cliente, fecha) {
+  const lista = await cargarTabla('COBROS_SERVICIO', CS_H, true);
+  const c = lista.find(x => x.Clave === `${cliente}|${fecha}`);
+  return c ? aplicadoDe(c.ID_Cobro) : 0;
+}
+
 // ---------- piezas de pantalla ----------
 const CSS_PAGOS = `.est.par{background:#fde68a;}
 #pgDlg{max-width:780px;width:94%;} #pgDlg .pgGrid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;}
@@ -429,5 +436,5 @@ function rutas(app, auth) {
   api('/cartera/pagos/deposito', (b, a) => marcarDeposito(b, a));
 }
 
-module.exports = { rutas, datos, estadoCobro, badgePago, aplicadoDe, aplicadoMapa, seccionCliente, botonesPago, pagadorDeCliente, CSS_PAGOS, paginaPagos,
+module.exports = { rutas, aplicadoServicio,datos, estadoCobro, badgePago, aplicadoDe, aplicadoMapa, seccionCliente, botonesPago, pagadorDeCliente, CSS_PAGOS, paginaPagos,
   registrarPago, aplicarSaldo, anularPago, marcarDeposito };

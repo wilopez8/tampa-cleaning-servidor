@@ -305,6 +305,17 @@ async function cancelarServicio({ id, motivo, admin }) {
       const pasada = fecha < hoyFlorida();
       if (g(r, 'Cancelado') === 'Sí') return { ok: false, general: 'Este servicio ya estaba cancelado.' };
       if (!pasada && g(r, 'Hora_Entrada_Real')) return { ok: false, general: 'El servicio ya inició: no se puede cancelar desde la agenda.' };
+      
+      // Cartera: si el cobro del día ya tiene pagos aplicados, no se cancela el último servicio del cliente
+      if ((g(r, 'Tipo_Servicio') || 'Limpieza') !== 'Inspeccion') {
+        const cli = g(r, 'Cliente');
+        const quedanOtros = datos.some((x, j) => j > 0 && j !== i && g(x, 'Cliente') === cli && normalizarFecha(x[ix('Fecha_Servicio')]) === fecha
+          && g(x, 'Cancelado') !== 'Sí' && (g(x, 'Tipo_Servicio') || 'Limpieza') !== 'Inspeccion');
+        if (!quedanOtros) {
+          const ap = await require('./pagos').aplicadoServicio(cli, fecha);
+          if (ap > 0) return { ok: false, general: `Este servicio tiene $${ap.toFixed(2)} en pagos aplicados en Cartera. Anula primero el pago.` };
+        }
+      }
 
       const eraEnviado = !pasada && g(r, 'Estado_Envio') === 'Enviado';
 
