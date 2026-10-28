@@ -305,6 +305,8 @@ app.post('/agenda/enviar', auth.requiereAdmin, async (req, res) => {
 nomina.rutas(app, auth);
 require('./cartera').rutas(app, auth);
 
+require('./pagos').rutas(app, auth);
+
 app.get('/pendientes', auth.requiereAdmin, async (req, res) => {
   try { res.set('Content-Type', 'text/html; charset=utf-8'); res.send(await pend.paginaPendientes(req.query, req.admin)); }
   catch (err) { console.error('Error en GET /pendientes:', err); res.status(500).send('Error: ' + err.message); }
