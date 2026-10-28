@@ -215,6 +215,8 @@ async function paginaAgenda(query, admin) {
   const pasada = fecha < hoy;
     const ed = require('./edicion'); // carga diferida: evita dependencia circular
     const cartera = require('./cartera'); // carga diferida: evita dependencia circular
+    const notas = require('./notas');
+    const notasSrv = await notas.porServicio(new Set(delDia.map(r => r.ID_Programacion)));
     const cobroInfo = await cartera.datosCobroDia(delDia);
   const maestrosDatos = ed ? await ed.maestros(false) : null;
   const aviso = pasada ? 'Fecha pasada: registro retroactivo. Exige motivo, queda marcado y no envía WhatsApp.' : 'Modo editable: los servicios nuevos se guardan como Borrador hasta enviarlos.';
@@ -236,8 +238,8 @@ async function paginaAgenda(query, admin) {
       <td>${esc(horario)}</td><td>${esc(tipoDe(r))}</td><td>${esc(r.Cliente)}${equipo}</td><td>${esc(r.Empleado)}</td>
       <td><span class="est ${esc(r._estado)}">${esc(r._estado)}</span>${r.Registro_Retroactivo === 'Sí' ? ` <span class="est" style="background:#fecaca" title="${esc(r.Motivo_Retroactivo)}">Retroactivo</span>` : ''}${r.Origen_Registro === 'Manual' ? ' ✍️' : ''}${accionPendiente(r) ? ' ⚠️' : ''}</td>
       <td><button class="btn" data-id="${esc(r.ID_Programacion)}" onclick="tcDetalle(this.dataset.id)">Detalle</button></td>
-      <td>${acciones(r)}${cartera.botonNovedad(r)}</td></tr>
-        <tr class="filadet" id="det-${esc(r.ID_Programacion)}" style="display:none"><td colspan="7">${cartera.lineaDeVidaH(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion], porServ[r.ID_Programacion], cobroInfo[r.ID_Programacion])}</td></tr>`;
+      <td>${acciones(r)}${cartera.botonNovedad(r)}${notas.botonNota(r)}</td></tr>
+      <tr class="filadet" id="det-${esc(r.ID_Programacion)}" style="display:none"><td colspan="7">${cartera.lineaDeVidaH(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion], porServ[r.ID_Programacion], cobroInfo[r.ID_Programacion], notasSrv[r.ID_Programacion])}</td></tr>`;
     
   }).join('') : '<tr><td colspan="7" style="text-align:center;color:#888;padding:24px;">No hay servicios para esta fecha o filtro.</td></tr>';
 
@@ -264,7 +266,7 @@ ${franja}
   ${sel('cliente', 'Todos los clientes', unicos('Cliente'))}${sel('empleado', 'Todos los empleados', unicos('Empleado'))}
   ${sel('estado', 'Todos los estados', ESTADOS)}${sel('tipo', 'Todos los tipos', ['Limpieza', 'Inspeccion'])}
   <button class="btn">Filtrar</button> <a class="btn" href="/agenda?fecha=${fecha}">Limpiar</a></form>
-<table><tr><th>Horario</th><th>Tipo</th><th>Cliente</th><th>Empleado</th><th>Estado</th><th></th><th>Acciones</th></tr>${filasHtml}</table>${cartera.dialogoNovedad()}
+<table><tr><th>Horario</th><th>Tipo</th><th>Cliente</th><th>Empleado</th><th>Estado</th><th></th><th>Acciones</th></tr>${filasHtml}</table>${cartera.dialogoNovedad()}${notas.dialogoNota(notas.mapaServicios(delDia))}
 </body></html>`;
 }
 

@@ -2,7 +2,7 @@ const { leerHoja, agregarFila, agregarFilas, actualizarCeldas, asegurarHoja } = 
 const { normalizarFecha, fechaValida, hoyFlorida, filasDelRango } = require('./agenda');
 const menu = require('./menu');
 const P = () => require('./pagos'); // carga diferida: pagos.js usa los helpers de este archivo
-
+const N = () => require('./notas'); // carga diferida: notas.js usa los helpers de este archivo
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const r2 = x => Math.round(x * 100) / 100;
 const usd = n => (n < 0 ? '− $' : '$') + Math.abs(n || 0).toFixed(2);
@@ -522,13 +522,14 @@ async function datosCobroDia(filas) {
   return out;
 }
 
-function lineaDeVidaH(r, quejas, cambios, pends, cobro) {
+function lineaDeVidaH(r, quejas, cambios, pends, cobro, notas) {
   const c = (cambios || []).map(x => `${x.Fecha_Hora} · ${x.Realizado_Por}: ${x.Tipo_Cambio} — ${x.Detalle}${x.Empleado_Notificado ? ` (avisó a ${x.Empleado_Notificado}: ${x.Aviso_Enviado})` : ` (${x.Aviso_Enviado})`}`).join('\n');
   const horario = (r.Hora_Inicio && r.Hora_Fin) ? `${r.Hora_Inicio} – ${r.Hora_Fin}` : r.Horario;
   const maps = /^https?:\/\//i.test(r.Google_Maps_Link) ? { __html: `<a href="${esc(r.Google_Maps_Link)}" target="_blank" rel="noopener">Abrir mapa</a>` } : r.Google_Maps_Link;
   const q = (quejas || []).map(x => `${x.Tipo} (${x.Estado}): ${x.Descripcion}`).join('\n');
   const pv = (pends || []).map(p => `${p.ID_Pendiente} (${p.Estado}${p.Responsable ? ', ' + p.Responsable : ''}): ${p.Titulo}`).join('\n');
   const bloqueCobro = cobro ? bloqueH('Cobro', [
+
     ['Estado en cartera', cobro.estado + (cobro.motivo ? ' — ' + cobro.motivo : '')],
     ['Valor del servicio', cobro.ejecutado && cobro.base ? usd(cobro.base) : ''],
     ['Total a cobrar', cobro.ejecutado ? usd(cobro.total) : ''],
@@ -547,6 +548,7 @@ function lineaDeVidaH(r, quejas, cambios, pends, cobro) {
     bloqueH('Inspección', [['Servicio inspeccionado', r.ID_Servicio_Inspeccionado], ['Resultado', r.Resultado_Inspeccion], ['Requiere acción correctiva', r.Requiere_Accion_Correctiva], ['Estado corrección', r.Estado_Correccion]]),
     bloqueH('Avisos', [['Avisos durante el servicio', r.Avisos_Durante_Servicio], ['Aviso confirmado', r.Aviso_Confirmado]]),
     bloqueCobro,
+    bloqueH('Retroalimentación', [['Notas', N().textoBloque(notas)]], true),
     bloqueH('Cambios posteriores al envío', [['Registro', c]], true),
     bloqueH('Pendientes vinculados', [['Lista', pv]]),
     bloqueH('Quejas y dudas', [['Asociadas', q]]),
@@ -602,6 +604,8 @@ async function paginaCliente(query, admin) {
   const filas = (await filasDelRango(desde, hasta)).filter(r => r.Cliente && r.Cliente.trim() === cliente && (r.Tipo_Servicio || 'Limpieza') !== 'Inspeccion');
   const ids = new Set(filas.map(r => r.ID_Programacion));
   const [quejas, cambios, pends] = await Promise.all([leerPorId('QUEJAS', ids), leerPorId('CAMBIOS_PROGRAMACION', ids), leerPorId('PENDIENTES', ids)]);
+  const notasSrv = await N().porServicio(ids);
+  const notasHtml = await N().seccionCliente(cliente, filas);
 
   const T = { n: 0, base: 0, nov: 0, conf: 0, sin: 0, cob: 0, sal: 0 };
   cobros.forEach(c => {
@@ -626,7 +630,7 @@ async function paginaCliente(query, admin) {
       ? ` <button class="btn mini" data-modo="anular" data-id="${esc(n.ID_Novedad)}" data-t="${esc('Anular novedad ' + n.ID_Novedad)}" onclick="tcAbrir(this)">Anular</button>`
       : ' · anulada: ' + esc(n.Motivo_Anulacion)}</small></div>`).join('')}</details>` : '<small>—</small>';
     const info = infoCobro(c, c._nvs);
-    const det = fs.map((r, i) => `<div style="margin:6px 0 2px;"><b>${esc(r.Empleado)}</b> <small>${esc(r.ID_Programacion)}</small></div>${lineaDeVidaH(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion], pends[r.ID_Programacion], i === 0 ? info : null)}`).join('') || '<small>No hay servicios en la agenda para esta fecha.</small>';
+    const det = fs.map((r, i) => `<div style="margin:6px 0 2px;"><b>${esc(r.Empleado)}</b> <small>${esc(r.ID_Programacion)}</small></div>${lineaDeVidaH(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion], pends[r.ID_Programacion], i === 0 ? info : null, notasSrv[r.ID_Programacion])}`).join('') || '<small>No hay servicios en la agenda para esta fecha.</small>';
     const cls = c.Estado === 'Ejecutado' ? (c._sinTarifa ? 'rev' : 'ok') : (c.Estado === 'Por confirmar' ? 'rev' : 'cn');
     return `<tr><td>${esc(c._fecha)}</td><td>${equipo}</td>
       <td><span class="est ${cls}">${esc(c.Estado)}</span>${c._sinTarifa ? '<br><small class="neg">Sin tarifa en SITIOS</small>' : ''}${c.Motivo ? `<br><small>${esc(c.Motivo)}</small>` : ''}</td>
@@ -644,13 +648,14 @@ async function paginaCliente(query, admin) {
 <div class="top"><h2 style="margin:0;">${esc(cliente)} ${badgeMetodo(tar, cliente)}</h2>${menu.menuHtml('/cartera', admin)}</div>
 <div class="nav"><a class="btn" href="${esc('/cartera?mes=' + mes)}">← Cartera</a>${mesNav}
   <a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
-  <a class="btn" href="${esc(u({ sync: '1' }))}">Sincronizar ahora</a>${P().botonesPago(cliente, tar)}<a class="btn" href="/cartera/pagos">Todos los pagos</a><b style="margin-left:8px;">${esc(etiquetaMes)}</b></div>
+  <a class="btn" href="${esc(u({ sync: '1' }))}">Sincronizar ahora</a>${P().botonesPago(cliente, tar)}${N().botonNuevaNota(cliente)}<a class="btn" href="/cartera/pagos">Todos los pagos</a><b style="margin-left:8px;">${esc(etiquetaMes)}</b></div>
 ${errSync ? `<div class="aviso r">No se pudo sincronizar con la agenda: ${esc(errSync)}</div>` : ''}
 ${t && (t.nota || t.pagador) ? `<div class="aviso">${t.pagador ? `Paga: <b>${esc(t.pagador)}</b>. ` : ''}${esc(t.nota)}</div>` : ''}
 <table style="width:auto;"><tr><th class="num">Servicios ejecutados</th><th class="num">Valor servicios</th><th class="num">Novedades</th><th class="num">Total a cobrar</th><th class="num">Cobrado</th><th class="num">Saldo</th><th class="num">Por confirmar</th><th class="num">Sin tarifa</th></tr>
 <tr><td class="num">${T.n}</td><td class="num">${usd(T.base)}</td><td class="num">${usd(T.nov)}</td><td class="num"><b>${usd(r2(T.base + T.nov))}</b></td><td class="num">${usd(r2(T.cob))}</td><td class="num"><b>${usd(r2(T.sal))}</b></td><td class="num">${T.conf}</td><td class="num">${T.sin}</td></tr></table>
 <table class="tc"><tr><th>Fecha</th><th>Equipo y horas</th><th>Estado</th><th class="num">Valor</th><th>Novedades</th><th class="num">Total</th><th>Pago</th><th>Acciones</th></tr>${filasHtml}</table>
 ${P().seccionCliente(cliente, todos, pgd, tar)}
+${notasHtml}
 ${DIALOGO_COBRO}
 </body></html>`;
 }
