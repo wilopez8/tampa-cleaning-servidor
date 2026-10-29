@@ -93,7 +93,7 @@ function validarAplic(aplic, d, todos, maximo) {
     if (v > e.saldo + EPS) return { error: `${c.Cliente} ${c._fecha}: aplicas ${usd(v)} y el saldo es ${usd(e.saldo)}.` };
     suma = r2(suma + v); lista.push({ idCobro: id, valor: v });
   }
-  if (suma > maximo + EPS) return { error: `Lo aplicado (${usd(suma)}) supera el pago (${usd(maximo)}).` };
+  if (suma > maximo + EPS) return { error: `Lo aplicado (${usd(suma)}) supera el ingreso (${usd(maximo)}).` };
   return { lista, suma };
 }
 
@@ -110,12 +110,12 @@ function registrarPago(b, admin) {
     const recibido = String(b.fechaRecibido || '').trim();
     if (!fechaValida(recibido) || recibido > hoy) return err('La fecha de recibido no es válida (no puede ser futura).');
     const metodo = String(b.metodo || '').trim();
-    if (!METODOS.includes(metodo)) return err('Elige el método de pago.');
+    if (!METODOS.includes(metodo)) return err('Elige el método de pago del ingreso.');
 
     let cuenta = String(b.cuenta || '').trim();
     if (!cuenta && metodo === 'Efectivo') cuenta = EFECTIVO_MANO;
     if (!CUENTAS.includes(cuenta)) return err(metodo === 'Venmo' ? 'Indica a qué cuenta se trasladó el Venmo.' : 'Elige la cuenta destino.');
-    if (cuenta === EFECTIVO_MANO && (metodo === 'Venmo' || metodo === 'Zelle')) return err(`Un pago por ${metodo} entra a una cuenta, no queda "en mano".`);
+    if (cuenta === EFECTIVO_MANO && (metodo === 'Venmo' || metodo === 'Zelle')) return err(`Un ingreso por ${metodo} entra a una cuenta, no queda "en mano".`);
     const banco = String(b.fechaBanco || '').trim();
     if (banco) {
       if (!fechaValida(banco) || banco > hoy) return err('La fecha de banco no es válida (no puede ser futura).');
@@ -173,11 +173,11 @@ function aplicarSaldo({ idPago, aplicaciones }, admin) {
   return enCola(async () => {
     const [d, ctx] = await Promise.all([datos(true), contextoCobros(true)]);
     const p = d.pagos.find(x => x.ID_Pago === String(idPago || '').trim());
-    if (!p) return err('Pago no encontrado.');
-    if (p.Estado !== 'Activo') return err('El pago está anulado.');
-    if (p.Tipo !== TIPO_SERV) return err('Solo los pagos de servicios se aplican a servicios.');
+    if (!p) return err('Ingreso no encontrado.');
+    if (p.Estado !== 'Activo') return err('El ingreso está anulado.');
+    if (p.Tipo !== TIPO_SERV) return err('Solo los ingresos de servicios se aplican a servicios.');
     const libre = r2((numero(p.Valor) || 0) - (d.porPago[p.ID_Pago] || 0));
-    if (libre <= EPS) return err('Este pago no tiene saldo disponible.');
+    if (libre <= EPS) return err('Este ingreso no tiene saldo disponible.');
     const v = validarAplic(aplicaciones, d, ctx.todos, libre);
     if (v.error) return err(v.error);
     if (!v.lista.length) return err('Elige al menos un servicio.');
@@ -192,10 +192,10 @@ function anularPago({ id, motivo }, admin) {
     if (!motivoOk(motivo)) return err('El motivo es obligatorio (mínimo 3 caracteres).');
     const d = await datos(true);
     const p = d.pagos.find(x => x.ID_Pago === String(id || '').trim());
-    if (!p) return err('Pago no encontrado.');
-    if (p.Estado !== 'Activo') return err('El pago ya estaba anulado.');
+    if (!p) return err('Ingreso no encontrado.');
+    if (p.Estado !== 'Activo') return err('El ingreso ya estaba anulado.');
     await poner('PAGOS', d.pagos, p, { Estado: 'Anulado', Motivo_Anulacion: String(motivo).trim(), Anulado_Por: admin, Fecha_Anulacion: ahora() });
-    await bit(p.ID_Pago, 'Anular pago', `${usd(numero(p.Valor) || 0)} · ${p.Pagador}; sus servicios vuelven a quedar pendientes`, motivo, admin);
+    await bit(p.ID_Pago, 'Anular ingreso', `${usd(numero(p.Valor) || 0)} · ${p.Pagador}; sus servicios vuelven a quedar pendientes`, motivo, admin);
     return { ok: true };
   });
 }
@@ -205,8 +205,8 @@ function marcarDeposito({ id, fechaBanco, cuenta, codigoBanco }, admin) {
   return enCola(async () => {
     const d = await datos(true);
     const p = d.pagos.find(x => x.ID_Pago === String(id || '').trim());
-    if (!p) return err('Pago no encontrado.');
-    if (p.Estado !== 'Activo') return err('El pago está anulado.');
+    if (!p) return err('Ingreso no encontrado.');
+    if (p.Estado !== 'Activo') return err('El ingreso está anulado.');
     const f = String(fechaBanco || '').trim();
     if (!fechaValida(f) || f > hoyFlorida()) return err('La fecha de banco no es válida (no puede ser futura).');
     if (f < normalizarFecha(p.Fecha_Recibido)) return err('La fecha de banco no puede ser anterior a la fecha de recibido.');
@@ -253,7 +253,7 @@ function pgMetodoCambio(){var m=pgE('pgMetodo').value,c=pgE('pgCuenta');
  pgMostrar();}
 function pgMostrar(){
  var ap=pgModo==='aplicar',otro=pgTipo==='Otro ingreso',m=pgE('pgMetodo').value;
- pgE('pgTit').textContent=ap?'Aplicar saldo a favor':(otro?'Registrar otro ingreso':'Registrar pago de servicios');
+ pgE('pgTit').textContent=ap?'Aplicar saldo a favor':(otro?'Registrar otro ingreso':'Registrar ingreso de servicios');
  pgE('pgCampos').style.display=ap?'none':'block';
  pgE('pgOtro').style.display=otro?'block':'none';
  pgE('pgServ').style.display=otro?'none':'block';
@@ -265,7 +265,7 @@ function pgMostrar(){
 function pgAbrir(tipo,pagador){pgModo='nuevo';pgIdPago='';pgTipo=tipo;pgReset();pgE('pgPagador').value=pagador||'';pgMetodoCambio();pgListar();pgE('pgDlg').showModal();}
 function pgAplicarSaldo(id){var p=null;for(var i=0;i<PGD.libres.length;i++){if(PGD.libres[i].id===id)p=PGD.libres[i];}
  if(!p)return;pgModo='aplicar';pgIdPago=id;pgTipo='Servicios';pgReset();pgLibre=p.libre;pgE('pgPagador').value=p.pagador;
- pgE('pgSub').textContent='Pago '+id+' · saldo disponible '+pgUsd(p.libre);pgMostrar();pgListar();pgE('pgDlg').showModal();}
+ pgE('pgSub').textContent='Ingreso '+id+' · saldo disponible '+pgUsd(p.libre);pgMostrar();pgListar();pgE('pgDlg').showModal();}
 function pgListar(){
  var pag=pgE('pgPagador').value.trim().toLowerCase(),todos=pgE('pgTodos').checked,h='';pgRows=[];
  for(var i=0;i<PGD.pend.length;i++){var c=PGD.pend[i];if(todos||!pag||c.pagador.toLowerCase()===pag)pgRows.push(c);}
@@ -291,7 +291,7 @@ function pgGuardar(){
  var e=pgE('pgErr');e.textContent='';var ap=[];
  for(var j=0;j<pgRows.length;j++){var a=pgN(pgE('pgA'+j).value);if(a>0)ap.push({idCobro:pgRows[j].id,valor:a});}
  var s=pgTot(),v=pgValorActual();
- if(pgTipo==='Servicios'&&s>v+0.004){e.textContent='Lo aplicado supera el valor del pago.';return;}
+ if(pgTipo==='Servicios'&&s>v+0.004){e.textContent='Lo aplicado supera el valor del ingreso.';return;}
  if(pgModo==='aplicar'){if(!ap.length){e.textContent='Elige al menos un servicio.';return;}pgPost('/cartera/pagos/aplicar',{idPago:pgIdPago,aplicaciones:ap},'pgErr');return;}
  pgPost('/cartera/pagos/registrar',{tipo:pgTipo,pagador:pgE('pgPagador').value,valor:pgE('pgValor').value,fechaRecibido:pgE('pgRecibido').value,fechaBanco:pgE('pgBanco').value,codigoBanco:pgE('pgCodBanco').value,
   metodo:pgE('pgMetodo').value,cuenta:pgE('pgCuenta').value,venmoId:pgE('pgVenmoId').value,venmoFecha:pgE('pgVenmoF').value,referencia:pgE('pgRef').value,
@@ -315,7 +315,7 @@ function dialogoPago(todos, d, tar) {
   const json = JSON.stringify(data).replace(/</g, '\\u003c');
   return `<datalist id="pgLstPag">${pagadores.map(p => `<option value="${esc(p)}">`).join('')}</datalist>
 <datalist id="pgLstCli">${Object.keys(tar.mapa).sort().map(c => `<option value="${esc(c)}">`).join('')}</datalist>
-<dialog id="pgDlg"><h3 id="pgTit" style="margin-top:0;">Registrar pago</h3><p id="pgSub" class="pgNota"></p>
+<dialog id="pgDlg"><h3 id="pgTit" style="margin-top:0;">Registrar ingreso</h3><p id="pgSub" class="pgNota"></p>
   <label>Pagador (quien entrega el dinero)<input type="text" id="pgPagador" list="pgLstPag" autocomplete="off" oninput="pgListar()"></label>
   <div id="pgCampos">
     <div class="pgGrid">
@@ -347,7 +347,7 @@ function dialogoPago(todos, d, tar) {
 <script>var PGD=${json};${SCRIPT_PAGOS}</script>`;
 }
 
-const botonesPago = (cliente, tar) => `<button class="btn hoy" data-p="${esc(pagadorDeCliente(cliente, tar))}" onclick="pgAbrir('Servicios',this.dataset.p)">Registrar pago</button>`;
+const botonesPago = (cliente, tar) => `<button class="btn hoy" data-p="${esc(pagadorDeCliente(cliente, tar))}" onclick="pgAbrir('Servicios',this.dataset.p)">Registrar ingreso</button>`;
 
 function tablaPagos(lista, d, cobMap) {
   const filas = lista.map(p => {
@@ -365,7 +365,7 @@ function tablaPagos(lista, d, cobMap) {
       return `<div><small>${c ? esc(c._fecha + ' · ' + c.Cliente) : esc(a.ID_Cobro)}: ${usd(numero(a.Valor_Aplicado) || 0)}</small></div>`;
     }).join('');
     const aplTxt = p.Tipo === TIPO_OTRO ? '<small>No ligado a servicios</small>' : (apps || '<small>Sin aplicar</small>') + (libre > EPS ? `<div><small class="neg">Saldo a favor ${usd(libre)}</small></div>` : '');
-    const b = (accion, txt) => `<button class="btn mini" data-acc="${accion}" data-id="${esc(p.ID_Pago)}" data-cuenta="${esc(p.Cuenta_Destino)}" data-t="${esc((accion === 'anular' ? 'Anular pago ' : 'Pago ') + p.ID_Pago + ' · ' + p.Pagador)}" onclick="pgAccion(this)">${txt}</button>`;
+    const b = (accion, txt) => `<button class="btn mini" data-acc="${accion}" data-id="${esc(p.ID_Pago)}" data-cuenta="${esc(p.Cuenta_Destino)}" data-t="${esc((accion === 'anular' ? 'Anular ingreso ' : 'Pago ') + p.ID_Pago + ' · ' + p.Pagador)}" onclick="pgAccion(this)">${txt}</button>`;
     let acc = '';
     if (act) {
       if (libre > EPS) acc += `<button class="btn mini" onclick="pgAplicarSaldo('${esc(p.ID_Pago)}')">Aplicar saldo</button>`;
@@ -374,7 +374,7 @@ function tablaPagos(lista, d, cobMap) {
     } else acc = `<small>Anulado por ${esc(p.Anulado_Por)}: ${esc(p.Motivo_Anulacion)}</small>`;
     return `<tr${act ? '' : ' class="anu"'}><td>${esc(normalizarFecha(p.Fecha_Recibido))}<br><small>${esc(p.ID_Pago)}</small></td><td>${quien}</td><td>${metodo}</td>
       <td class="num"><b>${usd(v)}</b></td><td>${bancoTxt}</td><td>${aplTxt}</td><td><span class="est ${act ? 'ok' : 'cn'}">${esc(p.Estado)}</span><br>${acc}</td></tr>`;
-  }).join('') || '<tr><td colspan="7" style="text-align:center;color:#888;padding:20px;">No hay pagos para este filtro.</td></tr>';
+  }).join('') || '<tr><td colspan="7" style="text-align:center;color:#888;padding:20px;">No hay ingresos para este filtro.</td></tr>';
   return `<div class="scroll g"><table><tr><th>Recibido</th><th>Pagador / concepto</th><th>Método y cuenta</th><th class="num">Valor</th><th>Banco</th><th>Aplicado a</th><th>Estado</th></tr>${filas}</table></div>`;
 }
 
@@ -389,7 +389,7 @@ function seccionCliente(cliente, todos, d, tar) {
   const pend = pendientes(todos, d, tar).filter(x => kp(x.pagador) === kp(pagador));
   const aviso = libres.length ? `<div class="aviso y">Saldo a favor de <b>${esc(pagador)}</b>: <b>${usd(r2(libres.reduce((a, p) => a + p._libre, 0)))}</b>${pend.length
     ? ` · tiene ${pend.length} servicio(s) pendientes. ${libres.map(p => `<button class="btn mini" onclick="pgAplicarSaldo('${esc(p.ID_Pago)}')">Aplicar ${usd(p._libre)} (${esc(p.ID_Pago)})</button>`).join(' ')}` : ''}</div>` : '';
-  return `${aviso}<h3 style="margin:18px 0 8px;">Pagos de ${esc(pagador)}</h3>${tablaPagos(lista, d, cobMap)}${dialogoPago(todos, d, tar)}`;
+  return `${aviso}<h3 style="margin:18px 0 8px;">Ingresos de ${esc(pagador)}</h3>${tablaPagos(lista, d, cobMap)}${dialogoPago(todos, d, tar)}`;
 }
 
 async function paginaPagos(query, admin) {
@@ -415,11 +415,11 @@ async function paginaPagos(query, admin) {
   const sel = (n, et, ops, act2) => `<select name="${n}"><option value="">${et}</option>${ops.map(o => `<option value="${esc(o)}"${act2 === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   const etiqueta = mes === 'todo' ? 'Todo el histórico' : mes;
   const nav = mes === 'todo' ? '' : `<a class="btn" href="${esc(u({ mes: sumarMes(mes, -1) }))}">←</a><a class="btn hoy" href="${esc(u({ mes: hoy.slice(0, 7) }))}">Este mes</a><a class="btn" href="${esc(u({ mes: sumarMes(mes, 1) }))}">→</a>`;
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Pagos ${esc(etiqueta)}</title><style>${CSS}${CSS_PAGOS}${menu.MENU_CSS}</style></head><body>
-<div class="top"><h2 style="margin:0;">Pagos e ingresos — ${esc(etiqueta)}</h2>${menu.menuHtml('/cartera', admin)}</div>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ingresos ${esc(etiqueta)}</title><style>${CSS}${CSS_PAGOS}${menu.MENU_CSS}</style></head><body>
+<div class="top"><h2 style="margin:0;">Ingresos — ${esc(etiqueta)}</h2>${menu.menuHtml('/cartera', admin)}</div>
 <div class="nav"><a class="btn" href="/cartera">← Cartera</a><a class="btn" href="/cartera/egresos">Egresos</a>${nav}
   <a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
-  <button class="btn hoy" onclick="pgAbrir('Servicios','')">Registrar pago</button><button class="btn hoy" onclick="pgAbrir('Otro ingreso','')">Otro ingreso</button></div>
+  <button class="btn hoy" onclick="pgAbrir('Servicios','')">Ingreso por servicios</button><button class="btn hoy" onclick="pgAbrir('Otro ingreso','')">Otro ingreso</button></div>
 <div class="aviso" style="background:#f0fdf4;">Activos en el filtro: <b>${act.length}</b> · <b>${usd(suma(act))}</b> (servicios ${usd(suma(serv))} · otros ingresos ${usd(suma(otros))}) · por depositar <b>${usd(suma(porDep))}</b> (${porDep.length}) · saldo a favor sin aplicar <b>${usd(libreTot)}</b></div>
 <form class="filtros" method="GET" action="/cartera/pagos"><input type="hidden" name="mes" value="${esc(mes)}">
   ${sel('tipo', 'Todos los tipos', [TIPO_SERV, TIPO_OTRO], fTipo)}${sel('metodo', 'Todos los métodos', METODOS, fMet)}${sel('cuenta', 'Todas las cuentas', CUENTAS, fCta)}${sel('estado', 'Todos los estados', ['Activo', 'Anulado', 'Por depositar'], fEst)}
@@ -437,7 +437,7 @@ function rutas(app, auth) {
   });
   app.get('/cartera/pagos', auth.requiereAdmin, async (req, res) => {
     try { res.set('Content-Type', 'text/html; charset=utf-8'); res.send(await paginaPagos(req.query, req.admin)); }
-    catch (e) { console.error('Error en GET /cartera/pagos:', e); res.status(500).send('Error cargando los pagos: ' + e.message); }
+    catch (e) { console.error('Error en GET /cartera/pagos:', e); res.status(500).send('Error cargando los ingresos: ' + e.message); }
   });
   api('/cartera/pagos/registrar', (b, a) => registrarPago(b, a));
   api('/cartera/pagos/aplicar', (b, a) => aplicarSaldo(b, a));
