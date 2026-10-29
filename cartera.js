@@ -445,7 +445,7 @@ async function paginaCartera(query, admin, vista) {
 <div class="nav">${mesNav}
   <a class="btn" href="${esc(url({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
   <a class="btn" href="${esc(url({ sync: '1' }))}">Sincronizar ahora</a>
-  <a class="btn${soloClientes ? '' : ' hoy'}" href="${esc('/cartera?mes=' + mes)}">Servicios</a><a class="btn${soloClientes ? ' hoy' : ''}" href="${esc('/cartera/clientes?mes=' + mes)}">Clientes</a><a class="btn" href="/cartera/pagos">Ingresos</a><a class="btn" href="/cartera/egresos">Egresos</a>
+  <a class="btn${soloClientes ? '' : ' hoy'}" href="${esc('/cartera?mes=' + mes)}">Servicios</a><a class="btn${soloClientes ? ' hoy' : ''}" href="${esc('/cartera/clientes?mes=' + mes)}">Clientes</a><a class="btn" href="/cartera/pagos">Ingresos</a><a class="btn" href="/cartera/egresos">Egresos</a><a class="btn" href="/cartera/reportes">Reportes</a>
 </div>
 ${errSync ? `<div class="aviso r">No se pudo sincronizar con la agenda: ${esc(errSync)}</div>` : ''}
 ${tar.hayColumna ? '' : '<div class="aviso r">Falta la columna <b>Tarifa_Servicio</b> en la hoja SITIOS: ningún servicio tendrá valor.</div>'}
@@ -689,6 +689,6 @@ function rutas(app, auth) {
 }
 
 module.exports = {
-  rutas, paginaCartera, botonNovedad, dialogoNovedad, datosCobroDia, lineaDeVidaH,
+  rutas, sincronizar, paginaCartera, botonNovedad, dialogoNovedad, datosCobroDia, lineaDeVidaH,
   helpers: { cargarTabla, cargarTarifas, armar, enCola, bit, aFila, poner, numero, r2, usd, esc, err, motivoOk, ahora, mesValido, sumarMes, CS_H, NV_H, CSS },
 };

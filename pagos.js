@@ -20,6 +20,21 @@ const kp = s => String(s ?? '').trim().toLowerCase();
 const normId = s => String(s ?? '').replace(/\s/g, '').toLowerCase();
 const texto = v => (v === '' || v === undefined || v === null) ? '' : "'" + v; // el apóstrofo obliga a Sheets a guardar texto (códigos largos, ceros a la izquierda)
 
+// Fecha efectiva del ingreso: la de banco; si el dinero sigue en mano (efectivo), la de recibido. Sin fecha efectiva = por depositar.
+const fechaEfectivaIngreso = p => {
+  const b = normalizarFecha(p.Fecha_Banco);
+  if (fechaValida(b)) return b;
+  const r = normalizarFecha(p.Fecha_Recibido);
+  return p.Cuenta_Destino === EFECTIVO_MANO && fechaValida(r) ? r : '';
+};
+// Selección múltiple (casillas repetidas en la URL). Sin nada marcado = todas.
+const seleccion = (q, nombre, ops) => {
+  const a = [].concat(q[nombre] === undefined ? [] : q[nombre]).map(String).filter(x => ops.includes(x));
+  return a.length ? a : ops.slice();
+};
+const qsDe = o => Object.entries(o).flatMap(([k, v]) => Array.isArray(v) ? v.map(x => k + '=' + encodeURIComponent(x)) : (v ? [k + '=' + encodeURIComponent(v)] : [])).join('&');
+const grupoChecks = (nombre, etiqueta, ops, sel) => `<fieldset class="chk"><legend>${esc(etiqueta)}</legend>${ops.map(o => `<label><input type="checkbox" name="${nombre}" value="${esc(o)}"${sel.includes(o) ? ' checked' : ''}> ${esc(o)}</label>`).join('')}</fieldset>`;
+
 // ---------- lectura y cálculo (nada de esto se escribe: el estado de pago es calculado) ----------
 async function datos(directo) {
   const [pagos, apl] = await Promise.all([cargarTabla('PAGOS', PG_H, directo), cargarTabla('PAGOS_APLICACION', PA_H, directo)]);
@@ -231,7 +246,9 @@ const CSS_PAGOS = `.est.par{background:#fde68a;}
 #pgDlg{max-width:780px;width:94%;} #pgDlg .pgGrid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;}
 #pgDlg input[type=checkbox]{width:auto;} #pgDlg table input[type=number]{width:90px;padding:4px;}
 #acDlg{max-width:360px;} .pgNota{font-size:12px;color:#777;margin:4px 0;}
-@media(max-width:700px){#pgDlg .pgGrid{grid-template-columns:1fr;}}`;
+@media(max-width:700px){#pgDlg .pgGrid{grid-template-columns:1fr;}}
+.chk{border:1px solid #ccc;border-radius:6px;padding:2px 10px 6px;margin:0;display:flex;gap:10px;flex-wrap:wrap;background:#fff;align-items:center;}
+.chk legend{font-size:12px;color:#777;padding:0 4px;} .chk label{font-size:13px;white-space:nowrap;}`;
 
 const opt = (arr, sel) => arr.map(o => `<option${o === sel ? ' selected' : ''}>${esc(o)}</option>`).join('');
 
@@ -397,13 +414,12 @@ async function paginaPagos(query, admin) {
   const mes = query.mes === 'todo' ? 'todo' : (mesValido(query.mes) ? query.mes : hoy.slice(0, 7));
   const [d, ctx] = await Promise.all([datos(), contextoCobros()]);
   const cobMap = new Map(ctx.todos.map(c => [c.ID_Cobro, c]));
-  const fMet = METODOS.includes(query.metodo) ? query.metodo : '';
-  const fCta = CUENTAS.includes(query.cuenta) ? query.cuenta : '';
+  const sMet = seleccion(query, 'metodo', METODOS), sCta = seleccion(query, 'cuenta', CUENTAS);
   const fTipo = [TIPO_SERV, TIPO_OTRO].includes(query.tipo) ? query.tipo : '';
   const fEst = ['Activo', 'Anulado', 'Por depositar'].includes(query.estado) ? query.estado : '';
   const vis = d.pagos.filter(p => p.ID_Pago).filter(p => {
-    const f = normalizarFecha(p.Fecha_Recibido);
-    return (mes === 'todo' || f.startsWith(mes)) && (!fMet || p.Metodo === fMet) && (!fCta || p.Cuenta_Destino === fCta) && (!fTipo || p.Tipo === fTipo)
+    const f = fechaEfectivaIngreso(p) || (p.Estado === 'Activo' ? '' : normalizarFecha(p.Fecha_Recibido)); // los por depositar se ven en cualquier mes
+    return (!f || mes === 'todo' || f.startsWith(mes)) && sMet.includes(p.Metodo) && sCta.includes(p.Cuenta_Destino) && (!fTipo || p.Tipo === fTipo)
       && (!fEst || (fEst === 'Por depositar' ? (p.Estado === 'Activo' && !normalizarFecha(p.Fecha_Banco)) : p.Estado === fEst));
   }).sort((a, b) => normalizarFecha(b.Fecha_Recibido).localeCompare(normalizarFecha(a.Fecha_Recibido)) || String(b.ID_Pago).localeCompare(String(a.ID_Pago)));
   const act = vis.filter(p => p.Estado === 'Activo');
@@ -411,18 +427,18 @@ async function paginaPagos(query, admin) {
   const porDep = act.filter(p => !normalizarFecha(p.Fecha_Banco));
   const serv = act.filter(p => p.Tipo === TIPO_SERV), otros = act.filter(p => p.Tipo === TIPO_OTRO);
   const libreTot = r2(serv.reduce((a, p) => a + Math.max(0, (numero(p.Valor) || 0) - (d.porPago[p.ID_Pago] || 0)), 0));
-  const u = o => '/cartera/pagos?' + Object.entries({ mes, metodo: fMet, cuenta: fCta, estado: fEst, tipo: fTipo, ...o }).filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+  const u = o => '/cartera/pagos?' + qsDe({ mes, metodo: sMet.length === METODOS.length ? '' : sMet, cuenta: sCta.length === CUENTAS.length ? '' : sCta, estado: fEst, tipo: fTipo, ...o });
   const sel = (n, et, ops, act2) => `<select name="${n}"><option value="">${et}</option>${ops.map(o => `<option value="${esc(o)}"${act2 === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   const etiqueta = mes === 'todo' ? 'Todo el histórico' : mes;
   const nav = mes === 'todo' ? '' : `<a class="btn" href="${esc(u({ mes: sumarMes(mes, -1) }))}">←</a><a class="btn hoy" href="${esc(u({ mes: hoy.slice(0, 7) }))}">Este mes</a><a class="btn" href="${esc(u({ mes: sumarMes(mes, 1) }))}">→</a>`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ingresos ${esc(etiqueta)}</title><style>${CSS}${CSS_PAGOS}${menu.MENU_CSS}</style></head><body>
 <div class="top"><h2 style="margin:0;">Ingresos — ${esc(etiqueta)}</h2>${menu.menuHtml('/cartera', admin)}</div>
-<div class="nav"><a class="btn" href="/cartera">← Cartera</a><a class="btn" href="/cartera/egresos">Egresos</a>${nav}
+<div class="nav"><a class="btn" href="/cartera">← Cartera</a><a class="btn" href="/cartera/egresos">Egresos</a><a class="btn" href="/cartera/reportes">Reportes</a>${nav}
   <a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
   <button class="btn hoy" onclick="pgAbrir('Servicios','')">Ingreso por servicios</button><button class="btn hoy" onclick="pgAbrir('Otro ingreso','')">Otro ingreso</button></div>
 <div class="aviso" style="background:#f0fdf4;">Activos en el filtro: <b>${act.length}</b> · <b>${usd(suma(act))}</b> (servicios ${usd(suma(serv))} · otros ingresos ${usd(suma(otros))}) · por depositar <b>${usd(suma(porDep))}</b> (${porDep.length}) · saldo a favor sin aplicar <b>${usd(libreTot)}</b></div>
 <form class="filtros" method="GET" action="/cartera/pagos"><input type="hidden" name="mes" value="${esc(mes)}">
-  ${sel('tipo', 'Todos los tipos', [TIPO_SERV, TIPO_OTRO], fTipo)}${sel('metodo', 'Todos los métodos', METODOS, fMet)}${sel('cuenta', 'Todas las cuentas', CUENTAS, fCta)}${sel('estado', 'Todos los estados', ['Activo', 'Anulado', 'Por depositar'], fEst)}
+  ${sel('tipo', 'Todos los tipos', [TIPO_SERV, TIPO_OTRO], fTipo)}${sel('estado', 'Todos los estados', ['Activo', 'Anulado', 'Por depositar'], fEst)}${grupoChecks('metodo', 'Métodos', METODOS, sMet)}${grupoChecks('cuenta', 'Cuentas', CUENTAS, sCta)}
   <button class="btn">Filtrar</button> <a class="btn" href="${esc(u({ metodo: '', cuenta: '', estado: '', tipo: '' }))}">Limpiar</a></form>
 ${tablaPagos(vis, d, cobMap)}
 ${dialogoPago(ctx.todos, d, ctx.tar)}
@@ -446,4 +462,4 @@ function rutas(app, auth) {
 }
 
 module.exports = { CUENTAS, METODOS, EFECTIVO_MANO, rutas, aplicadoServicio, datos, estadoCobro, badgePago, aplicadoDe, aplicadoMapa, seccionCliente, botonesPago, pagadorDeCliente, CSS_PAGOS, paginaPagos,
-  registrarPago, aplicarSaldo, anularPago, marcarDeposito };
+  registrarPago, aplicarSaldo, anularPago, marcarDeposito, fechaEfectivaIngreso, seleccion, qsDe, grupoChecks };
