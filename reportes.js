@@ -17,6 +17,15 @@ const sumar = (l, f) => r2(l.reduce((a, x) => a + (f(x) || 0), 0));
 const val = x => numero(x.Valor) || 0;
 const nombreIngreso = p => p.Tipo === 'Servicios' ? 'Servicios' : (p.Categoria || 'Otro ingreso');
 
+// secciones plegables y pestañas
+const sec = (titulo, cuerpo, abierta) => `<details class="sec"${abierta === false ? '' : ' open'}><summary>${titulo}</summary>${cuerpo}</details>`;
+let nTabs = 0;
+const pestanas = lista => {
+  const id = 'tb' + (++nTabs);
+  return `<div class="tabs" id="${id}"><div class="tbar">${lista.map(([t], i) => `<button type="button" class="btn${i ? '' : ' hoy'}" data-i="${i}" onclick="tcTab(this)">${t}</button>`).join('')}</div>${lista.map(([, h], i) => `<div class="tpan"${i ? ' style="display:none"' : ''}>${h}</div>`).join('')}</div>`;
+};
+const SCRIPT_TABS = `function tcTab(b){var t=b.parentNode.parentNode,i=+b.getAttribute('data-i'),bs=b.parentNode.children,ps=t.children,k;for(k=0;k<bs.length;k++){bs[k].className='btn'+(k===i?' hoy':'');}for(k=1;k<ps.length;k++){ps[k].style.display=(k-1===i)?'block':'none';}}`;
+
 // tabla cuenta x método
 function matriz(lista, filas, cols, fFila, fCol, f) {
   const m = {};
@@ -67,10 +76,10 @@ function reporteAging(cobros, d, tar, hoy) {
   d.libres.forEach(p => { const k = String(p.Pagador || '').trim() || '(sin pagador)'; favor[k] = r2((favor[k] || 0) + p._libre); });
   const fk = Object.keys(favor).sort((a, b) => favor[b] - favor[a]);
   const tfav = sumar(fk, k => favor[k]);
-  return `<h3>Antigüedad de cartera (por fecha del servicio, a hoy)</h3>
+  return sec('Antigüedad de cartera (por fecha del servicio, a hoy)', `
     <h4>Por cliente (pagador)</h4>${tabla(porPag, 'Cliente')}<h4>Por sitio</h4>${tabla(porSitio, 'Sitio')}
     <h4>Saldo a favor (aparte, no se resta de la cartera)</h4>
-    ${fk.length ? `<div class="scroll"><table><tr><th>Cliente</th><th class="num">Saldo a favor</th></tr>${fk.map(k => `<tr><td>${esc(k)}</td><td class="num">${usd(favor[k])}</td></tr>`).join('')}<tr><td><b>Total</b></td><td class="num"><b>${usd(tfav)}</b></td></tr></table></div>` : '<p><small>Sin saldos a favor.</small></p>'}`;
+    ${fk.length ? `<div class="scroll"><table><tr><th>Cliente</th><th class="num">Saldo a favor</th></tr>${fk.map(k => `<tr><td>${esc(k)}</td><td class="num">${usd(favor[k])}</td></tr>`).join('')}<tr><td><b>Total</b></td><td class="num"><b>${usd(tfav)}</b></td></tr></table></div>` : '<p><small>Sin saldos a favor.</small></p>'}`, false);
 }
 
 async function paginaReportes(q, admin) {
@@ -117,6 +126,18 @@ async function paginaReportes(q, admin) {
     <tr><td>Egresos</td>${mesE.map(v => `<td class="num">${v ? usd(v) : '<small>—</small>'}</td>`).join('')}<td class="num"><b>${usd(sumar(mesE, x => x))}</b></td></tr>
     <tr><td><b>Neto</b></td>${mesI.map((v, i) => { const n = r2(v - mesE[i]); return `<td class="num ${n < 0 ? 'neg' : ''}"><b>${v || mesE[i] ? usd(n) : '—'}</b></td>`; }).join('')}<td class="num"><b>${usd(r2(sumar(mesI, x => x) - sumar(mesE, x => x)))}</b></td></tr></table></div>`;
 
+  // clasificación por mes: cada categoría en filas, meses en columnas
+  const matMes = (l, f) => {
+    const cs = {};
+    l.filter(x => x._f && x._f.startsWith(anio)).forEach(x => { const k = f(x) || 'Sin categoría'; cs[k] = cs[k] || new Array(12).fill(0); const m = +x._f.slice(5, 7) - 1; cs[k][m] = r2(cs[k][m] + val(x)); });
+    const ks = Object.keys(cs).sort((a, b) => sumar(cs[b], z => z) - sumar(cs[a], z => z));
+    if (!ks.length) return '<p><small>Sin movimientos en este año.</small></p>';
+    const tm = MESES.map((_, i) => r2(ks.reduce((a, k) => a + cs[k][i], 0)));
+    return `<div class="scroll"><table><tr><th>${esc(anio)}</th>${MESES.map(m => `<th class="num">${m}</th>`).join('')}<th class="num">Total</th></tr>
+      ${ks.map(k => `<tr><td>${esc(k)}</td>${cs[k].map(v => `<td class="num">${v ? usd(v) : '<small>—</small>'}</td>`).join('')}<td class="num"><b>${usd(sumar(cs[k], z => z))}</b></td></tr>`).join('')}
+      <tr><td><b>Total</b></td>${tm.map(v => `<td class="num"><b>${v ? usd(v) : '—'}</b></td>`).join('')}<td class="num"><b>${usd(sumar(tm, z => z))}</b></td></tr></table></div>`;
+  };
+
   // por categoría en el rango
   const cat = (l, f) => { const m = {}; l.forEach(x => { const k = f(x) || 'Sin categoría'; m[k] = r2((m[k] || 0) + val(x)); }); return Object.entries(m).sort((a, b) => b[1] - a[1]); };
   const tcat = (arr, tot) => arr.length ? `<div class="scroll"><table>${arr.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${usd(v)}</td></tr>`).join('')}<tr><td><b>Total</b></td><td class="num"><b>${usd(tot)}</b></td></tr></table></div>` : '<p><small>Sin movimientos.</small></p>';
@@ -131,6 +152,7 @@ async function paginaReportes(q, admin) {
   const [ay, am] = [+hoy.slice(0, 4), +hoy.slice(5, 7)];
   const finMes = new Date(Date.UTC(ay, am, 0)).toISOString().slice(0, 10);
   const css = `.rep h3{margin:22px 0 6px;border-bottom:1px solid #ddd;padding-bottom:4px;} .rep h4{margin:12px 0 4px;} .rep .scroll{max-height:none;} .rep td,.rep th{padding:5px 8px;}
+    .sec{margin:14px 0;} .sec>summary{cursor:pointer;font-size:17px;font-weight:bold;padding:6px 0;border-bottom:1px solid #ddd;margin-bottom:8px;} .tbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;}
     .ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;} .ctl label{font-size:13px;display:block;} .ctl input{padding:6px;border:1px solid #ccc;border-radius:6px;}`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Reportes</title><style>${CSS}${CSS_PAGOS}${css}${menu.MENU_CSS}</style></head><body class="rep">
 <div class="top"><h2 style="margin:0;">Reportes de cartera</h2>${menu.menuHtml('/cartera', admin)}</div>
@@ -144,31 +166,16 @@ async function paginaReportes(q, admin) {
   <button class="btn hoy">Aplicar</button></div></form>
 <div class="aviso">Los reportes usan la fecha de banco (efectivo en mano: su propia fecha). Lo que aún no tiene fecha de banco no entra en ingresos/egresos y se lista como pendiente. Cuentas y métodos marcados: ${sCta.length === CUENTAS.length && sMet.length === METODOS.length ? 'todos' : 'filtrado'}.</div>
 
-<h3>Ingresos ${esc(desde)} a ${esc(hasta)}: ${usd(tIng)}</h3>
-${matriz(ingR, CUENTAS.filter(c => sCta.includes(c)), METODOS.filter(m => sMet.includes(m)), p => p.Cuenta_Destino, p => p.Metodo, val)}
-<h3>Egresos ${esc(desde)} a ${esc(hasta)}: ${usd(tEgr)}</h3>
-${matriz(egrR, CUENTAS.filter(c => sCta.includes(c)), METODOS.filter(m => sMet.includes(m)), e => e.Cuenta_Origen, e => e.Metodo, val)}
-<h3>Movimiento por cuenta (conciliación)</h3>
-<div class="scroll"><table><tr><th>Cuenta</th><th class="num">Ingresos</th><th class="num">Egresos</th><th class="num">Neto</th></tr>${flujo}<tr><td><b>Total</b></td><td class="num"><b>${usd(tIng)}</b></td><td class="num"><b>${usd(tEgr)}</b></td><td class="num"><b>${usd(r2(tIng - tEgr))}</b></td></tr></table></div>
-
-<h3>Por depositar: efectivo en mano sin depositar — ${usd(sumar(enMano, val))} (${enMano.length})</h3>
-${lista(enMano, 'Pagador', fIng)}
-<h3>Ingresos por acreditar (cuenta de banco sin fecha de banco) — ${usd(sumar(porAcreditar, val))} (${porAcreditar.length})</h3>
-${lista(porAcreditar, 'Pagador', fIng)}
-<h3>Egresos por debitar — ${usd(sumar(porDebitar, val))} (${porDebitar.length})</h3>
-${lista(porDebitar, 'Beneficiario / categoría', fEgr)}
-
-<h3>Pagos a empleados ${esc(anio)} (enero a diciembre, sin importar la cuenta)</h3>
-${tablaEmp}
-${nomPend.length ? `<p><small>Hay ${nomPend.length} pago(s) de nómina por debitar (${usd(sumar(nomPend, val))}) que aún no cuentan aquí.</small></p>` : ''}
-${sinPago.length ? `<p><small>Empleados activos sin pagos en ${esc(anio)}: ${esc(sinPago.join(', '))}.</small></p>` : ''}
-
-<h3>Ingresos vs egresos por mes</h3>
-${tablaMes}
-<h3>Por categoría (${esc(desde)} a ${esc(hasta)})</h3>
-<div class="ctl" style="align-items:flex-start"><div style="min-width:280px"><h4>Ingresos</h4>${tcat(cat(ingR, nombreIngreso), tIng)}</div><div style="min-width:280px"><h4>Egresos</h4>${tcat(cat(egrR, e => e.Categoria), tEgr)}</div></div>
-
+${sec(`Ingresos ${esc(desde)} a ${esc(hasta)}: ${usd(tIng)}`, pestanas([['Por cuenta y método', matriz(ingR, CUENTAS.filter(c => sCta.includes(c)), METODOS.filter(m => sMet.includes(m)), p => p.Cuenta_Destino, p => p.Metodo, val)], ['Por clasificación', tcat(cat(ingR, nombreIngreso), tIng)]]))}
+${sec(`Egresos ${esc(desde)} a ${esc(hasta)}: ${usd(tEgr)}`, pestanas([['Por cuenta y método', matriz(egrR, CUENTAS.filter(c => sCta.includes(c)), METODOS.filter(m => sMet.includes(m)), e => e.Cuenta_Origen, e => e.Metodo, val)], ['Por clasificación', tcat(cat(egrR, e => e.Categoria), tEgr)]]))}
+${sec('Movimiento por cuenta (conciliación)', `<div class="scroll"><table><tr><th>Cuenta</th><th class="num">Ingresos</th><th class="num">Egresos</th><th class="num">Neto</th></tr>${flujo}<tr><td><b>Total</b></td><td class="num"><b>${usd(tIng)}</b></td><td class="num"><b>${usd(tEgr)}</b></td><td class="num"><b>${usd(r2(tIng - tEgr))}</b></td></tr></table></div>`)}
+${sec(`Por depositar: efectivo en mano sin depositar — ${usd(sumar(enMano, val))} (${enMano.length})`, lista(enMano, 'Pagador', fIng), false)}
+${sec(`Ingresos por acreditar (cuenta de banco sin fecha de banco) — ${usd(sumar(porAcreditar, val))} (${porAcreditar.length})`, lista(porAcreditar, 'Pagador', fIng), false)}
+${sec(`Egresos por debitar — ${usd(sumar(porDebitar, val))} (${porDebitar.length})`, lista(porDebitar, 'Beneficiario / categoría', fEgr), false)}
+${sec(`Pagos a empleados ${esc(anio)} (enero a diciembre, sin importar la cuenta)`, tablaEmp + (nomPend.length ? `<p><small>Hay ${nomPend.length} pago(s) de nómina por debitar (${usd(sumar(nomPend, val))}) que aún no cuentan aquí.</small></p>` : '') + (sinPago.length ? `<p><small>Empleados activos sin pagos en ${esc(anio)}: ${esc(sinPago.join(', '))}.</small></p>` : ''))}
+${sec(`Ingresos vs egresos por mes — ${esc(anio)}`, pestanas([['Resumen', tablaMes], ['Ingresos por clasificación', matMes(ing, nombreIngreso)], ['Egresos por clasificación', matMes(egr, e => e.Categoria)]]))}
 ${aging}
+<script>${SCRIPT_TABS}</script>
 </body></html>`;
 }
 
