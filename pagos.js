@@ -1,4 +1,4 @@
-const { agregarFila, agregarFilas } = require('./sheets');
+const { agregarFila, agregarFilas, actualizarCeldas } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida } = require('./agenda');
 const menu = require('./menu');
 const K = require('./cartera').helpers; // cartera.js solo carga pagos.js de forma diferida, así que no hay ciclo
@@ -7,7 +7,7 @@ const { cargarTabla, cargarTarifas, armar, enCola, bit, aFila, poner, numero, r2
 // ---------- hojas ----------
 // PAGOS: una fila por dinero recibido (servicios u otros ingresos). PAGOS_APLICACION: reparto de un pago entre servicios.
 const PG_H = ['ID_Pago', 'Tipo', 'Pagador', 'Cliente', 'Categoria', 'Concepto', 'Valor', 'Fecha_Recibido', 'Fecha_Banco', 'Metodo', 'Cuenta_Destino',
-  'Venmo_ID', 'Venmo_Fecha', 'Referencia', 'Estado', 'Motivo_Anulacion', 'Anulado_Por', 'Fecha_Anulacion', 'Registrado_Por', 'Fecha_Registro'];
+  'Venmo_ID', 'Venmo_Fecha', 'Referencia', 'Estado', 'Motivo_Anulacion', 'Anulado_Por', 'Fecha_Anulacion', 'Registrado_Por', 'Fecha_Registro', 'Codigo_Banco'];
 const PA_H = ['ID_Pago', 'ID_Cobro', 'Valor_Aplicado', 'Registrado_Por', 'Fecha_Registro'];
 
 const TIPO_SERV = 'Servicios', TIPO_OTRO = 'Otro ingreso';
@@ -23,6 +23,10 @@ const texto = v => (v === '' || v === undefined || v === null) ? '' : "'" + v; /
 // ---------- lectura y cálculo (nada de esto se escribe: el estado de pago es calculado) ----------
 async function datos(directo) {
   const [pagos, apl] = await Promise.all([cargarTabla('PAGOS', PG_H, directo), cargarTabla('PAGOS_APLICACION', PA_H, directo)]);
+  if (!pagos.h.includes('Codigo_Banco')) { // hoja creada antes de este campo: se agrega la columna al final
+    await actualizarCeldas('PAGOS', [{ fila: 1, columna: pagos.h.length + 1, valor: 'Codigo_Banco' }]);
+    pagos.h.push('Codigo_Banco');
+  }
   const activos = new Map();
   pagos.forEach(p => { if (p.ID_Pago && p.Estado === 'Activo') activos.set(p.ID_Pago, p); });
   const porCobro = {}, porPago = {};
@@ -126,6 +130,8 @@ function registrarPago(b, admin) {
       if (!fechaValida(venmoFecha) || venmoFecha > hoy) return err('La fecha del Venmo no es válida.');
     }
     const referencia = (metodo === 'Cheque' || metodo === 'Zelle') ? String(b.referencia || '').trim() : '';
+    const codigoBanco = String(b.codigoBanco || '').trim().slice(0, 60);
+    if (codigoBanco && cuenta === EFECTIVO_MANO) return err('El efectivo en mano no tiene código de banco: se registra cuando se deposite.');
     const concepto = String(b.concepto || '').trim();
     let categoria = '', cliente = '';
     if (tipo === TIPO_OTRO) {
@@ -154,7 +160,7 @@ function registrarPago(b, admin) {
 
     await agregarFila('PAGOS', aFila(d.pagos.h, {
       ID_Pago: id, Tipo: tipo, Pagador: pagador, Cliente: cliente, Categoria: categoria, Concepto: concepto, Valor: valor, Fecha_Recibido: recibido, Fecha_Banco: banco,
-      Metodo: metodo, Cuenta_Destino: cuenta, Venmo_ID: texto(venmoId), Venmo_Fecha: venmoFecha, Referencia: texto(referencia), Estado: 'Activo',
+      Metodo: metodo, Cuenta_Destino: cuenta, Venmo_ID: texto(venmoId), Venmo_Fecha: venmoFecha, Referencia: texto(referencia), Codigo_Banco: texto(codigoBanco), Estado: 'Activo',
       Registrado_Por: admin, Fecha_Registro: ahora(),
     }));
     if (lista.length) await agregarFilas('PAGOS_APLICACION', lista.map(x => aFila(d.apl.h, { ID_Pago: id, ID_Cobro: x.idCobro, Valor_Aplicado: x.valor, Registrado_Por: admin, Fecha_Registro: ahora() })));
@@ -195,7 +201,7 @@ function anularPago({ id, motivo }, admin) {
 }
 
 // Efectivo/cheque llegan "por depositar" (Fecha_Banco vacía); aquí se registra cuándo y dónde entraron al banco
-function marcarDeposito({ id, fechaBanco, cuenta }, admin) {
+function marcarDeposito({ id, fechaBanco, cuenta, codigoBanco }, admin) {
   return enCola(async () => {
     const d = await datos(true);
     const p = d.pagos.find(x => x.ID_Pago === String(id || '').trim());
@@ -206,8 +212,9 @@ function marcarDeposito({ id, fechaBanco, cuenta }, admin) {
     if (f < normalizarFecha(p.Fecha_Recibido)) return err('La fecha de banco no puede ser anterior a la fecha de recibido.');
     const cta = String(cuenta || '').trim() || p.Cuenta_Destino;
     if (!CUENTAS.includes(cta) || cta === EFECTIVO_MANO) return err('Elige la cuenta bancaria donde entró el dinero.');
-    await poner('PAGOS', d.pagos, p, { Fecha_Banco: f, Cuenta_Destino: cta });
-    await bit(p.ID_Pago, 'Depositado', `Fecha banco ${f} · ${cta}` + (p.Cuenta_Destino !== cta ? ` (antes ${p.Cuenta_Destino})` : ''), '', admin);
+    const cod = String(codigoBanco || '').trim().slice(0, 60);
+    await poner('PAGOS', d.pagos, p, { Fecha_Banco: f, Cuenta_Destino: cta, ...(cod ? { Codigo_Banco: texto(cod) } : {}) });
+    await bit(p.ID_Pago, 'Depositado', `Fecha banco ${f} · ${cta}${cod ? ' · código ' + cod : ''}` + (p.Cuenta_Destino !== cta ? ` (antes ${p.Cuenta_Destino})` : ''), '', admin);
     return { ok: true };
   });
 }
@@ -237,7 +244,7 @@ function pgEsc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 function pgPost(url,data,errId){fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.json();}).then(function(j){if(j.ok){location.reload();}else{pgE(errId).textContent=j.general||'Error';}}).catch(function(){pgE(errId).textContent='Error de conexión';});}
 function pgValorActual(){return pgModo==='aplicar'?pgLibre:pgN(pgE('pgValor').value);}
 function pgReset(){
- ['pgValor','pgBanco','pgVenmoId','pgVenmoF','pgRef','pgConc','pgCli'].forEach(function(i){pgE(i).value='';});
+ ['pgValor','pgBanco','pgCodBanco','pgVenmoId','pgVenmoF','pgRef','pgConc','pgCli'].forEach(function(i){pgE(i).value='';});
  pgE('pgRecibido').value=PGD.hoy;pgE('pgMetodo').selectedIndex=0;pgE('pgCuenta').value='';pgE('pgCat').selectedIndex=0;
  pgE('pgTodos').checked=false;pgE('pgErr').textContent='';pgE('pgPagador').readOnly=false;pgE('pgSub').textContent='';}
 function pgMetodoCambio(){var m=pgE('pgMetodo').value,c=pgE('pgCuenta');
@@ -286,16 +293,16 @@ function pgGuardar(){
  var s=pgTot(),v=pgValorActual();
  if(pgTipo==='Servicios'&&s>v+0.004){e.textContent='Lo aplicado supera el valor del pago.';return;}
  if(pgModo==='aplicar'){if(!ap.length){e.textContent='Elige al menos un servicio.';return;}pgPost('/cartera/pagos/aplicar',{idPago:pgIdPago,aplicaciones:ap},'pgErr');return;}
- pgPost('/cartera/pagos/registrar',{tipo:pgTipo,pagador:pgE('pgPagador').value,valor:pgE('pgValor').value,fechaRecibido:pgE('pgRecibido').value,fechaBanco:pgE('pgBanco').value,
+ pgPost('/cartera/pagos/registrar',{tipo:pgTipo,pagador:pgE('pgPagador').value,valor:pgE('pgValor').value,fechaRecibido:pgE('pgRecibido').value,fechaBanco:pgE('pgBanco').value,codigoBanco:pgE('pgCodBanco').value,
   metodo:pgE('pgMetodo').value,cuenta:pgE('pgCuenta').value,venmoId:pgE('pgVenmoId').value,venmoFecha:pgE('pgVenmoF').value,referencia:pgE('pgRef').value,
   concepto:pgE('pgConc').value,categoria:pgE('pgCat').value,cliente:pgE('pgCli').value,aplicaciones:pgTipo==='Servicios'?ap:[]},'pgErr');}
 function pgAccion(b){pgAcc=b.dataset.acc;pgAccId=b.dataset.id;pgE('acT').textContent=b.dataset.t;pgE('acMotivo').value='';pgE('acFecha').value=PGD.hoy;
- pgE('acCuenta').value=b.dataset.cuenta||'';pgE('acErr').textContent='';var dep=pgAcc==='deposito';
- pgE('acMW').style.display=dep?'none':'block';pgE('acFW').style.display=dep?'block':'none';pgE('acCW').style.display=dep?'block':'none';pgE('acDlg').showModal();}
+ pgE('acCuenta').value=b.dataset.cuenta||'';pgE('acCod').value='';pgE('acErr').textContent='';var dep=pgAcc==='deposito';
+ pgE('acMW').style.display=dep?'none':'block';pgE('acFW').style.display=dep?'block':'none';pgE('acCW').style.display=dep?'block':'none';pgE('acKW').style.display=dep?'block':'none';pgE('acDlg').showModal();}
 function pgAccionOk(){
  if(pgAcc==='anular'){var m=pgE('acMotivo').value.trim();if(m.length<3){pgE('acErr').textContent='El motivo es obligatorio.';return;}pgPost('/cartera/pagos/anular',{id:pgAccId,motivo:m},'acErr');return;}
  if(!pgE('acFecha').value){pgE('acErr').textContent='Escribe la fecha en que entró al banco.';return;}
- pgPost('/cartera/pagos/deposito',{id:pgAccId,fechaBanco:pgE('acFecha').value,cuenta:pgE('acCuenta').value},'acErr');}
+ pgPost('/cartera/pagos/deposito',{id:pgAccId,fechaBanco:pgE('acFecha').value,cuenta:pgE('acCuenta').value,codigoBanco:pgE('acCod').value},'acErr');}
 `;
 
 // Diálogos de pago (registrar / aplicar saldo / anular / depositado) con los datos que necesitan
@@ -317,6 +324,7 @@ function dialogoPago(todos, d, tar) {
       <label>Método<select id="pgMetodo" onchange="pgMetodoCambio()">${opt(METODOS)}</select></label>
       <label>Cuenta destino<select id="pgCuenta"><option value="">— elegir —</option>${opt(CUENTAS)}</select></label>
       <label>Fecha en banco (vacía = por depositar)<input type="date" id="pgBanco"></label>
+      <label>Código de transacción en el banco (opcional)<input type="text" id="pgCodBanco" maxlength="60"></label>
       <label id="pgRefW"><span id="pgRefL">N.º de cheque</span><input type="text" id="pgRef" maxlength="60"></label>
     </div>
     <div id="pgVenmo" class="pgGrid"><label>Código de transacción de Venmo<input type="text" id="pgVenmoId" maxlength="60"></label><label>Fecha del Venmo<input type="date" id="pgVenmoF"></label></div>
@@ -333,6 +341,7 @@ function dialogoPago(todos, d, tar) {
   <label id="acMW">Motivo (obligatorio)<input type="text" id="acMotivo" maxlength="200"></label>
   <label id="acFW">Fecha en que entró al banco<input type="date" id="acFecha"></label>
   <label id="acCW">Cuenta donde entró<select id="acCuenta"><option value="">— elegir —</option>${opt(CUENTAS.filter(c => c !== EFECTIVO_MANO))}</select></label>
+  <label id="acKW">Código de transacción en el banco (opcional)<input type="text" id="acCod" maxlength="60"></label>
   <p id="acErr" style="color:#b91c1c;font-size:13px;"></p>
   <button class="btn hoy" onclick="pgAccionOk()">Guardar</button> <button class="btn" onclick="pgE('acDlg').close()">Cancelar</button></dialog>
 <script>var PGD=${json};${SCRIPT_PAGOS}</script>`;
@@ -350,7 +359,7 @@ function tablaPagos(lista, d, cobMap) {
       : `<b>${esc(p.Pagador)}</b>${p.Concepto ? `<br><small>${esc(p.Concepto)}</small>` : ''}`;
     const metodo = `<span class="mp ${esc(kp(p.Metodo))}" style="margin-left:0;">${esc(p.Metodo)}</span><br><small>${esc(p.Cuenta_Destino)}${p.Venmo_ID ? `<br>Venmo ${esc(p.Venmo_ID)} · ${esc(normalizarFecha(p.Venmo_Fecha))}` : ''}${p.Referencia ? `<br>Ref. ${esc(p.Referencia)}` : ''}</small>`;
     const banco = normalizarFecha(p.Fecha_Banco);
-    const bancoTxt = banco ? esc(banco) : (act ? '<span class="est rev">Por depositar</span>' : '<small>—</small>');
+    const bancoTxt = banco ? esc(banco) + (p.Codigo_Banco ? `<br><small>Cód. ${esc(p.Codigo_Banco)}</small>` : '') : (act ? '<span class="est rev">Por depositar</span>' : '<small>—</small>');
     const apps = d.apl.filter(a => a.ID_Pago === p.ID_Pago).map(a => {
       const c = cobMap.get(a.ID_Cobro);
       return `<div><small>${c ? esc(c._fecha + ' · ' + c.Cliente) : esc(a.ID_Cobro)}: ${usd(numero(a.Valor_Aplicado) || 0)}</small></div>`;
@@ -408,7 +417,7 @@ async function paginaPagos(query, admin) {
   const nav = mes === 'todo' ? '' : `<a class="btn" href="${esc(u({ mes: sumarMes(mes, -1) }))}">←</a><a class="btn hoy" href="${esc(u({ mes: hoy.slice(0, 7) }))}">Este mes</a><a class="btn" href="${esc(u({ mes: sumarMes(mes, 1) }))}">→</a>`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Pagos ${esc(etiqueta)}</title><style>${CSS}${CSS_PAGOS}${menu.MENU_CSS}</style></head><body>
 <div class="top"><h2 style="margin:0;">Pagos e ingresos — ${esc(etiqueta)}</h2>${menu.menuHtml('/cartera', admin)}</div>
-<div class="nav"><a class="btn" href="/cartera">← Cartera</a>${nav}
+<div class="nav"><a class="btn" href="/cartera">← Cartera</a><a class="btn" href="/cartera/egresos">Egresos</a>${nav}
   <a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
   <button class="btn hoy" onclick="pgAbrir('Servicios','')">Registrar pago</button><button class="btn hoy" onclick="pgAbrir('Otro ingreso','')">Otro ingreso</button></div>
 <div class="aviso" style="background:#f0fdf4;">Activos en el filtro: <b>${act.length}</b> · <b>${usd(suma(act))}</b> (servicios ${usd(suma(serv))} · otros ingresos ${usd(suma(otros))}) · por depositar <b>${usd(suma(porDep))}</b> (${porDep.length}) · saldo a favor sin aplicar <b>${usd(libreTot)}</b></div>
@@ -436,5 +445,5 @@ function rutas(app, auth) {
   api('/cartera/pagos/deposito', (b, a) => marcarDeposito(b, a));
 }
 
-module.exports = { rutas, aplicadoServicio,datos, estadoCobro, badgePago, aplicadoDe, aplicadoMapa, seccionCliente, botonesPago, pagadorDeCliente, CSS_PAGOS, paginaPagos,
+module.exports = { CUENTAS, METODOS, EFECTIVO_MANO, rutas, aplicadoServicio, datos, estadoCobro, badgePago, aplicadoDe, aplicadoMapa, seccionCliente, botonesPago, pagadorDeCliente, CSS_PAGOS, paginaPagos,
   registrarPago, aplicarSaldo, anularPago, marcarDeposito };
