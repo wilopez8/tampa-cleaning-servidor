@@ -166,14 +166,14 @@ async function paginaReportes(q, admin) {
   <button class="btn hoy">Aplicar</button></div></form>
 <div class="aviso">Los reportes usan la fecha de banco (efectivo en mano: su propia fecha). Lo que aún no tiene fecha de banco no entra en ingresos/egresos y se lista como pendiente. Cuentas y métodos marcados: ${sCta.length === CUENTAS.length && sMet.length === METODOS.length ? 'todos' : 'filtrado'}.</div>
 
-${sec(`Ingresos ${esc(desde)} a ${esc(hasta)}: ${usd(tIng)}`, pestanas([['Por cuenta y método', matriz(ingR, CUENTAS.filter(c => sCta.includes(c)), METODOS.filter(m => sMet.includes(m)), p => p.Cuenta_Destino, p => p.Metodo, val)], ['Por clasificación', tcat(cat(ingR, nombreIngreso), tIng)]]))}
-${sec(`Egresos ${esc(desde)} a ${esc(hasta)}: ${usd(tEgr)}`, pestanas([['Por cuenta y método', matriz(egrR, CUENTAS.filter(c => sCta.includes(c)), METODOS.filter(m => sMet.includes(m)), e => e.Cuenta_Origen, e => e.Metodo, val)], ['Por clasificación', tcat(cat(egrR, e => e.Categoria), tEgr)]]))}
+${sec(`Ingresos ${esc(desde)} a ${esc(hasta)}: ${usd(tIng)}`, pestanas([['Por cuenta y método', matriz(ingR, CUENTAS.filter(c => sCta.includes(c)), METODOS.filter(m => sMet.includes(m)), p => p.Cuenta_Destino, p => p.Metodo, val)], ['Por categoría', tcat(cat(ingR, nombreIngreso), tIng)]]))}
+${sec(`Egresos ${esc(desde)} a ${esc(hasta)}: ${usd(tEgr)}`, pestanas([['Por cuenta y método', matriz(egrR, CUENTAS.filter(c => sCta.includes(c)), METODOS.filter(m => sMet.includes(m)), e => e.Cuenta_Origen, e => e.Metodo, val)], ['Por categoría', tcat(cat(egrR, e => e.Categoria), tEgr)]]))}
 ${sec('Movimiento por cuenta (conciliación)', `<div class="scroll"><table><tr><th>Cuenta</th><th class="num">Ingresos</th><th class="num">Egresos</th><th class="num">Neto</th></tr>${flujo}<tr><td><b>Total</b></td><td class="num"><b>${usd(tIng)}</b></td><td class="num"><b>${usd(tEgr)}</b></td><td class="num"><b>${usd(r2(tIng - tEgr))}</b></td></tr></table></div>`)}
 ${sec(`Por depositar: efectivo en mano sin depositar — ${usd(sumar(enMano, val))} (${enMano.length})`, lista(enMano, 'Pagador', fIng), false)}
 ${sec(`Ingresos por acreditar (cuenta de banco sin fecha de banco) — ${usd(sumar(porAcreditar, val))} (${porAcreditar.length})`, lista(porAcreditar, 'Pagador', fIng), false)}
 ${sec(`Egresos por debitar — ${usd(sumar(porDebitar, val))} (${porDebitar.length})`, lista(porDebitar, 'Beneficiario / categoría', fEgr), false)}
 ${sec(`Pagos a empleados ${esc(anio)} (enero a diciembre, sin importar la cuenta)`, tablaEmp + (nomPend.length ? `<p><small>Hay ${nomPend.length} pago(s) de nómina por debitar (${usd(sumar(nomPend, val))}) que aún no cuentan aquí.</small></p>` : '') + (sinPago.length ? `<p><small>Empleados activos sin pagos en ${esc(anio)}: ${esc(sinPago.join(', '))}.</small></p>` : ''))}
-${sec(`Ingresos vs egresos por mes — ${esc(anio)}`, pestanas([['Resumen', tablaMes], ['Ingresos por clasificación', matMes(ing, nombreIngreso)], ['Egresos por clasificación', matMes(egr, e => e.Categoria)]]))}
+${sec(`Ingresos vs egresos por mes — ${esc(anio)}`, pestanas([['Resumen', tablaMes], ['Ingresos por categoría', matMes(ing, nombreIngreso)], ['Egresos por categoría', matMes(egr, e => e.Categoria)]]))}
 ${aging}
 <script>${SCRIPT_TABS}</script>
 </body></html>`;
