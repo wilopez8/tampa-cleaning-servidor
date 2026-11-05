@@ -324,6 +324,7 @@ apiPend('/pendientes/guardar', r => pend.guardar({ filas: r.body.filas, admin: r
 apiPend('/pendientes/cerrar', r => pend.cerrar({ id: r.body.id, nota: r.body.nota, por: r.admin, via: 'Agenda web' }));
 apiPend('/pendientes/cancelar', r => pend.cancelar({ id: r.body.id, motivo: r.body.motivo, admin: r.admin }));
 apiPend('/pendientes/recordar', r => pend.recordar({ id: r.body.id, responsable: r.body.responsable }, r.admin));
+apiPend('/pendientes/editar', r => pend.editar({ id: r.body.id, datos: r.body.datos, admin: r.admin }));
 
 // Página del empleado (enlace único por pendiente, igual que /cierre)
 app.get('/pendiente', async (req, res) => {

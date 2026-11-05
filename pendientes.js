@@ -160,6 +160,95 @@ async function _recordar({ id, responsable }, admin) {
   return { ok: true, ...(await _enviarLote(lista, h, 'Recordatorio', admin)) };
 }
 
+// ---------- Editar ----------
+const CAMPO_HOJA = { tipo: 'Tipo', titulo: 'Titulo', obs: 'Observaciones', cliente: 'Cliente', idServ: 'ID_Programacion', responsable: 'Responsable', fecha: 'Fecha_Limite', inicio: 'Hora_Inicio', fin: 'Hora_Fin', prioridad: 'Prioridad' };
+const CAMPO_ETQ = { tipo: 'Tipo', titulo: 'Título', obs: 'Observaciones', cliente: 'Cliente', idServ: 'Servicio', responsable: 'Responsable', fecha: 'Fecha', inicio: 'Hora de inicio', fin: 'Hora de fin', prioridad: 'Prioridad' };
+
+function aHora24(t) {
+  const m = String(t || '').match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*([AP]M)?/i);
+  if (!m) return '';
+  let h = parseInt(m[1], 10);
+  const ap = (m[3] || '').toUpperCase();
+  if (ap === 'PM' && h < 12) h += 12;
+  if (ap === 'AM' && h === 12) h = 0;
+  return String(h).padStart(2, '0') + ':' + m[2];
+}
+const valoresDe = p => ({
+  tipo: limpio(p.Tipo) || 'Otro', titulo: limpio(p.Titulo), obs: limpio(p.Observaciones), cliente: limpio(p.Cliente), idServ: limpio(p.ID_Programacion),
+  responsable: limpio(p.Responsable), fecha: normalizarFecha(limpio(p.Fecha_Limite)), inicio: aHora24(p.Hora_Inicio), fin: aHora24(p.Hora_Fin), prioridad: limpio(p.Prioridad) || 'Normal',
+});
+function datosEdicion(filas) {
+  const o = {};
+  filas.filter(p => p.Estado === 'Abierto').forEach(p => { o[p.ID_Pendiente] = { ...valoresDe(p), env: p.Estado_Envio === 'Enviado' }; });
+  return o;
+}
+
+async function avisar(nombre, cuerpo, id, tipoEnvio) {
+  try {
+    const tel = await buscarTelefonoPorNombre(nombre);
+    if (!tel) throw new Error('sin número de WhatsApp');
+    const sid = await enviarWhatsApp(`whatsapp:+${digitos(tel)}`, cuerpo);
+    if (tipoEnvio) { await asegurarHoja(HOJA_MSG, ENC_MSG); await agregarFila(HOJA_MSG, [sid, id, ahora(), tipoEnvio]); }
+    return true;
+  } catch (err) { console.error('Aviso de cambio en pendiente', id, err); return false; }
+}
+
+async function _editar({ id, datos, admin }) {
+  id = limpio(id);
+  const r = await obtener(id);
+  if (!r) return { ok: false, general: 'Pendiente no encontrado.' };
+  const p = r.p;
+  if (p.Estado !== 'Abierto') return { ok: false, general: `Este pendiente ya está ${p.Estado.toLowerCase()}: no se puede editar.` };
+  datos = datos || {};
+  const antes = valoresDe(p);
+  const f = {
+    tipo: limpio(datos.tipo) || 'Otro', titulo: limpio(datos.titulo).slice(0, 150), cliente: limpio(datos.cliente), responsable: limpio(datos.responsable),
+    fecha: limpio(datos.fecha), inicio: limpio(datos.inicio), fin: limpio(datos.fin), prioridad: limpio(datos.prioridad) || 'Normal',
+    obs: limpio(datos.obs).slice(0, 800), idServ: limpio(datos.idServ),
+  };
+  if (vacia(f)) return { ok: false, general: 'El pendiente no puede quedar vacío.' };
+  const dif = Object.keys(CAMPO_HOJA).filter(k => antes[k] !== f[k]);
+  if (!dif.length) return { ok: false, general: 'No hay cambios para guardar.' };
+
+  const m = await edicion.maestros(true);
+  const prog = await leerHoja('PROGRAMACION_DIARIA');
+  m.idsServicios = new Set(prog.slice(1).map(x => String(x[prog[0].indexOf('ID_Programacion')] || '')).filter(Boolean));
+  // lo que no se cambió se acepta aunque ya no esté activo
+  if (f.cliente && f.cliente === antes.cliente) m.clientes = m.clientes.filter(c => c.n !== f.cliente).concat([{ n: f.cliente }]);
+  if (f.responsable && f.responsable === antes.responsable) m.empleados = m.empleados.filter(x => x.n !== f.responsable).concat([{ n: f.responsable, wa: true }]);
+  const errores = validar([f], m);
+  if (errores[0].length) return { ok: false, errores };
+
+  const vals = {};
+  dif.forEach(k => { vals[CAMPO_HOJA[k]] = f[k]; });
+  await poner(r.h, p._fila, vals);
+  const p2 = { ...p, ...vals };
+
+  // Avisos (solo si ya estaba enviado; solo observaciones = silencioso)
+  const avisos = [];
+  if (p.Estado_Envio === 'Enviado') {
+    if (dif.includes('responsable')) {
+      const sale = await avisar(antes.responsable, `🔄 Cambio de asignación\n\nYa no estás asignado/a al pendiente "${antes.titulo}" (${id}).`);
+      avisos.push({ empleado: antes.responsable, ok: sale });
+      const e = await enviarUno(r.h, p2, 'Nuevo pendiente');
+      if (e !== 'ok') await poner(r.h, p._fila, { Estado_Envio: 'Borrador' }); // queda para reenviar con "Guardar y enviar"
+      avisos.push({ empleado: f.responsable, ok: e === 'ok' });
+    } else if (dif.some(k => k !== 'obs')) {
+      const lineas = dif.map(k => `${CAMPO_ETQ[k]}: ${antes[k] || '(vacío)'} → ${f[k] || '(vacío)'}`).join('\n');
+      const ok = await avisar(f.responsable, `🔄 Cambios en tu pendiente (${id})\n\n${lineas}\n\n${texto(p2, 'Pendiente actualizado')}`, id, 'Pendiente actualizado');
+      avisos.push({ empleado: f.responsable, ok });
+    }
+  }
+  const malos = avisos.filter(a => !a.ok).map(a => a.empleado);
+  if (malos.length) {
+    const reenvio = dif.includes('responsable') && avisos.some(a => a.empleado === f.responsable && !a.ok) ? ' El pendiente volvió a Borrador para reenviarlo.' : '';
+    await notificarGerencia(`No se pudo avisar a ${malos.join(', ')} del cambio en el pendiente ${id} (${f.titulo}). Avísale directamente.${reenvio}`, 'urgente');
+  }
+  await hist(id, 'Editado', dif.map(k => `${CAMPO_ETQ[k]}: ${antes[k] || '(vacío)'} → ${f[k] || '(vacío)'}`).join(' | ')
+    + (avisos.length ? ` · Avisos: ${avisos.map(a => `${a.empleado} ${a.ok ? 'Sí' : 'Error'}`).join(', ')}` : ''), admin);
+  return { ok: true, avisos };
+}
+
 // ---------- Cierre / notas / cancelación ----------
 async function _cerrar({ id, nota, por, via }) {
   const r = await obtener(id);
@@ -262,7 +351,8 @@ async function paginaPendientes(query, admin) {
   const rows = vis.length ? vis.map(p => {
     const v = vencido(p, hoy);
     const id = esc(p.ID_Pendiente);
-    const acc = p.Estado === 'Abierto' ? `<button class="btn" data-id="${id}" onclick="tpCerrar(this.dataset.id)">Resolver</button>
+    const acc = p.Estado === 'Abierto' ? `<button class="btn" data-id="${id}" onclick="tpEditar(this.dataset.id)">Editar</button>
+      <button class="btn" data-id="${id}" onclick="tpCerrar(this.dataset.id)">Resolver</button>
       ${p.Estado_Envio === 'Enviado' ? `<button class="btn" data-id="${id}" onclick="tpRecordar(this.dataset.id)">Recordar</button>` : ''}
       <button class="btn" data-id="${id}" onclick="tpCancelar(this.dataset.id)">Cancelar</button>` : '';
     const det = [['Observaciones', p.Observaciones], ['Seguimiento', p.Notas_Seguimiento], ['Cierre', p.Nota_Cierre && `${p.Nota_Cierre} — ${p.Cerrado_Por} ${p.Fecha_Cierre}`], ['Creado', `${p.Creado_Por} ${p.Fecha_Creacion}`], ['Último recordatorio', p.Ultimo_Recordatorio]]
@@ -284,7 +374,7 @@ ${f.responsable ? `<button type="button" class="btn" onclick="tpRecordarEmp(${es
 <table><tr><th>ID</th><th>Tipo</th><th>Pendiente</th><th>Cliente</th><th>ID servicio</th><th>Responsable</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr>${rows}</table>
 <script>
 (function(){
-  var M=${js({ clientes: m.clientes.map(c => c.n), empleados: m.empleados.map(e => ({ n: e.n, wa: e.wa })) })}, TIPOS=${js(TIPOS)}, PRIOS=${js(PRIOS)};
+  var M=${js({ clientes: m.clientes.map(c => c.n), empleados: m.empleados.map(e => ({ n: e.n, wa: e.wa })) })}, TIPOS=${js(TIPOS)}, PRIOS=${js(PRIOS)}, EDIT=${js(datosEdicion(filas))};
   var cuerpo=document.getElementById('gc'), msg=document.getElementById('msg');
   function el(t,p){var e=document.createElement(t);for(var k in p)e[k]=p[k];return e;}
   function sel(c,ops,v,vacio){var s=el('select',{className:c});if(vacio)s.appendChild(el('option',{value:'',textContent:vacio}));ops.forEach(function(o){var n=o.n||o;s.appendChild(el('option',{value:n,textContent:n+(o.wa===false?' ⚠ sin WhatsApp':'')}));});s.value=v||'';return s;}
@@ -336,6 +426,68 @@ ${f.responsable ? `<button type="button" class="btn" onclick="tpRecordarEmp(${es
   window.tpCancelar=function(id){var n=prompt('Motivo de la cancelación (obligatorio):');if(n===null)return;post('/pendientes/cancelar',{id:id,motivo:n}).then(function(r){if(!r)return;if(!r.ok){alert(r.general);return;}location.reload();});};
   window.tpRecordar=function(id){post('/pendientes/recordar',{id:id}).then(function(r){if(!r)return;alert(r.ok?'Recordatorio enviado: '+r.enviados:r.general);location.reload();});};
   window.tpRecordarEmp=function(n){if(!confirm('¿Enviar un recordatorio por cada pendiente abierto de '+n+'?'))return;post('/pendientes/recordar',{responsable:n}).then(function(r){if(!r)return;alert(r.ok?'Recordatorios enviados: '+r.enviados:r.general);location.reload();});};
+
+  var ED=null, dlg=null, F={};
+  function opcionesSel(s,lista,v,vacio){
+    if(vacio)s.appendChild(el('option',{value:'',textContent:vacio}));
+    var hay=false;
+    lista.forEach(function(o){var n=o.n||o;if(n===v)hay=true;s.appendChild(el('option',{value:n,textContent:n+(o.wa===false?' ⚠ sin WhatsApp':'')}));});
+    if(v&&!hay)s.appendChild(el('option',{value:v,textContent:v+' (no activo)'}));
+    s.value=v||'';
+  }
+  function campoEd(k,et,nodo){
+    F[k]=nodo;var l=el('label',{});l.style.display='block';l.style.margin='8px 0';
+    l.appendChild(document.createTextNode(et));l.appendChild(el('br',{}));
+    nodo.style.width='100%';nodo.style.boxSizing='border-box';l.appendChild(nodo);dlg.appendChild(l);
+  }
+  function construirDlg(){
+    dlg=el('dialog',{});
+    dlg.style.cssText='max-width:440px;width:92%;border:1px solid #ccc;border-radius:10px;padding:18px;';
+    var h=el('h3',{textContent:'Editar pendiente'});h.style.marginTop='0';dlg.appendChild(h);
+    var sT=el('select',{});TIPOS.forEach(function(t){sT.appendChild(el('option',{value:t,textContent:t}));});
+    var sP=el('select',{});PRIOS.forEach(function(t){sP.appendChild(el('option',{value:t,textContent:t}));});
+    campoEd('tipo','Tipo',sT);
+    campoEd('titulo','Título',el('input',{type:'text',maxLength:150}));
+    campoEd('cliente','Cliente',el('select',{}));
+    campoEd('idServ','ID de servicio (opcional)',el('input',{type:'text',placeholder:'PRG-AAAAMMDD-NN'}));
+    campoEd('responsable','Responsable',el('select',{}));
+    campoEd('fecha','Fecha límite',el('input',{type:'date'}));
+    var hi=el('input',{type:'time'}),hf=el('input',{type:'time'});F.inicio=hi;F.fin=hf;
+    var lh=el('label',{});lh.style.display='block';lh.style.margin='8px 0';
+    lh.appendChild(document.createTextNode('Horario'));lh.appendChild(el('br',{}));lh.appendChild(hi);lh.appendChild(document.createTextNode(' – '));lh.appendChild(hf);dlg.appendChild(lh);
+    campoEd('prioridad','Prioridad',sP);
+    campoEd('obs','Observaciones',el('input',{type:'text',maxLength:800}));
+    F.nota=el('p',{});F.nota.style.cssText='font-size:12px;color:#777;';dlg.appendChild(F.nota);
+    F.err=el('p',{className:'mal'});dlg.appendChild(F.err);
+    var bo=el('button',{type:'button',className:'btn ok',textContent:'Guardar'});bo.onclick=guardarEd;F.btn=bo;
+    var bc=el('button',{type:'button',className:'btn',textContent:'Cancelar'});bc.onclick=function(){dlg.close();};
+    var bx=el('div',{});bx.appendChild(bo);bx.appendChild(document.createTextNode(' '));bx.appendChild(bc);dlg.appendChild(bx);
+    document.body.appendChild(dlg);
+  }
+  function guardarEd(){
+    var d={tipo:F.tipo.value,titulo:F.titulo.value,cliente:F.cliente.value,idServ:F.idServ.value,responsable:F.responsable.value,fecha:F.fecha.value,inicio:F.inicio.value,fin:F.fin.value,prioridad:F.prioridad.value,obs:F.obs.value};
+    F.btn.disabled=true;F.err.textContent='';
+    post('/pendientes/editar',{id:ED,datos:d}).then(function(r){
+      F.btn.disabled=false;if(!r)return;
+      if(r.general){F.err.textContent=r.general;return;}
+      if(!r.ok){F.err.textContent=((r.errores&&r.errores[0])||[]).join(' · ')||'No se guardó.';return;}
+      var malos=(r.avisos||[]).filter(function(a){return !a.ok;}).map(function(a){return a.empleado;});
+      if(malos.length)alert('Guardado, pero no se pudo avisar por WhatsApp a: '+malos.join(', ')+'. Avísale directamente.');
+      location.reload();
+    }).catch(function(){F.btn.disabled=false;F.err.textContent='Error de conexión.';});
+  }
+  window.tpEditar=function(id){
+    var d=EDIT[id];if(!d)return;
+    if(!dlg)construirDlg();
+    ED=id;
+    F.tipo.value=d.tipo;F.titulo.value=d.titulo;F.obs.value=d.obs;F.idServ.value=d.idServ;F.fecha.value=d.fecha;
+    F.inicio.value=d.inicio;F.fin.value=d.fin;F.prioridad.value=d.prioridad;
+    F.cliente.innerHTML='';opcionesSel(F.cliente,M.clientes,d.cliente,'(sin cliente)');
+    F.responsable.innerHTML='';opcionesSel(F.responsable,M.empleados,d.responsable,'Responsable…');
+    F.nota.textContent=d.env?'Ya enviado: cualquier cambio, salvo observaciones, avisa al empleado por WhatsApp. Si cambias el responsable, avisa al anterior y al nuevo.':'Borrador: no se avisa a nadie.';
+    F.err.textContent='';dlg.showModal();
+  };
+
   agregar();
 })();
 </script></body></html>`;
@@ -375,5 +527,6 @@ module.exports = {
   guardar,
   cerrar: a => enSerie(() => _cerrar(a)),
   cancelar: a => enSerie(() => _cancelar(a)),
+  editar: a => enSerie(() => _editar(a)),
   recordar: (a, admin) => enSerie(() => _recordar(a, admin)),
 };
