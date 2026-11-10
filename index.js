@@ -9,7 +9,7 @@ const pend = require('./pendientes');
 const { invalidarCache, edadCacheSegundos } = require('./sheets');
 const { paginaAgenda } = require('./agenda');
 const nomina = require('./nomina');
-
+const path = require('path');
 
 function escaparHtml(t) {
   return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -40,6 +40,7 @@ function escaparXml(texto) {
 app.use(express.urlencoded({ extended: false }));
 
 app.use(express.json({ limit: '200kb' }));
+app.use('/static', express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
 
 // Ruta de salud, para confirmar que el servidor esta vivo
 app.get('/', (req, res) => {

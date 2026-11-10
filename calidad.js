@@ -1,6 +1,7 @@
 const { leerHoja } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida, filasDelRango } = require('./agenda');
 const menu = require('./menu');
+const layout = require('./layout');
 const K = require('./cartera').helpers;
 const P = require('./pagos');
 const { cargarTabla, cargarTarifas, armar, numero, r2, usd, esc, CS_H, NV_H, CSS } = K;
@@ -110,9 +111,11 @@ async function paginaLista(query, admin) {
       <td>${ci ? esc(ci._fecha) : '<small>Nunca</small>'}</td><td>${sup}</td><td class="num">${prom}</td></tr>`;
   }).join('') || '<tr><td colspan="8" style="text-align:center;color:#888;padding:20px;">No hay clientes para este filtro.</td></tr>';
   const btn = (n, t) => `<a class="btn${filtro === n ? ' hoy' : ''}" href="/cartera/calidad${n ? '?nivel=' + n : ''}">${t}</a>`;
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Calidad de clientes</title><style>${CSS}${CSS_CAL}${menu.MENU_CSS}</style></head><body class="rep">
-<div class="top"><h2 style="margin:0;">Calidad de clientes</h2>${menu.menuHtml('/cartera', admin)}</div>
-<div class="nav"><a class="btn" href="/cartera">← Cartera</a><a class="btn" href="/cartera/reportes">Reportes</a>
+  
+  return `${layout.head('Calidad de clientes', CSS + CSS_CAL, 'rep')}
+${layout.cabecera({ titulo: 'Calidad de clientes', seccion: '/cartera', admin, sub: 'cartera', activa: 'calidad' })}
+<div class="nav">
+
   ${btn('', 'Todos (' + evs.length + ')')}${btn('rojo', '🔴 Rojo (' + cuenta.rojo + ')')}${btn('amarillo', '🟡 Amarillo (' + cuenta.amarillo + ')')}${btn('verde', '🟢 Verde (' + cuenta.verde + ')')}</div>
 <div class="aviso">Solo clientes vigentes, ordenados del mayor al menor riesgo. "Servicios" cuenta solo los ejecutados. El semáforo considera quejas, inspecciones, cierres con pendientes y si hubo revisión de supervisor en los últimos ${VENTANA_SUP} servicios ejecutados.</div>
 <input type="search" placeholder="Buscar cliente..." oninput="cBuscar(this.value)" style="padding:7px;border:1px solid #ccc;border-radius:6px;font-size:14px;margin-bottom:8px;width:260px;">
@@ -176,8 +179,10 @@ async function paginaFicha(query, admin) {
   const tablaNotas = act.length ? `<div class="scroll"><table><tr><th>Fecha</th><th>Fuente</th><th>Categoría</th><th class="num">Calif.</th><th>Detalle</th></tr>${act.slice(0, 20).map(n => `<tr><td>${esc(normalizarFecha(n.Fecha))}</td><td>${esc(n.Fuente)}</td><td>${esc(n.Categoria)}</td><td class="num">${estr(n)}</td><td class="wrap">${esc(n.Detalle)}</td></tr>`).join('')}</table></div>` : '<p><small>Sin notas.</small></p>';
 
   const cartera = await carteraCliente(cliente);
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Calidad — ${esc(cliente)}</title><style>${CSS}${CSS_CAL}${menu.MENU_CSS}</style></head><body class="rep">
-<div class="top"><h2 style="margin:0;">${punto(e.nivel)}${esc(cliente)}</h2>${menu.menuHtml('/cartera', admin)}</div>
+
+  return `${layout.head('Calidad — ' + cliente, CSS + CSS_CAL, 'rep')}
+${layout.cabecera({ tituloHtml: punto(e.nivel) + esc(cliente), seccion: '/cartera', admin, sub: 'cartera', activa: 'calidad' })}
+
 <div class="nav"><a class="btn" href="/cartera/calidad">← Calidad de clientes</a><a class="btn" href="/cartera/cliente?c=${encodeURIComponent(cliente)}">Cobros del cliente</a></div>
 ${sec(`Semáforo: ${ETQ[e.nivel]}`, motivos + supHtml)}
 ${sec('Resumen de notas y retroalimentación', resNotas + tablaNotas)}

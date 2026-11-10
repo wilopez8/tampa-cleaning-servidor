@@ -1,5 +1,6 @@
 const { normalizarFecha, fechaValida, hoyFlorida } = require('./agenda');
 const menu = require('./menu');
+const layout = require('./layout');
 const K = require('./cartera').helpers;
 const C = () => require('./cartera'); // diferido: evita ciclos
 const P = require('./pagos');
@@ -154,9 +155,10 @@ async function paginaReportes(q, admin) {
   const css = `.rep h3{margin:22px 0 6px;border-bottom:1px solid #ddd;padding-bottom:4px;} .rep h4{margin:12px 0 4px;} .rep .scroll{max-height:none;} .rep td,.rep th{padding:5px 8px;}
     .sec{margin:14px 0;} .sec>summary{cursor:pointer;font-size:17px;font-weight:bold;padding:6px 0;border-bottom:1px solid #ddd;margin-bottom:8px;} .tbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;}
     .ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;} .ctl label{font-size:13px;display:block;} .ctl input{padding:6px;border:1px solid #ccc;border-radius:6px;}`;
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Reportes</title><style>${CSS}${CSS_PAGOS}${css}${menu.MENU_CSS}</style></head><body class="rep">
-<div class="top"><h2 style="margin:0;">Reportes de cartera</h2>${menu.menuHtml('/cartera', admin)}</div>
-<div class="nav"><a class="btn" href="/cartera">← Cartera</a><a class="btn" href="/cartera/pagos">Ingresos</a><a class="btn" href="/cartera/egresos">Egresos</a>
+  
+    return `${layout.head('Reportes', CSS + CSS_PAGOS + css, 'rep')}
+${layout.cabecera({ titulo: 'Reportes de cartera', seccion: '/cartera', admin, sub: 'cartera', activa: 'reportes' })}
+<div class="nav">
   <a class="btn" href="/cartera/reportes?${esc(qsDe({ ...base, desde: mesAct + '-01', hasta: finMes }))}">Este mes</a>
   <a class="btn" href="/cartera/reportes?${esc(qsDe({ ...base, desde: ay + '-01-01', hasta: ay + '-12-31', anio: String(ay) }))}">Este año</a></div>
 <form method="GET" action="/cartera/reportes"><div class="ctl">

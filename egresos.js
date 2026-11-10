@@ -1,6 +1,7 @@
 const { leerHoja, agregarFila, actualizarCeldas } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida } = require('./agenda');
 const menu = require('./menu');
+const layout = require('./layout');
 const K = require('./cartera').helpers; // cartera.js no carga este archivo, así que no hay ciclo
 const { METODOS, CUENTAS, EFECTIVO_MANO, CSS_PAGOS, seleccion, qsDe, grupoChecks } = require('./pagos');
 const { cargarTabla, enCola, bit, aFila, poner, numero, r2, usd, esc, err, motivoOk, ahora, mesValido, sumarMes, CSS } = K;
@@ -281,9 +282,10 @@ async function paginaEgresos(query, admin) {
   const sel = (n, et, ops, a) => `<select name="${n}"><option value="">${et}</option>${ops.map(o => `<option value="${esc(o)}"${a === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   const etiqueta = mes === 'todo' ? 'Todo el histórico' : mes;
   const nav = mes === 'todo' ? '' : `<a class="btn" href="${esc(u({ mes: sumarMes(mes, -1) }))}">←</a><a class="btn hoy" href="${esc(u({ mes: hoy.slice(0, 7) }))}">Este mes</a><a class="btn" href="${esc(u({ mes: sumarMes(mes, 1) }))}">→</a>`;
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Egresos ${esc(etiqueta)}</title><style>${CSS}${CSS_PAGOS}${CSS_EGRESOS}${menu.MENU_CSS}</style></head><body>
-<div class="top"><h2 style="margin:0;">Egresos — ${esc(etiqueta)}</h2>${menu.menuHtml('/cartera', admin)}</div>
-<div class="nav"><a class="btn" href="/cartera">← Cartera</a><a class="btn" href="/cartera/pagos">Ingresos</a><a class="btn" href="/cartera/reportes">Reportes</a>${nav}
+  
+  return `${layout.head('Egresos ' + etiqueta, CSS + CSS_PAGOS + CSS_EGRESOS)}
+${layout.cabecera({ titulo: 'Egresos — ' + etiqueta, seccion: '/cartera', admin, sub: 'cartera', activa: 'egresos', mes })}
+<div class="nav">${nav}  
   <a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
   <button class="btn hoy" onclick="egGasto()">Registrar gasto</button><button class="btn hoy" onclick="egEventual()">Pago eventual a empleado</button></div>
 <h3 style="margin:8px 0;">Liquidaciones por pagar${porPagar.length ? ` <small>(${porPagar.length} · ${usd(totPorPagar)})</small>` : ''}</h3>

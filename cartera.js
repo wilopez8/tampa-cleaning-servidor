@@ -1,6 +1,7 @@
 const { leerHoja, agregarFila, agregarFilas, actualizarCeldas, asegurarHoja } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida, filasDelRango } = require('./agenda');
 const menu = require('./menu');
+const layout = require('./layout');
 const P = () => require('./pagos'); // carga diferida: pagos.js usa los helpers de este archivo
 const N = () => require('./notas'); // carga diferida: notas.js usa los helpers de este archivo
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -440,12 +441,11 @@ async function paginaCartera(query, admin, vista) {
   const mesNav = mes === 'todo' ? '' : `<a class="btn" href="${esc(url({ mes: sumarMes(mes, -1) }))}">←</a>
     <a class="btn hoy" href="${esc(url({ mes: hoy.slice(0, 7) }))}">Este mes</a><a class="btn" href="${esc(url({ mes: sumarMes(mes, 1) }))}">→</a>`;
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Cartera ${esc(etiquetaMes)}</title><style>${CSS}${P().CSS_PAGOS}${menu.MENU_CSS}</style></head><body>
-<div class="top"><h2 style="margin:0;">Cartera — ${esc(etiquetaMes)}</h2>${menu.menuHtml('/cartera', admin)}</div>
+  return `${layout.head('Cartera ' + etiquetaMes, CSS + P().CSS_PAGOS)}
+${layout.cabecera({ titulo: 'Cartera — ' + etiquetaMes, seccion: '/cartera', admin, sub: 'cartera', activa: soloClientes ? 'clientes' : 'servicios', mes })}
 <div class="nav">${mesNav}
   <a class="btn" href="${esc(url({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
   <a class="btn" href="${esc(url({ sync: '1' }))}">Sincronizar ahora</a>
-  <a class="btn${soloClientes ? '' : ' hoy'}" href="${esc('/cartera?mes=' + mes)}">Servicios</a><a class="btn${soloClientes ? ' hoy' : ''}" href="${esc('/cartera/clientes?mes=' + mes)}">Clientes</a><a class="btn" href="/cartera/pagos">Ingresos</a><a class="btn" href="/cartera/egresos">Egresos</a><a class="btn" href="/cartera/reportes">Reportes</a><a class="btn" href="/cartera/calidad">Calidad</a>
 </div>
 ${errSync ? `<div class="aviso r">No se pudo sincronizar con la agenda: ${esc(errSync)}</div>` : ''}
 ${tar.hayColumna ? '' : '<div class="aviso r">Falta la columna <b>Tarifa_Servicio</b> en la hoja SITIOS: ningún servicio tendrá valor.</div>'}
@@ -453,7 +453,8 @@ ${(G.conf || G.sin) ? `<div class="aviso y">${G.conf ? `<a href="${esc(url({ est
 <div class="aviso">Se cargan los servicios desde <b>${esc(cfg.inicio)}</b> (hoja CONFIG_CARTERA). Un cobro = un cliente por día (si va un equipo, es un solo cobro). Las inspecciones no entran. Total = valor del servicio + novedades de cobro. Las novedades se registran desde la agenda.</div>
 ${soloClientes ? `<input type="search" placeholder="Buscar cliente..." oninput="tcBuscar(this.value)" style="padding:7px;border:1px solid #ccc;border-radius:6px;font-size:14px;margin-bottom:8px;width:260px;"><div class="scroll g"><table class="res"><tr><th>Cliente</th><th class="num">Servicios ejecutados</th><th class="num">Valor servicios</th><th class="num">Novedades</th><th class="num">Total a cobrar</th><th class="num">Cobrado</th><th class="num">Saldo</th><th class="num">Por confirmar</th><th class="num">Sin tarifa</th></tr>${filasRes}
 <tfoot><tr><td>Total</td><td class="num">${G.n}</td><td class="num">${usd(G.base)}</td><td class="num">${usd(G.nov)}</td><td class="num">${usd(r2(G.base + G.nov))}</td><td class="num">${usd(r2(G.cob))}</td><td class="num">${usd(r2(G.sal))}</td><td class="num">${G.conf}</td><td class="num">${G.sin}</td></tr></tfoot></table></div>` : ''}
-${soloClientes ? '' : `<div class="aviso" style="background:#f0fdf4;">Período: <b>${G.n}</b> servicios ejecutados · valor ${usd(G.base)} · novedades ${usd(G.nov)} · <b>total a cobrar ${usd(r2(G.base + G.nov))}</b></div>
+
+${soloClientes ? '' : `${layout.kpis([['Servicios ejecutados', G.n], ['Valor servicios', usd(G.base)], ['Novedades', usd(G.nov)], ['Total a cobrar', usd(r2(G.base + G.nov))], ['Cobrado', usd(r2(G.cob))], ['Saldo', usd(r2(G.sal)), G.sal > 0.004 ? 'neg' : '']])}
 <form class="filtros" method="GET" action="/cartera"><input type="hidden" name="mes" value="${esc(mes)}">
   <input type="search" name="cliente" list="lstCli" value="${esc(fCli)}" placeholder="Buscar cliente..." autocomplete="off" onchange="this.form.submit()" style="padding:7px;border:1px solid #ccc;border-radius:6px;font-size:14px;width:260px;"><datalist id="lstCli">${clientes.map(k => `<option value="${esc(k)}">`).join('')}</datalist>${sel('estado', 'Todos los estados', ESTADOS, fEst)}
   <button class="btn">Filtrar</button> <a class="btn" href="${esc(url({ cliente: '', estado: '' }))}">Limpiar</a></form>
@@ -644,9 +645,9 @@ async function paginaCliente(query, admin) {
   const mesNav = mes === 'todo' ? '' : `<a class="btn" href="${esc(u({ mes: sumarMes(mes, -1) }))}">←</a>
     <a class="btn hoy" href="${esc(u({ mes: hoy.slice(0, 7) }))}">Este mes</a><a class="btn" href="${esc(u({ mes: sumarMes(mes, 1) }))}">→</a>`;
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Cartera · ${esc(cliente)}</title><style>${CSS}${CSS_DETALLE}${P().CSS_PAGOS}${menu.MENU_CSS}</style></head><body>
-<div class="top"><h2 style="margin:0;">${esc(cliente)} ${badgeMetodo(tar, cliente)}</h2>${menu.menuHtml('/cartera', admin)}</div>
-<div class="nav"><a class="btn" href="${esc('/cartera?mes=' + mes)}">← Cartera</a>${mesNav}
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ingresos ${esc(etiqueta)}</title><style>${CSS}${CSS_PAGOS}${menu.MENU_CSS}</style></head><body>
+<div class="top"><h2 style="margin:0;">Ingresos — ${esc(etiqueta)}</h2>${menu.menuHtml('/cartera', admin)}</div>
+<div class="nav"><a class="btn" href="/cartera">← Cartera</a><a class="btn" href="/cartera/egresos">Egresos</a><a class="btn" href="/cartera/reportes">Reportes</a>${nav}
   <a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
   <a class="btn" href="${esc(u({ sync: '1' }))}">Sincronizar ahora</a>${P().botonesPago(cliente, tar)}${N().botonNuevaNota(cliente)}<a class="btn" href="/cartera/pagos">Todos los pagos</a><b style="margin-left:8px;">${esc(etiquetaMes)}</b></div>
 ${errSync ? `<div class="aviso r">No se pudo sincronizar con la agenda: ${esc(errSync)}</div>` : ''}

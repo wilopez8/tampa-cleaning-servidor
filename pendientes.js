@@ -2,6 +2,7 @@ const { leerHoja, agregarFila, agregarFilas, actualizarCeldas, asegurarHoja } = 
 const { enviarWhatsApp, notificarGerencia, buscarTelefonoPorNombre, buscarEmpleadoPorTelefono, BASE_URL } = require('./logica');
 const { fechaValida, hoyFlorida, normalizarFecha } = require('./agenda');
 const edicion = require('./edicion');
+const layout = require('./layout');
 
 const HOJA = 'PENDIENTES', HOJA_MSG = 'PENDIENTES_MENSAJES', HOJA_HIST = 'PENDIENTES_HISTORIAL';
 const ENC = ['ID_Pendiente', 'Tipo', 'Titulo', 'Observaciones', 'Cliente', 'ID_Programacion', 'Responsable', 'Fecha_Limite', 'Hora_Inicio', 'Hora_Fin',
@@ -326,16 +327,161 @@ async function procesarOkSinReply(telefono, texto) {
 }
 
 // ---------- Páginas ----------
-const CSS = `
-body{font-family:-apple-system,Arial,sans-serif;margin:0;padding:20px 28px;color:#222;background:#f6f7f9;}
-a{color:#1d4ed8;text-decoration:none;} .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
-.btn{background:#fff;border:1px solid #ccc;border-radius:6px;padding:7px 12px;font-size:14px;cursor:pointer;color:#222;display:inline-block;}
-.ok{background:#2e7d32;color:#fff;border-color:#2e7d32;}
-.box{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:14px;}
-table{width:100%;border-collapse:collapse;background:#fff;} th,td{padding:8px;text-align:left;font-size:14px;border-bottom:1px solid #eee;vertical-align:top;}
-th{background:#f1f3f5;} select,input[type=text],input[type=date],input[type=time]{padding:6px;border:1px solid #ccc;border-radius:6px;font-size:14px;}
-.est{padding:2px 8px;border-radius:10px;font-size:12px;background:#e5e7eb;} .Resuelto{background:#bbf7d0;} .venc{background:#fecaca;} .alta{color:#b91c1c;font-weight:600;}
-.mal{color:#b91c1c;font-size:12px;} small{color:#777;} .filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center;}`;
+const CSS_PEND = `
+.gridn{table-layout:auto;} #gc td{padding:6px;border-bottom:0;}
+.gridn input[type=text]{width:100%;min-width:120px;} .gridn input.sv{min-width:150px;} .gridn select{max-width:170px;}
+.acc-nuevo{margin:12px 0 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;}`;
+
+const SCRIPT_PEND = String.raw`
+(function(){
+  var NL=String.fromCharCode(10), post=TC.post;
+  var cuerpo=document.getElementById('gc'), msg=document.getElementById('msg');
+  function el(t,p){var e=document.createElement(t);for(var k in p)e[k]=p[k];return e;}
+  function sel(c,ops,v,vacio){var s=el('select',{className:c});if(vacio)s.appendChild(el('option',{value:'',textContent:vacio}));ops.forEach(function(o){var n=o.n||o;s.appendChild(el('option',{value:n,textContent:n+(o.wa===false?' ⚠ sin WhatsApp':'')}));});s.value=v||'';return s;}
+  function td(h){var c=el('td');c.appendChild(h);return c;}
+  function agregar(){
+    var tr=el('tr');
+    tr.appendChild(td(sel('t',TIPOS,'Otro')));
+    tr.appendChild(td(el('input',{type:'text',className:'ti',placeholder:'Título',maxLength:150})));
+    tr.appendChild(td(sel('c',M.clientes,'','(sin cliente)')));
+    tr.appendChild(td(el('input',{type:'text',className:'sv',placeholder:'PRG-AAAAMMDD-NN'})));
+    tr.appendChild(td(sel('r',M.empleados,'','Responsable…')));
+    tr.appendChild(td(el('input',{type:'date',className:'fe'})));
+    var h=el('td');h.appendChild(el('input',{type:'time',className:'i'}));h.appendChild(document.createTextNode(' – '));h.appendChild(el('input',{type:'time',className:'f'}));tr.appendChild(h);
+    tr.appendChild(td(sel('p',PRIOS,'Normal')));
+    tr.appendChild(td(el('input',{type:'text',className:'o',placeholder:'Observaciones',maxLength:800})));
+    tr.appendChild(el('td',{className:'mal'}));
+    tr.appendChild(td(el('button',{type:'button',className:'btn mini',textContent:'✕',onclick:function(){tr.remove();}})));
+    cuerpo.appendChild(tr);
+  }
+  function leer(){return Array.prototype.map.call(cuerpo.rows,function(tr){var q=function(c){return tr.querySelector('.'+c).value;};
+    return {tipo:q('t'),titulo:q('ti'),cliente:q('c'),idServ:q('sv'),responsable:q('r'),fecha:q('fe'),inicio:q('i'),fin:q('f'),prioridad:q('p'),obs:q('o')};});}
+  function hayProblemas(r){return !!((r.sinNumero&&r.sinNumero.length)||(r.fallidos&&r.fallidos.length));}
+  function resumenEnvio(r){var t='Enviados: '+r.enviados;if(r.sinNumero&&r.sinNumero.length)t+=NL+'Sin WhatsApp: '+r.sinNumero.join(', ');if(r.fallidos&&r.fallidos.length)t+=NL+'No se pudo enviar a: '+r.fallidos.join(', ')+' (siguen en Borrador)';return t;}
+  function terminar(texto,problema){
+    if(problema){TC.alerta(texto,{titulo:'Revisa esto'}).then(function(){location.reload();});return;}
+    TC.toast(texto);setTimeout(function(){location.reload();},900);
+  }
+  function guardar(enviar,b){
+    var f=leer();
+    var paso=enviar?TC.confirmar('Cada responsable recibirá un mensaje por cada pendiente en Borrador.',{titulo:'Guardar y enviar',si:'Enviar'}):Promise.resolve(true);
+    paso.then(function(ok){
+      if(!ok)return;
+      b.disabled=true;msg.textContent=enviar?'Enviando…':'';
+      return post('/pendientes/guardar',{filas:f,enviar:enviar,soloEnviar:false}).then(function(r){
+        b.disabled=false;if(!r)return;
+        if(r.general){msg.textContent=r.general;return;}
+        if(!r.ok){Array.prototype.forEach.call(cuerpo.rows,function(tr,i){tr.cells[9].textContent=((r.errores&&r.errores[i])||[]).join(' · ');});msg.textContent='No se guardó: revisa las filas marcadas.';return;}
+        var t='Creados: '+r.creados;
+        if(enviar)t+=NL+resumenEnvio(r);
+        terminar(t,enviar&&hayProblemas(r));
+      });
+    }).catch(function(){b.disabled=false;msg.textContent='Error de conexión.';});
+  }
+  document.getElementById('mas').onclick=agregar;
+  document.getElementById('gu').onclick=function(){guardar(false,this);};
+  document.getElementById('en').onclick=function(){
+    var b=this,f=leer().filter(function(x){return x.titulo||x.responsable||x.obs||x.cliente;});
+    if(!f.length){ // sin filas nuevas: solo envía los Borrador existentes
+      TC.confirmar('Se enviarán los pendientes que están en Borrador.',{titulo:'Enviar borradores',si:'Enviar'}).then(function(ok){
+        if(!ok)return;b.disabled=true;
+        post('/pendientes/guardar',{filas:[],enviar:true,soloEnviar:true}).then(function(r){
+          b.disabled=false;if(!r)return;if(r.general){TC.alerta(r.general);return;}
+          terminar(resumenEnvio(r),hayProblemas(r));
+        });
+      });
+      return;
+    }
+    guardar(true,b);
+  };
+  window.tpCerrar=function(id){
+    TC.pedir({titulo:'Resolver pendiente',etiqueta:'Nota de cierre (opcional)',si:'Resolver'}).then(function(n){
+      if(n===null)return;
+      post('/pendientes/cerrar',{id:id,nota:n}).then(function(r){if(!r)return;if(!r.ok){TC.alerta(r.general);return;}TC.toast('Pendiente resuelto.');setTimeout(function(){location.reload();},700);});
+    });
+  };
+  window.tpCancelar=function(id){
+    TC.pedir({titulo:'Cancelar pendiente',etiqueta:'Motivo de la cancelación (obligatorio)',min:3,si:'Cancelar pendiente'}).then(function(n){
+      if(n===null)return;
+      post('/pendientes/cancelar',{id:id,motivo:n}).then(function(r){if(!r)return;if(!r.ok){TC.alerta(r.general);return;}TC.toast('Pendiente cancelado.');setTimeout(function(){location.reload();},700);});
+    });
+  };
+  window.tpRecordar=function(id){
+    post('/pendientes/recordar',{id:id}).then(function(r){if(!r)return;if(!r.ok){TC.alerta(r.general);return;}TC.toast('Recordatorio enviado: '+r.enviados);setTimeout(function(){location.reload();},900);});
+  };
+  window.tpRecordarEmp=function(n){
+    TC.confirmar('Se enviará un recordatorio por cada pendiente abierto de '+n+'.',{titulo:'Recordar pendientes',si:'Enviar'}).then(function(ok){
+      if(!ok)return;
+      post('/pendientes/recordar',{responsable:n}).then(function(r){if(!r)return;if(!r.ok){TC.alerta(r.general);return;}TC.toast('Recordatorios enviados: '+r.enviados);setTimeout(function(){location.reload();},900);});
+    });
+  };
+
+  // ----- diálogo de edición -----
+  var ED=null, dlg=null, F={}, grid=null;
+  function opcionesSel(s,lista,v,vacio){
+    s.innerHTML='';
+    if(vacio)s.appendChild(el('option',{value:'',textContent:vacio}));
+    var hay=false;
+    lista.forEach(function(o){var n=o.n||o;if(n===v)hay=true;s.appendChild(el('option',{value:n,textContent:n+(o.wa===false?' ⚠ sin WhatsApp':'')}));});
+    if(v&&!hay)s.appendChild(el('option',{value:v,textContent:v+' (no activo)'}));
+    s.value=v||'';
+  }
+  function campoEd(k,et,nodo,full){
+    F[k]=nodo;var l=el('label',{className:full?'full':''});
+    l.appendChild(document.createTextNode(et));l.appendChild(nodo);grid.appendChild(l);
+  }
+  function construirDlg(){
+    dlg=el('dialog',{className:'tc-dlg ancho'});
+    dlg.appendChild(el('h3',{textContent:'Editar pendiente'}));
+    grid=el('div',{className:'tc-grid'});dlg.appendChild(grid);
+    var sT=el('select',{});TIPOS.forEach(function(t){sT.appendChild(el('option',{value:t,textContent:t}));});
+    var sP=el('select',{});PRIOS.forEach(function(t){sP.appendChild(el('option',{value:t,textContent:t}));});
+    campoEd('titulo','Título',el('input',{type:'text',maxLength:150}),true);
+    campoEd('tipo','Tipo',sT);
+    campoEd('prioridad','Prioridad',sP);
+    campoEd('cliente','Cliente',el('select',{}));
+    campoEd('responsable','Responsable',el('select',{}));
+    campoEd('fecha','Fecha límite',el('input',{type:'date'}));
+    campoEd('idServ','ID de servicio (opcional)',el('input',{type:'text',placeholder:'PRG-AAAAMMDD-NN'}));
+    var hi=el('input',{type:'time'}),hf=el('input',{type:'time'});F.inicio=hi;F.fin=hf;
+    var lh=el('label',{className:'full'});lh.appendChild(document.createTextNode('Horario'));
+    var par=el('div',{className:'tc-par'});par.appendChild(hi);par.appendChild(document.createTextNode('–'));par.appendChild(hf);lh.appendChild(par);grid.appendChild(lh);
+    campoEd('obs','Observaciones',el('input',{type:'text',maxLength:800}),true);
+    F.nota=el('p',{className:'tc-nota'});dlg.appendChild(F.nota);
+    F.err=el('p',{className:'tc-err'});dlg.appendChild(F.err);
+    var acc=el('div',{className:'tc-acc'});
+    var bc=el('button',{type:'button',className:'btn',textContent:'Cancelar'});bc.onclick=function(){dlg.close();};
+    var bo=el('button',{type:'button',className:'btn hoy',textContent:'Guardar'});bo.onclick=guardarEd;F.btn=bo;
+    acc.appendChild(bc);acc.appendChild(bo);dlg.appendChild(acc);
+    document.body.appendChild(dlg);
+  }
+  function guardarEd(){
+    var d={tipo:F.tipo.value,titulo:F.titulo.value,cliente:F.cliente.value,idServ:F.idServ.value,responsable:F.responsable.value,fecha:F.fecha.value,inicio:F.inicio.value,fin:F.fin.value,prioridad:F.prioridad.value,obs:F.obs.value};
+    F.btn.disabled=true;F.err.textContent='';
+    post('/pendientes/editar',{id:ED,datos:d}).then(function(r){
+      F.btn.disabled=false;if(!r)return;
+      if(r.general){F.err.textContent=r.general;return;}
+      if(!r.ok){F.err.textContent=((r.errores&&r.errores[0])||[]).join(' · ')||'No se guardó.';return;}
+      var malos=(r.avisos||[]).filter(function(a){return !a.ok;}).map(function(a){return a.empleado;});
+      dlg.close();
+      if(malos.length){TC.alerta('Guardado, pero no se pudo avisar por WhatsApp a: '+malos.join(', ')+'. Avísale directamente.',{titulo:'Avisa directamente'}).then(function(){location.reload();});return;}
+      TC.toast('Pendiente actualizado.');setTimeout(function(){location.reload();},700);
+    }).catch(function(){F.btn.disabled=false;F.err.textContent='Error de conexión.';});
+  }
+  window.tpEditar=function(id){
+    var d=EDIT[id];if(!d)return;
+    if(!dlg)construirDlg();
+    ED=id;
+    F.tipo.value=d.tipo;F.titulo.value=d.titulo;F.obs.value=d.obs;F.idServ.value=d.idServ;F.fecha.value=d.fecha;
+    F.inicio.value=d.inicio;F.fin.value=d.fin;F.prioridad.value=d.prioridad;
+    opcionesSel(F.cliente,M.clientes,d.cliente,'(sin cliente)');
+    opcionesSel(F.responsable,M.empleados,d.responsable,'Responsable…');
+    F.nota.textContent=d.env?'Ya enviado: cualquier cambio, salvo observaciones, avisa al empleado por WhatsApp. Si cambias el responsable, avisa al anterior y al nuevo.':'Borrador: no se avisa a nadie.';
+    F.err.textContent='';dlg.showModal();
+  };
+  agregar();
+})();
+`;
 
 async function paginaPendientes(query, admin) {
   const { filas } = await cargar();
@@ -348,150 +494,46 @@ async function paginaPendientes(query, admin) {
   const sel = (n, et, ops, v) => `<select name="${n}"><option value="">${et}</option>${ops.map(o => `<option value="${esc(o)}"${v === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   const resp = [...new Set(filas.map(p => p.Responsable).filter(Boolean))].sort();
 
+  const abiertos = filas.filter(p => p.Estado === 'Abierto');
+  const nVenc = abiertos.filter(p => vencido(p, hoy)).length;
+  const tarjetas = layout.kpis([
+    ['Abiertos', abiertos.length],
+    ['Vencidos', nVenc, nVenc ? 'neg' : ''],
+    ['Prioridad alta', abiertos.filter(p => p.Prioridad === 'Alta').length],
+    ['Sin enviar (Borrador)', abiertos.filter(p => p.Estado_Envio !== 'Enviado').length],
+  ]);
+
   const rows = vis.length ? vis.map(p => {
     const v = vencido(p, hoy);
     const id = esc(p.ID_Pendiente);
-    const acc = p.Estado === 'Abierto' ? `<button class="btn" data-id="${id}" onclick="tpEditar(this.dataset.id)">Editar</button>
-      <button class="btn" data-id="${id}" onclick="tpCerrar(this.dataset.id)">Resolver</button>
-      ${p.Estado_Envio === 'Enviado' ? `<button class="btn" data-id="${id}" onclick="tpRecordar(this.dataset.id)">Recordar</button>` : ''}
-      <button class="btn" data-id="${id}" onclick="tpCancelar(this.dataset.id)">Cancelar</button>` : '';
+    const acc = p.Estado === 'Abierto' ? `<button class="btn mini hoy" data-id="${id}" onclick="tpCerrar(this.dataset.id)">Resolver</button>
+      <details class="mnu"><summary class="btn mini">⋯</summary><div class="mnu-l">
+        <button class="mnu-i" data-id="${id}" onclick="tpEditar(this.dataset.id)">Editar</button>
+        ${p.Estado_Envio === 'Enviado' ? `<button class="mnu-i" data-id="${id}" onclick="tpRecordar(this.dataset.id)">Recordar al responsable</button>` : ''}
+        <button class="mnu-i pel" data-id="${id}" onclick="tpCancelar(this.dataset.id)">Cancelar pendiente</button></div></details>` : '';
     const det = [['Observaciones', p.Observaciones], ['Seguimiento', p.Notas_Seguimiento], ['Cierre', p.Nota_Cierre && `${p.Nota_Cierre} — ${p.Cerrado_Por} ${p.Fecha_Cierre}`], ['Creado', `${p.Creado_Por} ${p.Fecha_Creacion}`], ['Último recordatorio', p.Ultimo_Recordatorio]]
-      .filter(x => x[1]).map(x => `<div><small>${esc(x[0])}</small><br><span style="white-space:pre-wrap">${esc(x[1])}</span></div>`).join('');
-        return `<tr><td>${id}</td><td>${esc(p.Tipo)}</td><td>${p.Prioridad === 'Alta' ? '<span class="alta">❗</span> ' : ''}${esc(p.Titulo)}${p.ID_Programacion ? `<br><small>Servicio: ${esc(p.ID_Programacion)}</small>` : ''}<details><summary><small>Detalle</small></summary>${det}</details></td>
+      .filter(x => x[1]).map(x => `<div style="margin-top:6px;"><small>${esc(x[0])}</small><br><span style="white-space:pre-wrap">${esc(x[1])}</span></div>`).join('');
+    return `<tr><td>${id}</td><td>${esc(p.Tipo)}</td><td>${p.Prioridad === 'Alta' ? '<span class="neg">❗</span> ' : ''}<b>${esc(p.Titulo)}</b>${p.ID_Programacion ? `<br><small>Servicio: ${esc(p.ID_Programacion)}</small>` : ''}<details><summary><small>Detalle</small></summary>${det}</details></td>
       <td>${esc(p.Cliente)}</td><td>${esc(p.Responsable)}</td><td>${esc(fechaLeg(p.Fecha_Limite))}${p.Hora_Inicio ? `<br><small>${esc(hora(p.Hora_Inicio))}–${esc(hora(p.Hora_Fin))}</small>` : ''}</td>
       <td><span class="est ${esc(p.Estado)}">${esc(p.Estado)}</span>${v ? ' <span class="est venc">Vencido</span>' : ''}<br><small>${esc(p.Estado_Envio)}</small></td><td>${acc}</td></tr>`;
   }).join('') : '<tr><td colspan="8" style="text-align:center;color:#888;padding:24px;">No hay pendientes con este filtro.</td></tr>';
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Pendientes</title><style>${CSS}${require('./menu').MENU_CSS}</style></head><body>
-<div class="top"><h2 style="margin:0;">Pendientes</h2>${require('./menu').menuHtml('/pendientes', admin)} </div>
-<section class="box"><h3 style="margin:0 0 10px;">Nuevos pendientes <small>(se guardan como Borrador)</small></h3>
-<table><thead><tr><th>Tipo</th><th>Título</th><th>Cliente</th><th>ID servicio</th><th>Responsable</th><th>Fecha</th><th>Horario</th><th>Prioridad</th><th>Observaciones</th><th>Validación</th><th></th></tr></thead><tbody id="gc"></tbody></table>
-<div style="margin-top:10px;display:flex;gap:10px;align-items:center;"><button class="btn" id="mas">+ Fila</button><button class="btn ok" id="gu">Guardar borrador</button><button class="btn ok" id="en">Guardar y enviar al equipo</button><span id="msg" class="mal"></span></div></section>
+  return `${layout.head('Pendientes', CSS_PEND)}
+${layout.cabecera({ titulo: 'Pendientes', seccion: '/pendientes', admin })}
+${tarjetas}
+<details class="sec"><summary>Nuevos pendientes <small>(se guardan como Borrador)</small></summary>
+<div class="scroll"><table class="gridn"><thead><tr><th>Tipo</th><th>Título</th><th>Cliente</th><th>ID servicio</th><th>Responsable</th><th>Fecha</th><th>Horario</th><th>Prioridad</th><th>Observaciones</th><th>Validación</th><th></th></tr></thead><tbody id="gc"></tbody></table></div>
+<div class="acc-nuevo"><button class="btn" id="mas">+ Fila</button><button class="btn" id="gu">Guardar borrador</button><button class="btn hoy" id="en">Guardar y enviar al equipo</button><span id="msg" class="mal"></span></div></details>
 <form class="filtros" method="GET" action="/pendientes">${sel('responsable', 'Todos los responsables', resp, f.responsable)}${sel('estado', 'Todos los estados', ['Abierto', 'Resuelto', 'Cancelado'], f.estado)}
 ${sel('tipo', 'Todos los tipos', TIPOS, f.tipo)}<label><input type="checkbox" name="vencidos" value="1"${f.venc ? ' checked' : ''}> Solo vencidos</label>
-<button class="btn">Filtrar</button> <a class="btn" href="/pendientes?estado=">Todos</a> <a class="btn" href="/pendientes">Limpiar</a>
+<button class="btn hoy">Filtrar</button> <a class="btn" href="/pendientes?estado=">Todos</a> <a class="btn" href="/pendientes">Limpiar</a>
 ${f.responsable ? `<button type="button" class="btn" onclick="tpRecordarEmp(${esc(js(f.responsable))})">Recordar los abiertos de ${esc(f.responsable)}</button>` : ''}</form>
-<table><tr><th>ID</th><th>Tipo</th><th>Pendiente</th><th>Cliente</th><th>ID servicio</th><th>Responsable</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr>${rows}</table>
-<script>
-(function(){
-  var M=${js({ clientes: m.clientes.map(c => c.n), empleados: m.empleados.map(e => ({ n: e.n, wa: e.wa })) })}, TIPOS=${js(TIPOS)}, PRIOS=${js(PRIOS)}, EDIT=${js(datosEdicion(filas))};
-  var cuerpo=document.getElementById('gc'), msg=document.getElementById('msg');
-  function el(t,p){var e=document.createElement(t);for(var k in p)e[k]=p[k];return e;}
-  function sel(c,ops,v,vacio){var s=el('select',{className:c});if(vacio)s.appendChild(el('option',{value:'',textContent:vacio}));ops.forEach(function(o){var n=o.n||o;s.appendChild(el('option',{value:n,textContent:n+(o.wa===false?' ⚠ sin WhatsApp':'')}));});s.value=v||'';return s;}
-  function td(h){var c=el('td');c.appendChild(h);return c;}
-  function agregar(){
-    var tr=el('tr');
-    tr.appendChild(td(sel('t',TIPOS,'Otro')));
-    tr.appendChild(td(el('input',{type:'text',className:'ti',placeholder:'Título',maxLength:150})));
-    tr.appendChild(td(sel('c',M.clientes,'','(sin cliente)')));
-    tr.appendChild(td(el('input',{type:'text',className:'sv',placeholder:'PRG-AAAAMMDD-NN',size:16})));
-    tr.appendChild(td(sel('r',M.empleados,'','Responsable…')));
-    tr.appendChild(td(el('input',{type:'date',className:'fe'})));
-    var h=el('td');h.appendChild(el('input',{type:'time',className:'i'}));h.appendChild(document.createTextNode(' – '));h.appendChild(el('input',{type:'time',className:'f'}));tr.appendChild(h);
-    tr.appendChild(td(sel('p',PRIOS,'Normal')));
-    tr.appendChild(td(el('input',{type:'text',className:'o',placeholder:'Observaciones',maxLength:800})));
-    tr.appendChild(el('td',{className:'mal'}));
-    tr.appendChild(td(el('button',{type:'button',className:'btn',textContent:'✕',onclick:function(){tr.remove();}})));
-    cuerpo.appendChild(tr);
-  }
-  function leer(){return Array.prototype.map.call(cuerpo.rows, function(tr){var q=function(c){return tr.querySelector('.'+c).value;};
-    return {tipo:q('t'),titulo:q('ti'),cliente:q('c'),idServ:q('sv'),responsable:q('r'),fecha:q('fe'),inicio:q('i'),fin:q('f'),prioridad:q('p'),obs:q('o')};});}
-  function post(u,d){return fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(d)})
-    .then(function(r){if(r.status===401){location.href='/login?volver='+encodeURIComponent(location.pathname+location.search);return null;}return r.json();});}
-  function guardar(enviar,b){
-    var f=leer();
-    if(enviar&&!confirm('¿Guardar y enviar? Cada responsable recibirá un mensaje por cada pendiente en Borrador.'))return;
-    b.disabled=true;msg.textContent=enviar?'Enviando…':'';
-    post('/pendientes/guardar',{filas:f,enviar:enviar,soloEnviar:false}).then(function(r){
-      b.disabled=false;if(!r)return;
-      if(r.general){msg.textContent=r.general;return;}
-      if(!r.ok){Array.prototype.forEach.call(cuerpo.rows,function(tr,i){tr.cells[9].textContent=((r.errores&&r.errores[i])||[]).join(' · ');});msg.textContent='No se guardó: revisa las filas marcadas.';return;}
-      var t='Creados: '+r.creados;
-      if(enviar){t+='\\nEnviados: '+r.enviados;if(r.sinNumero&&r.sinNumero.length)t+='\\nSin WhatsApp: '+r.sinNumero.join(', ');if(r.fallidos&&r.fallidos.length)t+='\\nFallaron: '+r.fallidos.join(', ')+' (siguen en Borrador)';}
-      alert(t);location.reload();
-    }).catch(function(){b.disabled=false;msg.textContent='Error de conexión.';});
-  }
-  document.getElementById('mas').onclick=agregar;
-  document.getElementById('gu').onclick=function(){guardar(false,this);};
-  document.getElementById('en').onclick=function(){
-    var f=leer().filter(function(x){return x.titulo||x.responsable||x.obs||x.cliente;});
-    if(!f.length){ // sin filas nuevas: solo envía los Borrador existentes
-      if(!confirm('¿Enviar los pendientes en Borrador?'))return;var b=this;b.disabled=true;
-      post('/pendientes/guardar',{filas:[],enviar:true,soloEnviar:true}).then(function(r){b.disabled=false;if(!r)return;if(r.general){alert(r.general);return;}
-        var t='Enviados: '+r.enviados;if(r.sinNumero&&r.sinNumero.length)t+='\\nSin WhatsApp: '+r.sinNumero.join(', ');if(r.fallidos&&r.fallidos.length)t+='\\nFallaron: '+r.fallidos.join(', ');alert(t);location.reload();});
-      return;}
-    guardar(true,this);
-  };
-  window.tpCerrar=function(id){var n=prompt('Nota de cierre (opcional):');if(n===null)return;post('/pendientes/cerrar',{id:id,nota:n}).then(function(r){if(!r)return;if(!r.ok){alert(r.general);return;}location.reload();});};
-  window.tpCancelar=function(id){var n=prompt('Motivo de la cancelación (obligatorio):');if(n===null)return;post('/pendientes/cancelar',{id:id,motivo:n}).then(function(r){if(!r)return;if(!r.ok){alert(r.general);return;}location.reload();});};
-  window.tpRecordar=function(id){post('/pendientes/recordar',{id:id}).then(function(r){if(!r)return;alert(r.ok?'Recordatorio enviado: '+r.enviados:r.general);location.reload();});};
-  window.tpRecordarEmp=function(n){if(!confirm('¿Enviar un recordatorio por cada pendiente abierto de '+n+'?'))return;post('/pendientes/recordar',{responsable:n}).then(function(r){if(!r)return;alert(r.ok?'Recordatorios enviados: '+r.enviados:r.general);location.reload();});};
-
-  var ED=null, dlg=null, F={};
-  function opcionesSel(s,lista,v,vacio){
-    if(vacio)s.appendChild(el('option',{value:'',textContent:vacio}));
-    var hay=false;
-    lista.forEach(function(o){var n=o.n||o;if(n===v)hay=true;s.appendChild(el('option',{value:n,textContent:n+(o.wa===false?' ⚠ sin WhatsApp':'')}));});
-    if(v&&!hay)s.appendChild(el('option',{value:v,textContent:v+' (no activo)'}));
-    s.value=v||'';
-  }
-  function campoEd(k,et,nodo){
-    F[k]=nodo;var l=el('label',{});l.style.display='block';l.style.margin='8px 0';
-    l.appendChild(document.createTextNode(et));l.appendChild(el('br',{}));
-    nodo.style.width='100%';nodo.style.boxSizing='border-box';l.appendChild(nodo);dlg.appendChild(l);
-  }
-  function construirDlg(){
-    dlg=el('dialog',{});
-    dlg.style.cssText='max-width:440px;width:92%;border:1px solid #ccc;border-radius:10px;padding:18px;';
-    var h=el('h3',{textContent:'Editar pendiente'});h.style.marginTop='0';dlg.appendChild(h);
-    var sT=el('select',{});TIPOS.forEach(function(t){sT.appendChild(el('option',{value:t,textContent:t}));});
-    var sP=el('select',{});PRIOS.forEach(function(t){sP.appendChild(el('option',{value:t,textContent:t}));});
-    campoEd('tipo','Tipo',sT);
-    campoEd('titulo','Título',el('input',{type:'text',maxLength:150}));
-    campoEd('cliente','Cliente',el('select',{}));
-    campoEd('idServ','ID de servicio (opcional)',el('input',{type:'text',placeholder:'PRG-AAAAMMDD-NN'}));
-    campoEd('responsable','Responsable',el('select',{}));
-    campoEd('fecha','Fecha límite',el('input',{type:'date'}));
-    var hi=el('input',{type:'time'}),hf=el('input',{type:'time'});F.inicio=hi;F.fin=hf;
-    var lh=el('label',{});lh.style.display='block';lh.style.margin='8px 0';
-    lh.appendChild(document.createTextNode('Horario'));lh.appendChild(el('br',{}));lh.appendChild(hi);lh.appendChild(document.createTextNode(' – '));lh.appendChild(hf);dlg.appendChild(lh);
-    campoEd('prioridad','Prioridad',sP);
-    campoEd('obs','Observaciones',el('input',{type:'text',maxLength:800}));
-    F.nota=el('p',{});F.nota.style.cssText='font-size:12px;color:#777;';dlg.appendChild(F.nota);
-    F.err=el('p',{className:'mal'});dlg.appendChild(F.err);
-    var bo=el('button',{type:'button',className:'btn ok',textContent:'Guardar'});bo.onclick=guardarEd;F.btn=bo;
-    var bc=el('button',{type:'button',className:'btn',textContent:'Cancelar'});bc.onclick=function(){dlg.close();};
-    var bx=el('div',{});bx.appendChild(bo);bx.appendChild(document.createTextNode(' '));bx.appendChild(bc);dlg.appendChild(bx);
-    document.body.appendChild(dlg);
-  }
-  function guardarEd(){
-    var d={tipo:F.tipo.value,titulo:F.titulo.value,cliente:F.cliente.value,idServ:F.idServ.value,responsable:F.responsable.value,fecha:F.fecha.value,inicio:F.inicio.value,fin:F.fin.value,prioridad:F.prioridad.value,obs:F.obs.value};
-    F.btn.disabled=true;F.err.textContent='';
-    post('/pendientes/editar',{id:ED,datos:d}).then(function(r){
-      F.btn.disabled=false;if(!r)return;
-      if(r.general){F.err.textContent=r.general;return;}
-      if(!r.ok){F.err.textContent=((r.errores&&r.errores[0])||[]).join(' · ')||'No se guardó.';return;}
-      var malos=(r.avisos||[]).filter(function(a){return !a.ok;}).map(function(a){return a.empleado;});
-      if(malos.length)alert('Guardado, pero no se pudo avisar por WhatsApp a: '+malos.join(', ')+'. Avísale directamente.');
-      location.reload();
-    }).catch(function(){F.btn.disabled=false;F.err.textContent='Error de conexión.';});
-  }
-  window.tpEditar=function(id){
-    var d=EDIT[id];if(!d)return;
-    if(!dlg)construirDlg();
-    ED=id;
-    F.tipo.value=d.tipo;F.titulo.value=d.titulo;F.obs.value=d.obs;F.idServ.value=d.idServ;F.fecha.value=d.fecha;
-    F.inicio.value=d.inicio;F.fin.value=d.fin;F.prioridad.value=d.prioridad;
-    F.cliente.innerHTML='';opcionesSel(F.cliente,M.clientes,d.cliente,'(sin cliente)');
-    F.responsable.innerHTML='';opcionesSel(F.responsable,M.empleados,d.responsable,'Responsable…');
-    F.nota.textContent=d.env?'Ya enviado: cualquier cambio, salvo observaciones, avisa al empleado por WhatsApp. Si cambias el responsable, avisa al anterior y al nuevo.':'Borrador: no se avisa a nadie.';
-    F.err.textContent='';dlg.showModal();
-  };
-
-  agregar();
-})();
-</script></body></html>`;
+<table><tr><th>ID</th><th>Tipo</th><th>Pendiente</th><th>Cliente</th><th>Responsable</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr>${rows}</table>
+<script>var M=${js({ clientes: m.clientes.map(c => c.n), empleados: m.empleados.map(e => ({ n: e.n, wa: e.wa })) })}, TIPOS=${js(TIPOS)}, PRIOS=${js(PRIOS)}, EDIT=${js(datosEdicion(filas))};</script>
+<script>${SCRIPT_PEND}</script>
+</body></html>`;
 }
+
 
 function paginaPendienteEmpleado(p, mensaje) {
   const cab = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Pendiente</title></head><body style="font-family:-apple-system,Arial,sans-serif;max-width:480px;margin:0 auto;padding:20px;color:#222;">';
