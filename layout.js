@@ -6,11 +6,11 @@ const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 const ver = f => { try { return Math.round(fs.statSync(path.join(__dirname, 'public', f)).mtimeMs); } catch (e) { return 0; } };
 const V_CSS = ver('tc.css'), V_JS = ver('tc.js');
 
-const SECCIONES = [['/agenda', 'Agenda'], ['/pendientes', 'Pendientes'], ['/nomina', 'Nómina'], ['/cartera', 'Cartera']];
+const SECCIONES = [['/resumen', 'Resumen'], ['/agenda', 'Agenda'], ['/pendientes', 'Pendientes'], ['/cartera/calidad', 'Calidad'], ['/cartera', 'Cartera'], ['/nomina', 'Nómina']];
 // [clave, ruta, texto, conserva ?mes=]
 const SUBS = {
   cartera: [['servicios', '/cartera', 'Servicios', true], ['clientes', '/cartera/clientes', 'Clientes', true], ['ingresos', '/cartera/pagos', 'Ingresos', false],
-    ['egresos', '/cartera/egresos', 'Egresos', false], ['reportes', '/cartera/reportes', 'Reportes', false], ['calidad', '/cartera/calidad', 'Calidad', false]],
+    ['egresos', '/cartera/egresos', 'Egresos', false], ['reportes', '/cartera/reportes', 'Reportes', false],     ['egresos', '/cartera/egresos', 'Egresos', false], ['reportes', '/cartera/reportes', 'Reportes', false]],
 };
 
 // css: estilos propios de la pantalla (van antes de tc.css, que los complementa)
@@ -24,7 +24,7 @@ ${css ? `<style>${css}</style>` : ''}<link rel="stylesheet" href="/static/tc.css
 
 // titulo: texto plano (se escapa). tituloHtml: HTML ya seguro.
 function cabecera({ titulo, tituloHtml, seccion, admin, sub, activa, mes }) {
-  const barra = `<header class="tc-bar"><a class="tc-brand" href="/agenda"><i></i><b>${esc(marca.PRODUCTO)}</b></a><span class="tc-empresa">${esc(marca.EMPRESA)}</span>
+  const barra = `<header class="tc-bar"><a class="tc-brand" href="/resumen"><img src="${esc(marca.LOGO_CLARO)}" alt="${esc(marca.PRODUCTO)}"></a><a class="tc-brand" href="/agenda"><i></i><b>${esc(marca.PRODUCTO)}</b></a><span class="tc-empresa">${esc(marca.EMPRESA)}</span>
 <nav>${SECCIONES.map(([h, t]) => `<a href="${h}"${h === seccion ? ' class="act"' : ''}>${t}</a>`).join('')}</nav>
 <div class="tc-user"><span>${esc(admin)}</span><a href="/logout">Cerrar sesión</a></div></header>`;
   const tabs = sub && SUBS[sub] ? `<div class="tc-tabs">${SUBS[sub].map(([k, h, t, conMes]) => {

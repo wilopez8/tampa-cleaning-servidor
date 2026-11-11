@@ -107,3 +107,20 @@ dialog label:not(:has(input[type=checkbox])){display:flex;flex-direction:column;
 dialog input[type=text],dialog input[type=number],dialog input[type=date],dialog input[type=time],dialog select,dialog textarea{width:100%;font-size:14.5px;}
 dialog>button.btn{margin:14px 8px 0 0;}
 dialog p{font-size:13px;}
+
+
+/* logo en la barra superior */
+.tc-brand img{height:40px;width:auto;display:block;}
+
+/* celular: barra compacta con menú desplazable */
+@media(max-width:800px){
+  .tc-empresa,.tc-user span{display:none;}
+  .tc-bar{gap:4px;}
+  .tc-brand{margin-right:6px;}
+  .tc-brand img{height:32px;}
+  .tc-bar nav{flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;}
+  .tc-bar nav::-webkit-scrollbar{display:none;}
+  .tc-bar nav a{flex:0 0 auto;padding:0 12px;white-space:nowrap;}
+  .tc-user{margin-left:6px;font-size:12px;}
+  th,td{padding:10px;}
+}

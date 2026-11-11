@@ -113,8 +113,10 @@ async function paginaLista(query, admin) {
   const btn = (n, t) => `<a class="btn${filtro === n ? ' hoy' : ''}" href="/cartera/calidad${n ? '?nivel=' + n : ''}">${t}</a>`;
   
   return `${layout.head('Calidad de clientes', CSS + CSS_CAL, 'rep')}
-${layout.cabecera({ titulo: 'Calidad de clientes', seccion: '/cartera', admin, sub: 'cartera', activa: 'calidad' })}
-<div class="nav">
+
+  ${layout.cabecera({ titulo: 'Calidad de clientes', seccion: '/cartera/calidad', admin })}
+
+  <div class="nav">
 
   ${btn('', 'Todos (' + evs.length + ')')}${btn('rojo', '🔴 Rojo (' + cuenta.rojo + ')')}${btn('amarillo', '🟡 Amarillo (' + cuenta.amarillo + ')')}${btn('verde', '🟢 Verde (' + cuenta.verde + ')')}</div>
 <div class="aviso">Solo clientes vigentes, ordenados del mayor al menor riesgo. "Servicios" cuenta solo los ejecutados. El semáforo considera quejas, inspecciones, cierres con pendientes y si hubo revisión de supervisor en los últimos ${VENTANA_SUP} servicios ejecutados.</div>
@@ -181,7 +183,8 @@ async function paginaFicha(query, admin) {
   const cartera = await carteraCliente(cliente);
 
   return `${layout.head('Calidad — ' + cliente, CSS + CSS_CAL, 'rep')}
-${layout.cabecera({ tituloHtml: punto(e.nivel) + esc(cliente), seccion: '/cartera', admin, sub: 'cartera', activa: 'calidad' })}
+
+${layout.cabecera({ tituloHtml: punto(e.nivel) + esc(cliente), seccion: '/cartera/calidad', admin })}
 
 <div class="nav"><a class="btn" href="/cartera/calidad">← Calidad de clientes</a><a class="btn" href="/cartera/cliente?c=${encodeURIComponent(cliente)}">Cobros del cliente</a></div>
 ${sec(`Semáforo: ${ETQ[e.nivel]}`, motivos + supHtml)}
@@ -206,4 +209,4 @@ function rutas(app, auth) {
   get('/cartera/calidad/cliente', paginaFicha);
 }
 
-module.exports = { rutas, evaluar, paginaLista, paginaFicha };
+module.exports = { rutas, evaluar, paginaLista, paginaFicha, leerTodo, abierta };
