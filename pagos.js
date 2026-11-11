@@ -434,10 +434,12 @@ async function paginaPagos(query, admin) {
   const sel = (n, et, ops, act2) => `<select name="${n}"><option value="">${et}</option>${ops.map(o => `<option value="${esc(o)}"${act2 === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   const etiqueta = mes === 'todo' ? 'Todo el histórico' : mes;
   const nav = mes === 'todo' ? '' : `<a class="btn" href="${esc(u({ mes: sumarMes(mes, -1) }))}">←</a><a class="btn hoy" href="${esc(u({ mes: hoy.slice(0, 7) }))}">Este mes</a><a class="btn" href="${esc(u({ mes: sumarMes(mes, 1) }))}">→</a>`;
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ingresos ${esc(etiqueta)}</title><style>${CSS}${CSS_PAGOS}${menu.MENU_CSS}</style></head><body>
-<div class="top"><h2 style="margin:0;">Ingresos — ${esc(etiqueta)}</h2>${menu.menuHtml('/cartera', admin)}</div>
-<div class="nav"><a class="btn" href="/cartera">← Cartera</a><a class="btn" href="/cartera/egresos">Egresos</a><a class="btn" href="/cartera/reportes">Reportes</a>${nav}
-  <a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
+ 
+  return `${layout.head('Ingresos ' + etiqueta, CSS + CSS_PAGOS)}
+${layout.cabecera({ titulo: 'Ingresos — ' + etiqueta, seccion: '/cartera', admin, sub: 'cartera', activa: 'ingresos', mes })}
+<div class="nav">${nav}
+
+<a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
   <button class="btn hoy" onclick="pgAbrir('Servicios','')">Ingreso por servicios</button><button class="btn hoy" onclick="pgAbrir('Otro ingreso','')">Otro ingreso</button></div>
 <div class="aviso" style="background:#f0fdf4;">Activos en el filtro: <b>${act.length}</b> · <b>${usd(suma(act))}</b> (servicios ${usd(suma(serv))} · otros ingresos ${usd(suma(otros))}) · por depositar <b>${usd(suma(porDep))}</b> (${porDep.length}) · saldo a favor sin aplicar <b>${usd(libreTot)}</b></div>
 <form class="filtros" method="GET" action="/cartera/pagos"><input type="hidden" name="mes" value="${esc(mes)}">
