@@ -18,12 +18,12 @@ function escaparHtml(t) {
 function volverSeguro(v) { return (typeof v === 'string' && /^\/(?!\/)/.test(v)) ? v : '/resumen'; }
 function paginaLogin(error, volver) {
   return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Acceso</title>
-<style>body{font-family:-apple-system,Arial,sans-serif;max-width:340px;margin:80px auto;padding:20px;color:#222;}
-input{width:100%;padding:12px;font-size:16px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin:10px 0;}
+<style>body{font-family:-apple-system,Arial,sans-serif;max-width:340px;margin:80px auto;padding:20px;color:#222;text-align:center;}
+input{width:100%;padding:12px;font-size:16px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin:10px 0;text-align:left;}
 button{background:#2e7d32;color:white;padding:12px;border:none;border-radius:8px;font-size:16px;width:100%;}
 .e{color:#b91c1c;}</style></head><body>
 
-<img src="${escaparHtml(marca.LOGO)}" alt="${escaparHtml(marca.PRODUCTO)}" style="display:block;width:200px;max-width:70%;margin:0 0 18px;">
+<img src="${escaparHtml(marca.LOGO)}" alt="${escaparHtml(marca.PRODUCTO)}" style="display:block;width:200px;max-width:70%;margin:0 auto 18px;">
 
 <h2>${escaparHtml(marca.EMPRESA)}</h2><p>Ingresa tu clave de administrador</p><p style="color:#848688;font-size:13px;margin-top:-8px;">Plataforma ${escaparHtml(marca.PRODUCTO)}</p>
 

@@ -145,7 +145,7 @@ function itemCartera(g) {
 }
 
 // ---------- piezas de pantalla ----------
-const sec = (titulo, n, items, vacio, pie) => `<details class="sec" open><summary>${esc(titulo)}<span class="cnt">${n}</span></summary>${items.length ? items.join('') : `<p class="vacio">${vacio}</p>`}${pie ? `<p class="pie">${pie}</p>` : ''}<div class="fin"></div></details>`;
+const sec = (titulo, n, items, vacio, pie) => `<details class="sec" ><summary>${esc(titulo)}<span class="cnt">${n}</span></summary>${items.length ? items.join('') : `<p class="vacio">${vacio}</p>`}${pie ? `<p class="pie">${pie}</p>` : ''}<div class="fin"></div></details>`;
 const masQue = (total, mostrados) => total > mostrados ? `<p class="vacio">y ${total - mostrados} más…</p>` : '';
 
 const CSS_RES = `

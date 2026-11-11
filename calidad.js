@@ -90,7 +90,8 @@ const CSS_CAL = `.sem{display:inline-block;width:14px;height:14px;border-radius:
 .rep .sec{margin:14px 0;} .rep .sec>summary{cursor:pointer;font-size:17px;font-weight:bold;padding:6px 0;border-bottom:1px solid #ddd;margin-bottom:8px;}
 .alertaSup{background:#fff7ed;border:1px solid #fdba74;border-radius:6px;padding:8px 12px;margin:8px 0;font-size:14px;} .okSup{background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:8px 12px;margin:8px 0;font-size:14px;}
 .wrap{white-space:pre-wrap;} td small{color:#666;}`;
-const sec = (t, c, abierta) => `<details class="sec"${abierta === false ? '' : ' open'}><summary>${t}</summary>${c}</details>`;
+
+const sec = (t, c, abierta) => `<details class="sec"${abierta === true ? ' open' : ''}><summary>${t}</summary>${c}</details>`;
 const estr = n => (numero(n.Calificacion) > 0) ? `★ ${numero(n.Calificacion)}` : '—';
 
 // ---------- lista ----------
