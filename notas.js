@@ -135,10 +135,8 @@ const opt = arr => arr.map(o => `<option>${esc(o)}</option>`).join('');
 
 function dialogoNota(mapa) {
   const json = JSON.stringify({ hoy: hoyFlorida(), servs: mapa }).replace(/</g, '\\u003c');
-  return `<style>#ntDlg,#ntAnDlg{border:1px solid #ccc;border-radius:10px;padding:18px;max-width:440px;width:92%;}
-#ntDlg label,#ntAnDlg label{display:block;margin:10px 0;font-size:14px;}
-#ntDlg input,#ntDlg select,#ntDlg textarea,#ntAnDlg input{width:100%;padding:8px;font-size:15px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;font-family:inherit;}
-.ntAv{background:#fff7ed;border-radius:6px;padding:6px 10px;font-size:12px;color:#92400e;margin:6px 0;}</style>
+
+  return `<style>.ntAv{background:#fff7ed;border-radius:6px;padding:6px 10px;font-size:12px;color:#92400e;margin:6px 0;}</style>
 <dialog id="ntDlg"><h3 style="margin:0 0 4px;">Nueva nota</h3><p id="ntCli" style="margin:0;color:#555;font-size:14px;"></p>
   <p class="ntAv">Las notas son solo retroalimentación (calidad, comentarios del cliente). Las instrucciones para el equipo van en <b>Observaciones del día</b> de la agenda o en las instrucciones del cliente.</p>
   <label>Servicio<select id="ntServ" onchange="ntFecha()"></select></label>

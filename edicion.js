@@ -439,58 +439,73 @@ ${retro ? '<div class="retro"><b>Registro retroactivo.</b> Fecha pasada: exige m
   cuerpo.addEventListener('focusin',function(e){var tr=e.target.closest&&e.target.closest('tr');if(tr)mostrarCliente(tr.querySelector('.c').value);});
   document.getElementById('gmas').onclick=function(){agregar();};
   
+  var NL=String.fromCharCode(10);
+  function malos(r){return (r.avisos||[]).filter(function(a){return !a.ok;}).map(function(a){return a.empleado;});}
   function textoAvisosFallidos(r){
-    var malos=(r.avisos||[]).filter(function(a){return !a.ok;}).map(function(a){return a.empleado;});
-    return malos.length?'Guardado, pero no se pudo avisar por WhatsApp a: '+malos.join(', ')+'. Avísale directamente.':'';
+    var m=malos(r);
+    return m.length?'Guardado, pero no se pudo avisar por WhatsApp a: '+m.join(', ')+'. Avísale directamente.':'';
+  }
+  function hayEnviados(){return !!cuerpo.querySelector('tr[data-env="1"]');}
+  function recargar(texto,problema){
+    if(problema){TC.alerta(texto,{titulo:'Revisa esto'}).then(function(){location.reload();});return;}
+    if(texto)TC.toast(texto);
+    setTimeout(function(){location.reload();},texto?800:0);
   }
   document.getElementById('gguardar').onclick=function(){
     var f=leer(); if(!f.length){estado('No hay filas.',false);return;}
-    if(cuerpo.querySelector('tr[data-env="1"]')&&!confirm('Hay servicios ya enviados en la grilla: si cambiaste empleado, cliente u hora, se enviará un aviso por WhatsApp. ¿Continuar?'))return;
     var motivo=RETRO?document.getElementById('gmotivo').value.trim():'';
     if(RETRO&&motivo.length<3){estado('Escribe el motivo del registro retroactivo.',false);return;}
-    var b=this; b.disabled=true;
-    llamar('/agenda/guardar',{fecha:FECHA,filas:f,motivo:motivo}).then(function(r){
-      b.disabled=false; if(!r)return;
-      if(r.general){estado(r.general,false);return;}
-      if(!r.ok){pintar(r.errores);estado('No se guardó: revisa las filas marcadas.',false);return;}
-      var t=textoAvisosFallidos(r); if(t)alert(t);
-      location.reload();
+    var b=this;
+    var paso=hayEnviados()?TC.confirmar('Hay servicios ya enviados en la grilla: si cambiaste empleado, cliente u hora, se enviará un aviso por WhatsApp.',{titulo:'Servicios ya enviados',si:'Continuar'}):Promise.resolve(true);
+    paso.then(function(ok){
+      if(!ok)return;
+      b.disabled=true;
+      return llamar('/agenda/guardar',{fecha:FECHA,filas:f,motivo:motivo}).then(function(r){
+        b.disabled=false; if(!r)return;
+        if(r.general){estado(r.general,false);return;}
+        if(!r.ok){pintar(r.errores);estado('No se guardó: revisa las filas marcadas.',false);return;}
+        var t=textoAvisosFallidos(r);
+        recargar(t||'Guardado.',!!t);
+      });
     }).catch(function(){b.disabled=false;estado('Error de conexión.',false);});
   };
   document.getElementById('genviar').onclick=function(){
     var f=leer();
     var nuevas=f.filter(function(x){return !x.id&&(x.cliente||x.empleado||x.inicio||x.fin||x.obs);}).length;
-    if(BORR+nuevas===0){alert('No hay servicios en Borrador para enviar.');return;}
-    if(cuerpo.querySelector('tr[data-env="1"]')&&!confirm('Hay servicios ya enviados en la grilla: si cambiaste empleado, cliente u hora, también se avisará a esos empleados. ¿Continuar?'))return;
-    if(!confirm('¿Enviar la programación del '+FECHA+' por WhatsApp?\\n\\nServicios en Borrador: '+BORR+'\\nFilas nuevas en la grilla: '+nuevas+'\\n\\nCada empleado recibirá su mensaje.'))return;
-    var b=this; b.disabled=true; estado('Enviando…',true);
-    llamar('/agenda/enviar',{fecha:FECHA,filas:f}).then(function(r){
-      b.disabled=false; if(!r)return;
-      if(r.general){estado(r.general,false);return;}
-      if(!r.ok){pintar(r.errores);estado('No se envió: revisa las filas marcadas.',false);return;}
-      var t='Enviados: '+r.enviados;
-      if(r.sinNumero&&r.sinNumero.length)t+='\\nSin número de WhatsApp: '+r.sinNumero.join(', ');
-      if(r.fallidos&&r.fallidos.length)t+='\\nNo se pudo enviar a: '+r.fallidos.join(', ')+' (siguen en Borrador)';
-      var a=textoAvisosFallidos(r); if(a)t+='\\n'+a;
-      alert(t); location.reload();
+    if(BORR+nuevas===0){TC.alerta('No hay servicios en Borrador para enviar.');return;}
+    var b=this;
+    var txt='Servicios en Borrador: '+BORR+NL+'Filas nuevas en la grilla: '+nuevas+NL+NL+'Cada empleado recibirá su mensaje.'+(hayEnviados()?NL+NL+'Hay servicios ya enviados en la grilla: si cambiaste empleado, cliente u hora, también se avisará a esos empleados.':'');
+    TC.confirmar(txt,{titulo:'Enviar la programación del '+FECHA+' por WhatsApp',si:'Enviar'}).then(function(ok){
+      if(!ok)return;
+      b.disabled=true; estado('Enviando…',true);
+      return llamar('/agenda/enviar',{fecha:FECHA,filas:f}).then(function(r){
+        b.disabled=false; if(!r)return;
+        if(r.general){estado(r.general,false);return;}
+        if(!r.ok){pintar(r.errores);estado('No se envió: revisa las filas marcadas.',false);return;}
+        var t='Enviados: '+r.enviados, problema=false;
+        if(r.sinNumero&&r.sinNumero.length){t+=NL+'Sin número de WhatsApp: '+r.sinNumero.join(', ');problema=true;}
+        if(r.fallidos&&r.fallidos.length){t+=NL+'No se pudo enviar a: '+r.fallidos.join(', ')+' (siguen en Borrador)';problema=true;}
+        var a=textoAvisosFallidos(r); if(a){t+=NL+a;problema=true;}
+        recargar(t,problema);
+      });
     }).catch(function(){b.disabled=false;estado('Error de conexión.',false);});
   };
-  
+
   window.tcEditar=function(id,solo){
     var s=SERV[id]; if(!s)return;
     var ya=Array.prototype.filter.call(cuerpo.rows,function(tr){return tr.dataset.id===id;})[0];
     var tr=ya||agregar(s,solo); tr.scrollIntoView({behavior:'smooth',block:'center'}); mostrarCliente(s.cliente); programar();
   };
   window.tcCancelar=function(id){
-    var motivo=prompt('Motivo de la cancelación (obligatorio):'); if(motivo===null)return;
-    if(motivo.trim().length<3){alert('Escribe un motivo.');return;}
-    if(!confirm('¿Cancelar este servicio? Quedará registrado; la fila no se borra.'))return;
-    llamar('/agenda/cancelar',{id:id,motivo:motivo}).then(function(r){
-      if(!r)return; if(!r.ok){alert(r.general||'No se pudo cancelar.');return;}
-      var malos=(r.avisos||[]).filter(function(a){return !a.ok;}).map(function(a){return a.empleado;});
-      if(malos.length)alert('Cancelado, pero no se pudo avisar por WhatsApp a: '+malos.join(', ')+'. Avísale directamente.');
-      location.reload();
-    }).catch(function(){alert('Error de conexión.');});
+    TC.pedir({titulo:'Cancelar servicio',texto:'Quedará registrado; la fila no se borra.',etiqueta:'Motivo de la cancelación (obligatorio)',min:3,si:'Cancelar servicio'}).then(function(motivo){
+      if(motivo===null)return;
+      llamar('/agenda/cancelar',{id:id,motivo:motivo}).then(function(r){
+        if(!r)return; if(!r.ok){TC.alerta(r.general||'No se pudo cancelar.');return;}
+        var m=malos(r);
+        if(m.length){TC.alerta('Cancelado, pero no se pudo avisar por WhatsApp a: '+m.join(', ')+'. Avísale directamente.',{titulo:'Avisa directamente'}).then(function(){location.reload();});return;}
+        TC.toast('Servicio cancelado.');setTimeout(function(){location.reload();},700);
+      }).catch(function(){TC.alerta('Error de conexión.');});
+    });
   };
   agregar(); mostrarCliente('');
 })();

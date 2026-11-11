@@ -77,6 +77,22 @@
   TC.alerta = function (texto, o) { o = o || {}; return abrir({ titulo: o.titulo || 'Aviso', texto: texto, si: 'Entendido', no: null }); };
   TC.pedir = function (o) { return abrir({ titulo: o.titulo, texto: o.texto, campo: { etiqueta: o.etiqueta, min: o.min || 0 }, si: o.si || 'Guardar' }); };
 
+  // el menú "⋯" se posiciona con "fixed" para que no lo recorten las tablas con scroll
+  document.addEventListener('toggle', function (e) {
+    var d = e.target;
+    if (!d.classList || !d.classList.contains('mnu') || !d.open) { return; }
+    var l = d.querySelector('.mnu-l'), r = d.querySelector('summary').getBoundingClientRect();
+    l.style.position = 'fixed';
+    l.style.left = 'auto';
+    l.style.right = Math.round(window.innerWidth - r.right) + 'px';
+    l.style.top = Math.round(r.bottom + 4) + 'px';
+    if (r.bottom + l.offsetHeight + 8 > window.innerHeight) { l.style.top = Math.max(8, Math.round(r.top - l.offsetHeight - 4)) + 'px'; }
+  }, true);
+  window.addEventListener('scroll', function () {
+    var ab = document.querySelectorAll('details.mnu[open]'), i;
+    for (i = 0; i < ab.length; i++) { ab[i].removeAttribute('open'); }
+  }, true);
+
   // cierra los menús "⋯" al hacer clic fuera o sobre una opción
   document.addEventListener('click', function (e) {
     var ab = document.querySelectorAll('details.mnu[open]'), i, dentroLista;

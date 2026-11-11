@@ -2,6 +2,7 @@ const { leerHoja, agregarFila, agregarFilas, actualizarCeldas, asegurarHoja, inv
 const { normalizarFecha, fechaValida, hoyFlorida, sumarDias, inicioSemana, diaSemana, filasDelRango } = require('./agenda');
 const millas = require('./millas');
 const menu = require('./menu');
+const layout = require('./layout');
 const crypto = require('crypto');
 
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -388,13 +389,15 @@ var ajId=null;
 function tcAjustar(b){ajId=b.dataset.id;$('dt').textContent=b.dataset.t;$('di').value=b.dataset.ini;$('df').value=b.dataset.fin;$('dm').value='';$('de').textContent='';$('dlg').showModal();}
 function tcGuardar(sin){var m=$('dm').value.trim();if(m.length<3){$('de').textContent='El motivo es obligatorio.';return;}post('/nomina/ajustar',{id:ajId,inicio:sin?'':$('di').value,fin:sin?'':$('df').value,sinPago:!!sin,motivo:m},'de');}
 function tcConcepto(){$('ct').value='Propina';$('cd').value='';$('cmn').value='';$('cs').value='';$('ce').textContent='';$('dlgc').showModal();}
-function tcGuardarConcepto(){post('/nomina/concepto',{empleado:EMP,semana:SEM,tipo:$('ct').value,descripcion:$('cd').value,monto:$('cmn').value,idServicio:$('cs').value},'ce',function(j){if(j.movida){alert('La semana de este empleado está cerrada. El concepto quedó en la semana '+j.semana+'.');}location.reload();});}
+
+function tcGuardarConcepto(){post('/nomina/concepto',{empleado:EMP,semana:SEM,tipo:$('ct').value,descripcion:$('cd').value,monto:$('cmn').value,idServicio:$('cs').value},'ce',function(j){if(j.movida){TC.alerta('La semana de este empleado está cerrada. El concepto quedó en la semana '+j.semana+'.').then(function(){location.reload();});}else{location.reload();}});}
+
 var motivoFn=null;
 function tcPedirMotivo(titulo,fn){$('mt').textContent=titulo;$('mm').value='';$('me').textContent='';motivoFn=fn;$('dlgm').showModal();}
 function tcMotivoOk(){var m=$('mm').value.trim();if(m.length<3){$('me').textContent='El motivo es obligatorio.';return;}motivoFn(m);}
 function tcAnular(b){var id=b.dataset.id;tcPedirMotivo('Anular concepto '+id,function(m){post('/nomina/concepto/anular',{id:id,motivo:m},'me');});}
 function tcReabrir(){tcPedirMotivo('Reabrir la liquidación de '+EMP,function(m){post('/nomina/reabrir',{empleado:EMP,semana:SEM,motivo:m},'me');});}
-function tcCerrar(){if(!confirm('¿Cerrar la liquidación de '+EMP+'? Quedará congelada (puedes reabrirla con motivo).'))return;post('/nomina/cerrar',{empleado:EMP,semana:SEM},'ce2');}
+function tcCerrar(){TC.confirmar('Quedará congelada (puedes reabrirla con motivo).',{titulo:'Cerrar la liquidación de '+EMP,si:'Cerrar liquidación'}).then(function(ok){if(ok)post('/nomina/cerrar',{empleado:EMP,semana:SEM},'ce2');});}
 var parId=null;
 function tcParada(b){parId=b.dataset.id;$('pt').textContent=b.dataset.t;$('pc').value=b.dataset.cuenta;$('pm').value='';$('pe').textContent='';$('dlgp').showModal();}
 function tcGuardarParada(){var m=$('pm').value.trim();if(m.length<3){$('pe').textContent='El motivo es obligatorio.';return;}post('/nomina/parada',{id:parId,cuenta:$('pc').value,motivo:m},'pe');}
@@ -402,7 +405,7 @@ var mmFecha=null;
 function tcMillas(b){mmFecha=b.dataset.fecha;$('mmt').textContent=b.dataset.t;$('mmv').value=b.dataset.monto;$('mmm').value='';$('mme').textContent='';$('dlgmm').showModal();}
 function tcGuardarMillas(){var m=$('mmm').value.trim();if(m.length<3){$('mme').textContent='El motivo es obligatorio.';return;}post('/nomina/millas/ajustar',{empleado:EMP,fecha:mmFecha,monto:$('mmv').value,motivo:m},'mme');}
 function tcTodo(a){document.querySelectorAll('details.sec').forEach(function(d){d.open=a;});}
-function tcCopiar(b){var t=b.dataset.msg.replace('{URL}',location.origin+b.dataset.path);function ok(){$('cp').textContent='Copiado ✔';}function fb(){window.prompt('Copia el mensaje:',t);}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(ok,fb);}else{fb();}}`;
+function tcCopiar(b){var t=b.dataset.msg.replace('{URL}',location.origin+b.dataset.path); function ok(){TC.toast('Mensaje copiado.');}function fb(){TC.alerta(t,{titulo:'Copia el mensaje'});}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(ok,fb);}else{fb();}}`;
 
 async function paginaNomina(query, admin) {
   const hoy = hoyFlorida();
@@ -554,10 +557,11 @@ async function paginaNomina(query, admin) {
   }
 
   const sufijo = emp ? '&empleado=' + enc(emp) : '';
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Nómina ${lunes}</title><style>${CSS}${menu.MENU_CSS}</style></head><body>
-<div class="top"><h2 style="margin:0;">Nómina — semana ${lunes} → ${domingo}</h2>
-${menu.menuHtml('/nomina', admin)}</div>
+
+  return `${layout.head('Nómina ' + lunes, CSS)}
+${layout.cabecera({ titulo: 'Nómina — semana ' + lunes + ' → ' + domingo, seccion: '/nomina', admin })}
 <div class="nav">
+
   <a class="btn" href="${q(sumarDias(lunes, -7), emp)}">←</a>
   <a class="btn hoy" href="${q(hoy, emp)}">Esta semana</a>
   <a class="btn" href="${q(sumarDias(lunes, 7), emp)}">→</a>
@@ -568,6 +572,7 @@ ${menu.menuHtml('/nomina', admin)}</div>
 </div>
 <div class="aviso">Horas: inicio más tarde y fin más temprano entre lo programado y el check-in. Millas: se pagan todos los tramos menos el regreso a casa. Lo que falta por revisar queda en $0 y bloquea el cierre. Al cerrar un empleado, sus valores quedan congelados.</div>
 ${tar.hayColumna ? '' : '<div class="aviso r">Falta la columna <b>Tarifa_Hora</b> en la hoja EMPLEADOS: todos los montos salen en $0.00.</div>'}
+${layout.kpis([['Horas pagadas', fmtDur(G.min)], ['Monto horas', usd(G.montoH)], ['Millas', usd(G.millas)], ['Propinas y bonos', usd(G.mas)], ['Descuentos', '− ' + usd(G.menos)], ['Total a pagar', usd(G.total)], ['Por revisar', G.rev, G.rev ? 'neg' : '']])}
 <table><tr><th>Empleado</th><th class="num">Servicios</th><th class="num">Horas pagadas</th><th class="num">Monto horas</th><th class="num">Millas</th><th class="num">Propinas y bonos</th><th class="num">Descuentos</th><th class="num">Total</th><th class="num">Por revisar</th><th>Estado</th></tr>${resumen}
 <tfoot><tr><td>Total</td><td></td><td class="num">${fmtDur(G.min)}</td><td class="num">${usd(G.montoH)}</td><td class="num">${usd(G.millas)}</td><td class="num">${usd(G.mas)}</td><td class="num neg">− ${usd(G.menos)}</td><td class="num">${usd(G.total)}</td><td class="num">${G.rev}</td><td></td></tr></tfoot></table>
 ${detalle}

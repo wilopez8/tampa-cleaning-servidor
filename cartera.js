@@ -10,6 +10,10 @@ const usd = n => (n < 0 ? '− $' : '$') + Math.abs(n || 0).toFixed(2);
 const p2 = n => String(n).padStart(2, '0');
 const ahora = () => new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
 const err = g => ({ ok: false, general: g });
+// Acciones de una fila: un botón principal y el resto en el menú "⋯"
+const accBtn = (modo, txt, id, t, cls) => `<button class="${cls}" data-modo="${modo}" data-id="${esc(id)}" data-t="${esc(t)}" onclick="tcAbrir(this)">${txt}</button>`;
+const menuAcc = (principal, otros) => principal + `<details class="mnu"><summary class="btn mini">⋯</summary><div class="mnu-l">${otros}</div></details>`;
+
 function numero(t) {
   let s = String(t ?? '').replace(/[$\s]/g, '');
   if (!s) return NaN;
@@ -285,8 +289,9 @@ function botonNovedad(r) {
   return `<button class="btn" data-id="${esc(r.ID_Programacion)}" data-t="${esc(r.Cliente + ' · ' + r._fecha)}" onclick="nvAbrir(this)">Novedad de cobro</button>`;
 }
 function dialogoNovedad() {
-  return `<style>${CSS_DETALLE}#nvDlg{border:1px solid #ccc;border-radius:10px;padding:18px;max-width:360px;width:90%;}#nvDlg label{display:block;margin:10px 0;font-size:14px;}#nvDlg input,#nvDlg select{width:100%;padding:8px;font-size:15px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;}</style>
-<dialog id="nvDlg"><h3 style="margin-top:0;">Novedad de cobro</h3><p id="nvT" style="margin:0 0 6px;color:#555;font-size:14px;"></p>
+  return `<style>${CSS_DETALLE}</style>
+
+  <dialog id="nvDlg"><h3 style="margin-top:0;">Novedad de cobro</h3><p id="nvT" style="margin:0 0 6px;color:#555;font-size:14px;"></p>
   <label>Tipo<select id="nvTipo" onchange="nvTipo()">${TIPOS_NV.map(t => `<option>${esc(t)}</option>`).join('')}</select></label>
   <label>Detalle (obligatorio)<input type="text" id="nvDet" maxlength="200"></label>
   <label><span id="nvLbl">Monto (USD)</span><input type="number" id="nvMonto" min="0" step="0.01"></label>
@@ -301,7 +306,7 @@ function nvAbrir(b){nvId=b.dataset.id;nvE('nvT').textContent=b.dataset.t;nvE('nv
 function nvGuardar(){var d=nvE('nvDet').value.trim(),v=nvE('nvMonto').value.trim();
 if(d.length<3){nvE('nvErr').textContent='El detalle es obligatorio.';return;}
 if(v===''||!(parseFloat(v)>=0)){nvE('nvErr').textContent='El monto no es válido.';return;}
-fetch('/cartera/novedad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idProgramacion:nvId,tipo:nvE('nvTipo').value,detalle:d,monto:v})}).then(function(r){return r.json();}).then(function(j){if(j.ok){alert('Novedad de cobro registrada.');location.reload();}else{nvE('nvErr').textContent=j.general||'Error';}}).catch(function(){nvE('nvErr').textContent='Error de conexión';});}
+fetch('/cartera/novedad',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idProgramacion:nvId,tipo:nvE('nvTipo').value,detalle:d,monto:v})}).then(function(r){return r.json();}).then(function(j){if(j.ok){TC.toast('Novedad de cobro registrada.');setTimeout(function(){location.reload();},700);}else{nvE('nvErr').textContent=j.general||'Error';}}).catch(function(){nvE('nvErr').textContent='Error de conexión';});}
 </script>`;
 }
 
@@ -420,20 +425,23 @@ async function paginaCartera(query, admin, vista) {
 
   const filasDet = vis.map(c => {
     const titulo = `${c.Cliente} · ${c._fecha}`;
-    const b = (m, txt) => `<button class="btn mini" data-modo="${m}" data-id="${esc(c.ID_Cobro)}" data-t="${esc(titulo)}" onclick="tcAbrir(this)">${txt}</button>`;
+    
+    const bp = (m, txt) => accBtn(m, txt, c.ID_Cobro, titulo, 'btn mini hoy');
+    const bm = (m, txt) => accBtn(m, txt, c.ID_Cobro, titulo, 'mnu-i pel');
     let acc = '';
-    if (c.Estado === 'Por confirmar') acc = b('ejecutar', 'Ejecutado') + b('cancelar', 'Cancelar');
-    else if (c.Estado === 'Ejecutado') acc = b('novedad', '+ Novedad') + b('cancelar', 'Cancelar');
-    else if (c.Estado === 'Cancelado' && c.Decision === 'Manual') acc = b('ejecutar', 'Ejecutado');
+    if (c.Estado === 'Por confirmar') acc = menuAcc(bp('ejecutar', 'Ejecutado'), bm('cancelar', 'Cancelar servicio'));
+    else if (c.Estado === 'Ejecutado') acc = menuAcc(bp('novedad', '+ Novedad'), bm('cancelar', 'Cancelar servicio'));
+    else if (c.Estado === 'Cancelado' && c.Decision === 'Manual') acc = bp('ejecutar', 'Ejecutado');
+  
     const nvHtml = c._nvs.length ? `<details><summary><small>${c._nvs.filter(n => n.Estado === 'Activa').length} novedad(es) · ${usd(c._nov)}</small></summary>${c._nvs.map(n => `<div${n.Estado !== 'Activa' ? ' class="anu"' : ''}><small>${esc(n.Tipo)}: ${esc(n.Detalle)} (${usd(numero(n.Monto) || 0)}) · ${esc(n.Registrado_Por)}${n.Estado === 'Activa'
-      ? ` <button class="btn mini" data-modo="anular" data-id="${esc(n.ID_Novedad)}" data-t="${esc('Anular novedad ' + n.ID_Novedad)}" onclick="tcAbrir(this)">Anular</button>`
-      : ' · anulada: ' + esc(n.Motivo_Anulacion)}</small></div>`).join('')}</details>` : '<small>—</small>';
+    ? ` <button class="btn mini" data-modo="anular" data-id="${esc(n.ID_Novedad)}" data-t="${esc('Anular novedad ' + n.ID_Novedad)}" onclick="tcAbrir(this)">Anular</button>`
+    : ' · anulada: ' + esc(n.Motivo_Anulacion)}</small></div>`).join('')}</details>` : '<small>—</small>';
     const cls = c.Estado === 'Ejecutado' ? (c._sinTarifa ? 'rev' : 'ok') : (c.Estado === 'Por confirmar' ? 'rev' : 'cn');
-    return `<tr><td>${esc(c._fecha)}</td><td>${esc(c.Cliente)}${mp(c.Cliente)}${c.Pagador && c.Pagador !== c.Cliente ? `<br><small>Paga: ${esc(c.Pagador)}</small>` : ''}</td>
-      <td><small>${esc(c.Empleados)}</small></td>
-      <td><span class="est ${cls}">${esc(c.Estado)}</span>${c._sinTarifa ? '<br><small class="neg">Sin tarifa en SITIOS</small>' : ''}${c.Motivo ? `<br><small>${esc(c.Motivo)}</small>` : ''}</td>
-      <td class="num">${c.Estado === 'Ejecutado' && c._base ? usd(c._base) : '—'}</td><td>${nvHtml}</td>
-      <td class="num"><b>${c.Estado === 'Ejecutado' ? usd(c._total) : '—'}</b></td><td>${P().badgePago(pe(c))}</td><td>${acc}</td></tr>`;
+      return `<tr><td>${esc(c._fecha)}</td><td>${esc(c.Cliente)}${mp(c.Cliente)}${c.Pagador && c.Pagador !== c.Cliente ? `<br><small>Paga: ${esc(c.Pagador)}</small>` : ''}</td>
+        <td><small>${esc(c.Empleados)}</small></td>
+        <td><span class="est ${cls}">${esc(c.Estado)}</span>${c._sinTarifa ? '<br><small class="neg">Sin tarifa en SITIOS</small>' : ''}${c.Motivo ? `<br><small>${esc(c.Motivo)}</small>` : ''}</td>
+        <td class="num">${c.Estado === 'Ejecutado' && c._base ? usd(c._base) : '—'}</td><td>${nvHtml}</td>
+        <td class="num"><b>${c.Estado === 'Ejecutado' ? usd(c._total) : '—'}</b></td><td>${P().badgePago(pe(c))}</td><td>${acc}</td></tr>`;
   }).join('') || '<tr><td colspan="9" style="text-align:center;color:#888;padding:20px;">Sin servicios para este filtro.</td></tr>';
 
   const sel = (nombre, etiqueta, opciones, actual) => `<select name="${nombre}"><option value="">${etiqueta}</option>${opciones.map(o => `<option value="${esc(o)}"${actual === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
@@ -618,11 +626,14 @@ async function paginaCliente(query, admin) {
   const filasHtml = cobros.map(c => {
     const fs = filas.filter(r => r._fecha === c._fecha).sort((a, b) => (a.Hora_Inicio || a.Horario || '').localeCompare(b.Hora_Inicio || b.Horario || ''));
     const titulo = `${c.Cliente} · ${c._fecha}`;
-    const b = (m, txt) => `<button class="btn mini" data-modo="${m}" data-id="${esc(c.ID_Cobro)}" data-t="${esc(titulo)}" onclick="tcAbrir(this)">${txt}</button>`;
+    
+    const bp = (m, txt) => accBtn(m, txt, c.ID_Cobro, titulo, 'btn mini hoy');
+    const bm = (m, txt) => accBtn(m, txt, c.ID_Cobro, titulo, 'mnu-i pel');
     let acc = `<button class="btn mini" data-id="${esc(c.ID_Cobro)}" onclick="tcDetalle(this.dataset.id)">Detalle</button>`;
-    if (c.Estado === 'Por confirmar') acc += b('ejecutar', 'Ejecutado') + b('cancelar', 'Cancelar');
-    else if (c.Estado === 'Ejecutado') acc += b('novedad', '+ Novedad') + b('cancelar', 'Cancelar');
-    else if (c.Estado === 'Cancelado' && c.Decision === 'Manual') acc += b('ejecutar', 'Ejecutado');
+    if (c.Estado === 'Por confirmar') acc += menuAcc(bp('ejecutar', 'Ejecutado'), bm('cancelar', 'Cancelar servicio'));
+    else if (c.Estado === 'Ejecutado') acc += menuAcc(bp('novedad', '+ Novedad'), bm('cancelar', 'Cancelar servicio'));
+    else if (c.Estado === 'Cancelado' && c.Decision === 'Manual') acc += bp('ejecutar', 'Ejecutado');
+    
     const equipo = fs.map(r => {
       const hp = (r.Hora_Inicio && r.Hora_Fin) ? `${r.Hora_Inicio}–${r.Hora_Fin}` : r.Horario;
       return `<div><b>${esc(r.Empleado)}</b>${r._estado === 'Cancelado' ? ' <small>(cancelado)</small>' : ''}<br><small>Prog. ${esc(hp || '—')} · Real ${esc(r.Hora_Entrada_Real || '—')} → ${esc(r.Hora_Salida_Real || '—')}</small></div>`;

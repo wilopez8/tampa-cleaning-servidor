@@ -10,6 +10,7 @@ const { invalidarCache, edadCacheSegundos } = require('./sheets');
 const { paginaAgenda } = require('./agenda');
 const nomina = require('./nomina');
 const path = require('path');
+const marca = require('./marca');
 
 function escaparHtml(t) {
   return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -21,7 +22,9 @@ function paginaLogin(error, volver) {
 input{width:100%;padding:12px;font-size:16px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;margin:10px 0;}
 button{background:#2e7d32;color:white;padding:12px;border:none;border-radius:8px;font-size:16px;width:100%;}
 .e{color:#b91c1c;}</style></head><body>
-<h2>Tampa Cleaning</h2><p>Ingresa tu clave de administrador</p>
+
+<h2>${escaparHtml(marca.EMPRESA)}</h2><p>Ingresa tu clave de administrador</p><p style="color:#848688;font-size:13px;margin-top:-8px;">Plataforma ${escaparHtml(marca.PRODUCTO)}</p>
+
 ${error ? `<p class="e">${escaparHtml(error)}</p>` : ''}
 <form method="POST" action="/login"><input type="hidden" name="volver" value="${escaparHtml(volver)}">
 <input type="password" name="clave" autocomplete="current-password" autofocus required><button type="submit">Entrar</button></form></body></html>`;

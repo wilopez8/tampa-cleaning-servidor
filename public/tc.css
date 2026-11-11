@@ -2,7 +2,7 @@
 @media(max-width:800px){:root{--g:14px;}}
 *{box-sizing:border-box;}
 body{font-family:Inter,-apple-system,"Segoe UI",Arial,sans-serif;margin:0;padding:24px var(--g) 28px;background:var(--bg);color:var(--navy);font-size:14.5px;line-height:1.5;}
-body::after{content:"Tampa Cleaning · Herramienta desarrollada por ADB Consulting";display:block;text-align:center;color:var(--gray);font-size:12px;margin-top:40px;}
+
 a{color:#1f5a8a;text-decoration:none;} a:hover{text-decoration:underline;}
 small{color:var(--gray-d);} h2,h3,h4{color:var(--navy);} h3{font-size:17px;}
 
@@ -95,3 +95,15 @@ dialog h3{margin:0 0 12px;font-size:18px;}
 #tc-toasts{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;gap:10px;z-index:9999;}
 .tc-toast{background:var(--navy);color:#fff;padding:12px 16px;border-radius:10px;border-left:4px solid var(--amber);box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:380px;white-space:pre-wrap;font-size:14px;transition:opacity .3s;}
 .tc-toast.mal{border-left-color:#ef4444;color:#fff;} .tc-toast.fuera{opacity:0;}
+
+/* marca */
+.tc-brand{margin-right:14px;} .tc-brand b{font-weight:700;letter-spacing:.01em;}
+.tc-empresa{padding-left:14px;margin-right:18px;border-left:1px solid rgba(255,255,255,.25);color:#c3ced8;font-weight:500;white-space:nowrap;}
+
+/* diálogos y formularios de las pantallas que aún usan su propio HTML */
+.btn.warn{background:#b45309;border-color:#b45309;color:#fff;}
+dialog{max-width:none;width:min(440px,92vw);}
+dialog label:not(:has(input[type=checkbox])){display:flex;flex-direction:column;gap:4px;margin:8px 0;font-size:13px;font-weight:500;color:var(--gray-d);}
+dialog input[type=text],dialog input[type=number],dialog input[type=date],dialog input[type=time],dialog select,dialog textarea{width:100%;font-size:14.5px;}
+dialog>button.btn{margin:14px 8px 0 0;}
+dialog p{font-size:13px;}

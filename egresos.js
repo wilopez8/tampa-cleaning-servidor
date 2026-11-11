@@ -177,7 +177,7 @@ const opt = arr => arr.map(o => `<option>${esc(o)}</option>`).join('');
 const SCRIPT_EGRESOS = String.raw`
 var egTipo='Gasto',egLiq='',egAnId='',egDbId='';
 function egE(i){return document.getElementById(i);}
-function egPost(url,data,errId){fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.json();}).then(function(j){if(j.ok){if(j.convertido)alert('Se registró como pago eventual de nómina a '+j.convertido+' (lo que se entrega a un empleado es nómina).');location.reload();}else{egE(errId).textContent=j.general||'Error';}}).catch(function(){egE(errId).textContent='Error de conexión';});}
+function egPost(url,data,errId){fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.json();}).then(function(j){if(j.ok){if(j.convertido){TC.alerta('Se registró como pago eventual de nómina a '+j.convertido+' (lo que se entrega a un empleado es nómina).',{titulo:'Registrado como nómina'}).then(function(){location.reload();});}else{location.reload();}}else{egE(errId).textContent=j.general||'Error';}}).catch(function(){egE(errId).textContent='Error de conexión';});}
 function egMetodoCambio(){var m=egE('egMetodo').value,c=egE('egCuenta');
  if(m==='Efectivo'&&c.value==='')c.value='Efectivo en mano';
  if((m==='Venmo'||m==='Zelle')&&c.value==='Efectivo en mano')c.value='';
@@ -269,9 +269,10 @@ async function paginaEgresos(query, admin) {
     const banco = fechaValida(fb) ? esc(fb) + (e.Codigo_Banco ? `<br><small>Cód. ${esc(e.Codigo_Banco)}</small>` : '')
       : (e.Cuenta_Origen === EFECTIVO_MANO ? '<small>Efectivo (sin banco)</small>' : (act2 ? '<span class="est egp">Por debitar</span>' : '<small>—</small>'));
     const acc = act2
-      ? (porDebitar(e) ? `<button class="btn mini" data-id="${esc(e.ID_Egreso)}" data-t="${esc(tDeb)}" onclick="egDebitar(this)">Debitado</button>` : '')
-        + `<button class="btn mini" data-id="${esc(e.ID_Egreso)}" data-t="${esc(t)}" onclick="egAnular(this)">Anular</button>`
-      : `<small>Anulado por ${esc(e.Anulado_Por)}: ${esc(e.Motivo_Anulacion)}</small>`;
+ 
+? (porDebitar(e) ? `<button class="btn mini hoy" data-id="${esc(e.ID_Egreso)}" data-t="${esc(tDeb)}" onclick="egDebitar(this)">Debitado</button>` : '')
+        + `<details class="mnu"><summary class="btn mini">⋯</summary><div class="mnu-l"><button class="mnu-i pel" data-id="${esc(e.ID_Egreso)}" data-t="${esc(t)}" onclick="egAnular(this)">Anular egreso</button></div></details>`
+        : `<small>Anulado por ${esc(e.Anulado_Por)}: ${esc(e.Motivo_Anulacion)}</small>`;
     return `<tr${act2 ? '' : ' class="anu"'}><td>${esc(normalizarFecha(e.Fecha_Pago))}<br><small>${esc(e.ID_Egreso)}</small></td><td>${quien}</td>
       <td><span class="mp ${esc(String(e.Metodo).toLowerCase())}" style="margin-left:0;">${esc(e.Metodo)}</span><br><small>${esc(e.Cuenta_Origen)}${e.Referencia ? '<br>Ref. ' + esc(e.Referencia) : ''}</small></td>
       <td class="num"><b>${usd(numero(e.Valor) || 0)}</b></td><td>${banco}</td>

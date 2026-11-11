@@ -1,5 +1,5 @@
 const { leerHoja, edadCacheSegundos } = require('./sheets');
-
+const layout = require('./layout');
 const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const ESTADOS = ['Borrador', 'Enviado', 'Confirmado', 'No puede', 'En curso', 'Salida (falta cierre)', 'Finalizado', 'Cancelado'];
 
@@ -229,7 +229,11 @@ async function paginaAgenda(query, admin) {
       <button class="btn" data-id="${id}" onclick="tcCancelar(this.dataset.id)">Cancelar</button>`;
   };
 
-
+  const aItem = h => String(h).replace(/class="btn"/g, 'class="mnu-i"');
+  const menuFila = r => {
+    const it = aItem(acciones(r)) + aItem(cartera.botonNovedad(r)) + aItem(notas.botonNota(r));
+    return it.trim() ? `<details class="mnu"><summary class="btn mini">Acciones ▾</summary><div class="mnu-l">${it}</div></details>` : '';
+  };
   const filasHtml = visibles.length ? visibles.map(r => {
     const horario = (r.Hora_Inicio && r.Hora_Fin) ? `${r.Hora_Inicio}–${r.Hora_Fin}` : r.Horario;
     const grupo = delDia.filter(x => x._estado !== 'Cancelado' && x.Cliente === r.Cliente && tipoDe(x) === tipoDe(r));
@@ -238,17 +242,21 @@ async function paginaAgenda(query, admin) {
       <td>${esc(horario)}</td><td>${esc(tipoDe(r))}</td><td>${esc(r.Cliente)}${equipo}</td><td>${esc(r.Empleado)}</td>
       <td><span class="est ${esc(r._estado)}">${esc(r._estado)}</span>${r.Registro_Retroactivo === 'Sí' ? ` <span class="est" style="background:#fecaca" title="${esc(r.Motivo_Retroactivo)}">Retroactivo</span>` : ''}${r.Origen_Registro === 'Manual' ? ' ✍️' : ''}${accionPendiente(r) ? ' ⚠️' : ''}</td>
       <td><button class="btn" data-id="${esc(r.ID_Programacion)}" onclick="tcDetalle(this.dataset.id)">Detalle</button></td>
-      <td>${acciones(r)}${cartera.botonNovedad(r)}${notas.botonNota(r)}</td></tr>
+      <td>${menuFila(r)}</td></tr>
       <tr class="filadet" id="det-${esc(r.ID_Programacion)}" style="display:none"><td colspan="7">${cartera.lineaDeVidaH(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion], porServ[r.ID_Programacion], cobroInfo[r.ID_Programacion], notasSrv[r.ID_Programacion])}</td></tr>`;
     
   }).join('') : '<tr><td colspan="7" style="text-align:center;color:#888;padding:24px;">No hay servicios para esta fecha o filtro.</td></tr>';
 
+    const activos = delDia.filter(r => r._estado !== 'Cancelado');
+  const cuenta = (...e) => activos.filter(r => e.includes(r._estado)).length;
+  const kpisDia = layout.kpis([['Servicios', activos.length], ['Finalizados', cuenta('Finalizado')], ['En curso', cuenta('En curso', 'Salida (falta cierre)')],
+    ['Por confirmar', cuenta('Enviado')], ['Borrador', cuenta('Borrador')], ['No puede', cuenta('No puede'), cuenta('No puede') ? 'neg' : '']]);
   const edad = edadCacheSegundos('PROGRAMACION_DIARIA');
   const volver = esc('/agenda?' + new URLSearchParams({ fecha, ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)) }).toString());
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Agenda ${fecha}</title><style>${CSS}${ed ? ed.CSS_EDITOR : ''}${require('./menu').MENU_CSS}</style></head><body>
-<div class="top"><h2 style="margin:0;">Agenda — ${diaSemana(fecha)} ${fecha}</h2>
-  ${require('./menu').menuHtml('/agenda', admin)}</div>
+    return `${layout.head('Agenda ' + fecha, CSS + (ed ? ed.CSS_EDITOR : ''))}
+${layout.cabecera({ titulo: 'Agenda — ' + diaSemana(fecha) + ' ' + fecha, seccion: '/agenda', admin })}
+
 <div class="nav">
   <a class="btn" href="/agenda?fecha=${sumarDias(fecha, -1)}">←</a>
   <a class="btn hoy" href="/agenda?fecha=${hoy}">Hoy</a>
@@ -259,6 +267,7 @@ async function paginaAgenda(query, admin) {
     <input type="hidden" name="volver" value="${volver}"><button class="btn">Actualizar</button></form>
 </div>
 <div class="semana">${tira}</div>
+${kpisDia}
 <div class="aviso">${aviso}</div>
 ${ed ? ed.editorHtml(fecha, maestrosDatos, delDia) : ''}
 ${franja}

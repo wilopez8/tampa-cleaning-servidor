@@ -383,12 +383,14 @@ function tablaPagos(lista, d, cobMap) {
       return `<div><small>${c ? esc(c._fecha + ' · ' + c.Cliente) : esc(a.ID_Cobro)}: ${usd(numero(a.Valor_Aplicado) || 0)}</small></div>`;
     }).join('');
     const aplTxt = p.Tipo === TIPO_OTRO ? '<small>No ligado a servicios</small>' : (apps || '<small>Sin aplicar</small>') + (libre > EPS ? `<div><small class="neg">Saldo a favor ${usd(libre)}</small></div>` : '');
-    const b = (accion, txt) => `<button class="btn mini" data-acc="${accion}" data-id="${esc(p.ID_Pago)}" data-cuenta="${esc(p.Cuenta_Destino)}" data-t="${esc((accion === 'anular' ? 'Anular ingreso ' : 'Pago ') + p.ID_Pago + ' · ' + p.Pagador)}" onclick="pgAccion(this)">${txt}</button>`;
+    
+    const b = (accion, txt, cls) => `<button class="${cls}" data-acc="${accion}" data-id="${esc(p.ID_Pago)}" data-cuenta="${esc(p.Cuenta_Destino)}" data-t="${esc((accion === 'anular' ? 'Anular ingreso ' : 'Pago ') + p.ID_Pago + ' · ' + p.Pagador)}" onclick="pgAccion(this)">${txt}</button>`;
     let acc = '';
     if (act) {
-      if (libre > EPS) acc += `<button class="btn mini" onclick="pgAplicarSaldo('${esc(p.ID_Pago)}')">Aplicar saldo</button>`;
-      if (!banco) acc += b('deposito', 'Depositado');
-      acc += b('anular', 'Anular');
+      const aplicar = libre > EPS, dep = !banco;
+      const prim = aplicar ? `<button class="btn mini hoy" onclick="pgAplicarSaldo('${esc(p.ID_Pago)}')">Aplicar saldo</button>` : (dep ? b('deposito', 'Depositado', 'btn mini hoy') : '');
+      const otros = (aplicar && dep ? b('deposito', 'Marcar depositado', 'mnu-i') : '') + b('anular', 'Anular ingreso', 'mnu-i pel');
+      acc = prim + `<details class="mnu"><summary class="btn mini">⋯</summary><div class="mnu-l">${otros}</div></details>`;
     } else acc = `<small>Anulado por ${esc(p.Anulado_Por)}: ${esc(p.Motivo_Anulacion)}</small>`;
     return `<tr${act ? '' : ' class="anu"'}><td>${esc(normalizarFecha(p.Fecha_Recibido))}<br><small>${esc(p.ID_Pago)}</small></td><td>${quien}</td><td>${metodo}</td>
       <td class="num"><b>${usd(v)}</b></td><td>${bancoTxt}</td><td>${aplTxt}</td><td><span class="est ${act ? 'ok' : 'cn'}">${esc(p.Estado)}</span><br>${acc}</td></tr>`;
