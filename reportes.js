@@ -19,7 +19,7 @@ const val = x => numero(x.Valor) || 0;
 const nombreIngreso = p => p.Tipo === 'Servicios' ? 'Servicios' : (p.Categoria || 'Otro ingreso');
 
 // secciones plegables y pestañas
-const sec = (titulo, cuerpo, abierta) => `<details class="sec"${abierta === false ? '' : ' open'}><summary>${titulo}</summary>${cuerpo}</details>`;
+const sec = (titulo, cuerpo, abierta) => `<details class="sec"${abierta === true ? ' open' : ''}><summary>${titulo}</summary>${cuerpo}</details>`;
 let nTabs = 0;
 const pestanas = lista => {
   const id = 'tb' + (++nTabs);

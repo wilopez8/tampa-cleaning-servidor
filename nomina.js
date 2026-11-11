@@ -69,7 +69,8 @@ function f24(min) {
 const t12 = m => (m === null || m === undefined) ? '' : f12(m);
 const fmtDur = min => `${Math.floor(min / 60)} h ${p2(min % 60)} min`;
 const usd = n => '$' + (n || 0).toFixed(2);
-const sec = (t, c) => `<details class="sec" open><summary>${t}</summary>${c}</details>`;
+
+const sec = (t, c) => `<details class="sec"><summary>${t}</summary>${c}</details>`;
 
 // ---------- lectura de hojas ----------
 const aseguradas = new Set();
