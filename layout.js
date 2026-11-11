@@ -6,11 +6,12 @@ const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 const ver = f => { try { return Math.round(fs.statSync(path.join(__dirname, 'public', f)).mtimeMs); } catch (e) { return 0; } };
 const V_CSS = ver('tc.css'), V_JS = ver('tc.js');
 
-const SECCIONES = [['/resumen', 'Resumen'], ['/agenda', 'Agenda'], ['/pendientes', 'Pendientes'], ['/cartera/calidad', 'Calidad'], ['/cartera', 'Cartera'], ['/nomina', 'Nómina']];
+const SECCIONES = [['/resumen', 'Resumen'], ['/agenda', 'Agenda'], ['/pendientes', 'Pendientes'], ['/cartera/calidad', 'Calidad'], ['/cartera', 'Cartera'], ['/nomina', 'Nómina'], ['/directorio', 'Directorio']];
 // [clave, ruta, texto, conserva ?mes=]
 const SUBS = {
   cartera: [['servicios', '/cartera', 'Servicios', true], ['clientes', '/cartera/clientes', 'Clientes', true], ['ingresos', '/cartera/pagos', 'Ingresos', false],
-    ['egresos', '/cartera/egresos', 'Egresos', false], ['reportes', '/cartera/reportes', 'Reportes', false],     ['egresos', '/cartera/egresos', 'Egresos', false], ['reportes', '/cartera/reportes', 'Reportes', false]],
+    ['egresos', '/cartera/egresos', 'Egresos', false], ['reportes', '/cartera/reportes', 'Reportes', false]],
+  directorio: [['clientes', '/directorio/clientes', 'Clientes', false], ['empleados', '/directorio/empleados', 'Empleados', false]],
 };
 
 // css: estilos propios de la pantalla (van antes de tc.css, que los complementa)

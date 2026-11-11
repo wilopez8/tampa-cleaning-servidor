@@ -34,7 +34,7 @@ async function leerTodo() {
   const vig = new Set();
   if (vd.length > 1) {
     const h = vd[0], iN = h.indexOf('clientes'), iV = h.indexOf('Cliente Vigente/Vencido');
-    vd.slice(1).forEach(f => { const n = String(f[iN] || '').trim(); if (n && !(iV >= 0 && /^venc/i.test(String(f[iV] || '').trim()))) vig.add(n); });
+    vd.slice(1).forEach(f => { const n = String(f[iN] || '').trim(); if (n && !(iV >= 0 && /venc/i.test(String(f[iV] || '').trim()))) vig.add(n); });
   }
   if (!vig.size) filas.forEach(r => { if (r.Cliente) vig.add(r.Cliente.trim()); });
   return { hoy, filas, quejas, notas: notas.filter(n => n.ID_Nota), vig, tar };
