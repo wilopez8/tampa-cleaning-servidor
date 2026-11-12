@@ -9,6 +9,8 @@ const limpio = t => String(t ?? '').trim();
 const unaLinea = t => limpio(t).replace(/\s*[\r\n]+\s*/g, ' ');
 const dig = t => String(t || '').replace(/\D/g, '');
 const num = t => { const x = parseFloat(String(t ?? '').replace(/[$,\s]/g, '')); return isFinite(x) ? x : NaN; };
+// Coordenadas: acepta "27.88" y "27,88" (Sheets con coma decimal)
+const numGeo = t => { let x = String(t ?? '').trim().replace(/^'/, ''); if (/^-?\d+,\d+$/.test(x)) x = x.replace(',', '.'); const n = parseFloat(x); return isFinite(n) ? n : NaN; };
 const corto = (t, n) => { t = limpio(t); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 const fechaLeg = f => String(f).split('-').reverse().join('/');
 const FRECS = ['Semanal', 'Quincenal', 'Mensual'];
@@ -101,7 +103,7 @@ async function leerClientes(vivo) {
     const aC = rc ? val(c, rc, 'Cliente Vigente/Vencido') === 'Cliente Vigente' : true;
     const aS = rs ? val(s, rs, 'Estatus') === 'Activo' : true;
     const g = (col, alt) => (rs ? val(s, rs, col) : '') || (rc && alt ? val(c, rc, alt) : '');
-    const lat = rs ? num(rs[s.h.indexOf('Latitud')]) : NaN, lon = rs ? num(rs[s.h.indexOf('Longitud')]) : NaN;
+    const lat = rs ? numGeo(rs[s.h.indexOf('Latitud')]) : NaN, lon = rs ? numGeo(rs[s.h.indexOf('Longitud')]) : NaN;
     const tar = rs ? num(rs[s.h.indexOf('Tarifa_Servicio')]) : NaN;
     const ref = rs ? normalizarFecha(rs[s.h.indexOf('Fecha_Referencia_Cobro')]) : '';
     return {
@@ -133,7 +135,9 @@ async function leerEmpleados(vivo) {
 
 // ---------------------------------------------------------------- escritura
 function igual(col, actual, nuevo) {
-  if (['Latitud', 'Longitud', 'Radio_Tolerancia_m', 'Tarifa_Servicio', 'Tarifa_Hora'].indexOf(col) >= 0) {
+  
+  if (col === 'Latitud' || col === 'Longitud') { const a = numGeo(actual), b = numGeo(nuevo); return (isNaN(a) && isNaN(b)) || a === b; }
+  if (['Radio_Tolerancia_m', 'Tarifa_Servicio', 'Tarifa_Hora'].indexOf(col) >= 0) {
     const a = num(actual), b = typeof nuevo === 'number' ? nuevo : num(nuevo);
     return (isNaN(a) && isNaN(b)) || a === b;
   }
@@ -180,7 +184,7 @@ function revisarCliente(p) {
   if (!f.dir) return mal('Escribe la dirección del servicio.');
   if ((f.lat === '') !== (f.lon === '')) return mal('Escribe latitud y longitud juntas, o deja ambas vacías.');
   if (f.lat !== '') {
-    const la = num(f.lat), lo = num(f.lon);
+    const la = numGeo(f.lat), lo = numGeo(f.lon);
     if (!(Math.abs(la) <= 90) || !(Math.abs(lo) <= 180)) return mal('Latitud o longitud no válidas (ejemplo: 27.9506 y -82.4572).');
     f.lat = +la.toFixed(6); f.lon = +lo.toFixed(6);
   }
@@ -216,7 +220,7 @@ async function guardarCliente(p, admin) {
     if (f.lat === '') aviso = 'Guardado sin coordenadas: los check-ins de este cliente saldrán "fuera de rango" hasta que las agregues.';
     const vc = { clientes: nombre, Direccion: f.dir, 'Google Maps': f.maps, Descripcion_Servicio: f.desc, Instrucciones: f.ins, Ciudad: f.ciudad, 'Cliente Vigente/Vencido': f.estado === 'Activo' ? 'Cliente Vigente' : 'Cliente Vencido' };
     const vs = {
-      Nombre_Cliente: nombre, Direccion: f.dir, Google_Maps_Link: f.maps, Latitud: f.lat, Longitud: f.lon, Radio_Tolerancia_m: f.radio, Checklist_Tareas: f.chk, Tipo_Cliente: f.tipo,
+      Nombre_Cliente: nombre, Direccion: f.dir, Google_Maps_Link: f.maps, Latitud: f.lat === '' ? '' : "'" + f.lat, Longitud: f.lon === '' ? '' : "'" + f.lon, Radio_Tolerancia_m: f.radio, Checklist_Tareas: f.chk, Tipo_Cliente: f.tipo,
       Estatus: f.estado, Tarifa_Servicio: f.tarifa, Pagador: f.pagador, Metodo_Pago: f.metodo, Nota_Pago: f.nota, Frecuencia_Cobro: f.frec, Fecha_Referencia_Cobro: f.ref,
     };
     if (iC !== undefined) await actualizar('CLIENTES', c, iC, vc); else await crear('CLIENTES', c, vc);
