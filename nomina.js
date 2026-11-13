@@ -29,7 +29,7 @@ const TIPOS = ['Propina', 'Bono', 'Descuento', 'Otro'];
 // Una sola escritura sensible a la vez (evita IDs repetidos y dobles cierres)
 let cola = Promise.resolve();
 const enCola = fn => { const p = cola.then(fn); cola = p.catch(() => {}); return p; };
-const ahora = () => new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+const { ahora } = require('./tiempo');
 
 // ---------- utilidades ----------
 function numero(t) {

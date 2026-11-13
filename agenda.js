@@ -5,7 +5,7 @@ const ESTADOS = ['Borrador', 'Enviado', 'Confirmado', 'No puede', 'En curso', 'S
 
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-function hoyFlorida() { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); }
+const { hoy: hoyFlorida } = require('./tiempo');
 function fechaValida(t) {
   return /^\d{4}-\d{2}-\d{2}$/.test(t || '') && new Date(t + 'T00:00:00Z').toISOString().slice(0, 10) === t;
 }

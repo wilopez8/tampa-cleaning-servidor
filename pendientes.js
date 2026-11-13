@@ -15,7 +15,7 @@ const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const limpio = t => String(t ?? '').trim();
 const digitos = t => String(t || '').replace(/\D/g, '');
-const ahora = () => new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+const { ahora } = require('./tiempo');
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const js = o => JSON.stringify(o).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 function hora(t) { const m = String(t || '').match(/(\d{1,2}):(\d{2})/); return m ? m[1].padStart(2, '0') + ':' + m[2] : ''; }

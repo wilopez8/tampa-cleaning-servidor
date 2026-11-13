@@ -1,6 +1,7 @@
 const { leerHoja, agregarFilas, actualizarCeldas } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida } = require('./agenda');
 const { enviarProgramacionFecha, notificarCambioPostEnvio, registrarCambio } = require('./logica');
+const { zonaHoraria: ZONA } = require('./empresa');
 
 const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
 const REQUERIDAS = ['ID_Programacion', 'Fecha_Servicio', 'Tipo_Servicio', 'Cliente', 'Empleado', 'Horario', 'Hora_Inicio', 'Hora_Fin',
@@ -12,7 +13,7 @@ const soloDigitos = t => String(t || '').replace(/\D/g, '');
 function normalizarHora(t) { const m = String(t || '').match(/(\d{1,2}):(\d{2})/); return m ? m[1].padStart(2, '0') + ':' + m[2] : ''; }
 function horarioTexto(i, f) { const q = h => String(parseInt(h.slice(0, 2), 10)) + h.slice(2); return `${q(i)}-${q(f)}`; } // "8:00-12:00"
 function ahoraTexto() {
-  const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date());
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: ZONA, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date());
   const g = t => p.find(x => x.type === t).value;
   return `${g('year')}-${g('month')}-${g('day')} ${g('hour')}:${g('minute')}`;
 }

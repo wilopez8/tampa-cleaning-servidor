@@ -3,9 +3,7 @@ const twilio = require('twilio');
 
 const ENTORNO_PRUEBAS = process.env.ENTORNO === 'pruebas';
 const clienteTwilio = ENTORNO_PRUEBAS ? null : twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-const TWILIO_WHATSAPP_FROM = 'whatsapp:+14155238886'; // numero del Sandbox
-const BASE_URL = 'https://tampa-cleaning-servidor.onrender.com'; // tu propio servidor (sin AppSheet)
-const CHAT_ADMIN_WHATSAPP = 'whatsapp:+18133856059';  // numero personal de Will (gerencia)
+const { zonaHoraria: ZONA, whatsappFrom: TWILIO_WHATSAPP_FROM, baseUrl: BASE_URL, gerenciaWhatsapp: CHAT_ADMIN_WHATSAPP } = require('./empresa');
 
 function soloDigitos(texto) {
   return String(texto || '').replace(/\D/g, '');
@@ -88,7 +86,7 @@ async function buscarProgramacionHoy(nombreEmpleado) {
   headers.forEach((h, i) => col[h] = i);
 
   // "Hoy" segun la hora de Florida, no la del servidor (evita el corrimiento de UTC)
-  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: ZONA });
 
   for (let i = 1; i < datos.length; i++) {
     const fila = datos[i];
@@ -167,7 +165,7 @@ async function procesarCheckIn(telefono, lat, lon) {
     tipo = (!yaTieneEntrada) ? 'Entrada' : (!yaTieneSalida ? 'Salida' : 'Salida');
 
     if (prog.col[`Hora_${tipo}_Real`] !== undefined) {
-      const horaLegible = ahora.toLocaleString('en-US', { timeZone: 'America/New_York' });
+      const horaLegible = ahora.toLocaleString('en-US', { timeZone: ZONA });
       await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Hora_${tipo}_Real`] + 1, horaLegible);
       await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Lat_${tipo}`] + 1, lat);
       await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Lon_${tipo}`] + 1, lon);
@@ -176,8 +174,8 @@ async function procesarCheckIn(telefono, lat, lon) {
   }
 
   await agregarFila('REGISTRO_TURNOS', [
-    ahora.toLocaleDateString('en-US', { timeZone: 'America/New_York' }),
-    ahora.toLocaleTimeString('en-US', { timeZone: 'America/New_York' }),
+    ahora.toLocaleDateString('en-US', { timeZone: ZONA }),
+    ahora.toLocaleTimeString('en-US', { timeZone: ZONA }),
     telefono,
     nombreEmpleado,
     lat,
@@ -237,7 +235,7 @@ function construirMensajeProgramacion(fila, col, dc, titulo) {
 function fechaLegible(f) { const [y, m, d] = f.split('-'); return `${d}/${m}/${y}`; }
 
 function tituloProgramacion(fecha) {
-  const opt = { timeZone: 'America/New_York' };
+  const opt = { timeZone: ZONA };
   const hoy = new Date().toLocaleDateString('en-CA', opt);
   const man = new Date(Date.now() + 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', opt);
   if (fecha === hoy) return 'Servicio programado para HOY';
@@ -294,7 +292,7 @@ async function registrarCambio({ id, fechaServicio, tipo, detalle, por, notifica
   try {
     await asegurarHoja(HOJA_CAMBIOS, ENCAB_CAMBIOS);
     await agregarFila(HOJA_CAMBIOS, [
-      new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }),
+      new Date().toLocaleString('en-US', { timeZone: ZONA }),
       id, fechaServicio, tipo, detalle, por, notificado || '', aviso,
     ]);
   } catch (err) { console.error('No se pudo registrar el cambio:', err); }
@@ -370,7 +368,7 @@ async function procesarRespuestaConfirmacion(telefono, texto) {
   const col = {};
   headers.forEach((h, i) => col[h] = i);
 
-  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: ZONA });
 
   for (let i = 1; i < datos.length; i++) {
     const fila = datos[i];
@@ -382,7 +380,7 @@ async function procesarRespuestaConfirmacion(telefono, texto) {
 
       await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Estado_Confirmacion'] + 1, nuevoEstado);
       await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Fecha_Hora_Confirmacion'] + 1,
-        new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        new Date().toLocaleString('en-US', { timeZone: ZONA }));
 
       if (nuevoEstado === 'Confirmado') {
         return `✅ Confirmado. Nos vemos en ${cliente}.`;
@@ -403,7 +401,7 @@ async function procesarQuejaODuda(telefono, tipo, descripcion, fotoUrl) {
 
   await agregarFila('QUEJAS', [
     idQueja,
-    ahora.toLocaleString('en-US', { timeZone: 'America/New_York' }),
+    ahora.toLocaleString('en-US', { timeZone: ZONA }),
     tipo,
     'WhatsApp',
     prog ? prog.idProgramacion : '',
@@ -436,7 +434,7 @@ async function buscarProgramacionPorClienteHoy() {
   const headers = datos[0];
   const col = {};
   headers.forEach((h, i) => col[h] = i);
-  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: ZONA });
   return { datos, col, hoyTexto };
 }
 
@@ -467,7 +465,7 @@ async function procesarAviso(telefonoEmisor, texto) {
 
       if (col['Avisos_Durante_Servicio'] !== undefined) {
         const previo = fila[col['Avisos_Durante_Servicio']] || '';
-        const marca = `[${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })}] ${mensajeAviso}`;
+        const marca = `[${new Date().toLocaleString('en-US', { timeZone: ZONA })}] ${mensajeAviso}`;
         await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Avisos_Durante_Servicio'] + 1, previo ? `${previo}\n${marca}` : marca);
       }
       if (col['Aviso_Confirmado'] !== undefined) {

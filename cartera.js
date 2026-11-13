@@ -8,7 +8,7 @@ const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 const r2 = x => Math.round(x * 100) / 100;
 const usd = n => (n < 0 ? '− $' : '$') + Math.abs(n || 0).toFixed(2);
 const p2 = n => String(n).padStart(2, '0');
-const ahora = () => new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+const { ahora } = require('./tiempo');
 const err = g => ({ ok: false, general: g });
 // Acciones de una fila: un botón principal y el resto en el menú "⋯"
 const accBtn = (modo, txt, id, t, cls) => `<button class="${cls}" data-modo="${modo}" data-id="${esc(id)}" data-t="${esc(t)}" onclick="tcAbrir(this)">${txt}</button>`;

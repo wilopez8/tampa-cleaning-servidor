@@ -4,7 +4,7 @@ const { normalizarFecha, diaSemana } = require('./agenda');
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const r2 = x => Math.round(x * 100) / 100;
 const usd = n => '$' + (n || 0).toFixed(2);
-const ahora = () => new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+const { ahora } = require('./tiempo');
 function numero(t) {
   let s = String(t ?? '').replace(/[$\s]/g, '');
   if (!s) return NaN;
