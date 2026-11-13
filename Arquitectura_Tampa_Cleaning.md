@@ -1,13 +1,13 @@
 # Arquitectura — Sistema Tampa Cleaning
 
-**Última actualización:** 28 de octubre de 2026
+**Última actualización:** 12 de noviembre de 2026
 **Propósito de este documento:** referencia técnica para entender cómo funciona el sistema, qué piezas lo componen y cómo se conectan.
 
 ---
 
 ## 1. Resumen en una frase
 
-Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su ubicación (check-in), confirmar su programación y reportar novedades. Un **servidor propio en Node.js** (hosteado en Render) procesa esos mensajes, valida la información contra **Google Sheets** (que funciona como base de datos central), y notifica a gerencia por WhatsApp cuando algo requiere atención. El cierre de cada servicio (checklist, insumos, comentario — o la evaluación por áreas, si el servicio es una inspección de calidad) se completa en una **página web propia**, generada por el mismo servidor — no se usa ninguna herramienta externa de formularios. Los administradores programan, editan, reasignan y cancelan servicios desde una **agenda web** protegida con clave (`/agenda`), también generada por el servidor. Desde esa misma sesión asignan **pendientes** (tareas sueltas como acciones correctivas o diligencias) que el empleado recibe por WhatsApp y cierra respondiendo "Ok". Además calculan la **nómina semanal** (`/nomina`): horas pagadas por servicio a partir de lo programado y del check-in, millas recorridas entre servicios (con Google Routes), propinas/bonos/descuentos, y cierre de la liquidación de cada empleado; la liquidación cerrada se le comparte al empleado con un **enlace firmado** (`/liquidacion`) para que vea su detalle sin iniciar sesión. Por último, llevan la **cartera** (`/cartera`): lo que hay que cobrarle a cada cliente, generado solo a partir de los servicios de la agenda (un cobro por cliente y día, con la tarifa del sitio) más las **novedades de cobro** (tiempo o trabajo adicional, productos, valor final ajustado).
+Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su ubicación (check-in), confirmar su programación y reportar novedades. Un **servidor propio en Node.js** (hosteado en Render) procesa esos mensajes, valida la información contra **Google Sheets** (que funciona como base de datos central), y notifica a gerencia por WhatsApp cuando algo requiere atención. El cierre de cada servicio (checklist, insumos, comentario — o la evaluación por áreas, si el servicio es una inspección de calidad) se completa en una **página web propia**, generada por el mismo servidor — no se usa ninguna herramienta externa de formularios. Los administradores programan, editan, reasignan y cancelan servicios desde una **agenda web** protegida con clave (`/agenda`), también generada por el servidor. Desde esa misma sesión asignan **pendientes** (tareas sueltas como acciones correctivas o diligencias) que el empleado recibe por WhatsApp y cierra respondiendo "Ok". Además calculan la **nómina semanal** (`/nomina`): horas pagadas por servicio a partir de lo programado y del check-in, millas recorridas entre servicios (con Google Routes), propinas/bonos/descuentos, y cierre de la liquidación de cada empleado; la liquidación cerrada se le comparte al empleado con un **enlace firmado** (`/liquidacion`) para que vea su detalle sin iniciar sesión. Por último, llevan la **cartera** (`/cartera`): lo que hay que cobrarle a cada cliente, generado solo a partir de los servicios de la agenda (un cobro por cliente y día, con la tarifa del sitio) más las **novedades de cobro** (tiempo o trabajo adicional, productos, valor final ajustado). Sobre la cartera registran el dinero que entra (**ingresos**, aplicados a los servicios para saber qué está pagado y qué saldo queda) y el que sale (**egresos**: pagos de nómina y gastos), con **reportes** de flujo, antigüedad de cartera y pagos a empleados. Llevan además **notas de retroalimentación** por servicio o cliente, un **semáforo de calidad** por cliente (`/cartera/calidad`), un **resumen del día** (`/resumen`, la página de inicio tras el login) y un **directorio** para crear y editar clientes y empleados sin tocar el Sheets.
 
 ---
 
@@ -22,6 +22,10 @@ Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su 
 7. **Nómina fase 2 — millas:** se agregó `millas.js`, que calcula el recorrido diario de cada empleado (casa → servicios → casa) con la **API de Google Routes** y guarda las distancias en una hoja-caché (`DISTANCIAS`) para no volver a consultar el mismo trayecto. Está conectado a `/nomina`: las millas suman al total, se pueden ajustar por parada o por día, bloquean el cierre si quedan por revisar y se congelan al cerrar (ver 6.10). En el mismo cambio, las páginas de administración (agenda, pendientes, nómina) pasaron a compartir un **menú de navegación** común (`menu.js`).
 8. **Liquidación visible para el empleado:** cada liquidación cerrada tiene un **enlace propio** (`/liquidacion?t=…`) con un token firmado que vence a los 60 días, para que el empleado vea sus horas, millas, conceptos y total sin cuenta ni clave. El enlace no se envía por Twilio: el administrador copia un mensaje ya redactado con el botón "Copiar mensaje con enlace" y lo manda él mismo.
 9. **Cartera (cobros a clientes):** se agregó `cartera.js` (`/cartera`), que convierte los servicios de la agenda en cobros por cliente y día, permite confirmar o cancelar los que quedaron sin cerrar y registrar novedades de cobro, tanto desde la cartera como desde un botón en la agenda. En el mismo cambio, el "Detalle" de la agenda pasó a mostrarse como un bloque horizontal debajo de la fila (con un bloque nuevo de **Cobro**), y se **retiró** el enlace antiguo `/enviar-programacion` junto con la variable `CLAVE_ADMIN`.
+10. **Ingresos y egresos:** se agregó `pagos.js` (`/cartera/pagos`): cada dinero recibido se registra una vez y se **reparte** entre los servicios ejecutados del pagador; el estado de pago de cada cobro (Pendiente / Parcial / Pagado) se **calcula**, no se escribe. Luego `egresos.js` (`/cartera/egresos`) para pagos de nómina (atados a una liquidación cerrada) y gastos, y `reportes.js` (`/cartera/reportes`). Ingresos y egresos cuentan por su **fecha de banco** (o la de pago si es efectivo en mano), para poder conciliar con el extracto.
+11. **Notas y calidad:** `notas.js` agrega retroalimentación (calidad con calificación de 1 a 5, comentarios del cliente) por servicio o por cliente, visible en la línea de vida y en la página del cliente. `calidad.js` (`/cartera/calidad`) junta quejas, inspecciones, cierres y notas en un **semáforo por cliente**.
+12. **Interfaz común y resumen:** las páginas de administración pasaron a una cabecera común (`layout.js`: barra con logo, secciones y sub-pestañas, tarjetas KPI) con estilos y diálogos compartidos en `public/tc.css` y `public/tc.js` (servidos en `/static`), y datos de marca configurables (`marca.js`). Los `alert`/`confirm`/`prompt` del navegador se reemplazaron por diálogos propios (`TC.alerta`, `TC.confirmar`, `TC.pedir`, `TC.toast`). Se agregó `/resumen` (`resumen.js`) como página de inicio tras el login.
+13. **Directorio:** `directorio.js` (`/directorio`) permite crear, editar y activar/desactivar clientes (escribe en `CLIENTES` y `SITIOS` a la vez) y empleados (`EMPLEADOS`) desde la web, y obtiene las coordenadas a partir del enlace de Google Maps.
 
 ---
 
@@ -31,7 +35,7 @@ Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su 
 |---|---|---|
 | **WhatsApp** | Interfaz que usan los empleados y gerencia | App de WhatsApp de cada persona |
 | **Twilio** | Traduce entre WhatsApp y el servidor (recibe mensajes entrantes, envía salientes) | Cuenta en twilio.com — actualmente en modo **Sandbox** (pendiente migrar a número verificado) |
-| **Servidor Node.js** | Toda la lógica de negocio y las páginas web del sistema (formulario de cierre, login, agenda, pendientes, nómina, cartera) | Hosteado en Render.com (`tampa-cleaning-servidor.onrender.com`), código en GitHub |
+| **Servidor Node.js** | Toda la lógica de negocio y las páginas web del sistema (formulario de cierre, login, resumen, agenda, pendientes, nómina, cartera con ingresos/egresos/reportes, calidad, directorio) | Hosteado en Render.com (`tampa-cleaning-servidor.onrender.com`), código en GitHub |
 | **Google Sheets** | Base de datos central | `Tampa_Cleaning_BUILD` (Google Drive) |
 | **Google Cloud (cuenta de servicio)** | Permite que el servidor lea/escriba en Sheets sin intervención humana | Proyecto `tampa-cleaning-509423` |
 
@@ -41,7 +45,7 @@ Los empleados de Tampa Cleaning interactúan por **WhatsApp** para registrar su 
 
 ```
 tampa-cleaning-servidor/
-├── index.js       → Rutas HTTP: webhook de Twilio, formulario de cierre / inspección, login, agenda, pendientes (las de nómina y cartera las registran nomina.js y cartera.js)
+├── index.js       → Rutas HTTP: webhook de Twilio, formulario de cierre / inspección, login, agenda, pendientes, archivos estáticos (/static). El resto de módulos registran sus propias rutas con <modulo>.rutas(app, auth)
 ├── logica.js      → Lógica de negocio de WhatsApp: check-in, envío de programación, confirmaciones, avisos de cambio, cierre
 ├── auth.js        → Inicio de sesión de administradores (claves, cookie firmada, bloqueo por intentos fallidos)
 ├── agenda.js      → Página /agenda: vista semanal/diaria, filtros, "línea de vida" de cada servicio, franja de pendientes del día
@@ -50,7 +54,17 @@ tampa-cleaning-servidor/
 ├── nomina.js      → Nómina semanal: página /nomina, cálculo de horas pagadas, ajustes, conceptos adicionales, millas, cierre/reapertura de liquidaciones, página /liquidacion del empleado con enlace firmado (registra sus rutas con nomina.rutas(app, auth))
 ├── millas.js      → Millas de la nómina (lo usa nomina.js): distancias con Google Routes + caché en DISTANCIAS, cálculo de millas por día, registro de paradas y ajustes de monto, foto al cerrar, tablas HTML de millas
 ├── cartera.js     → Cartera: páginas /cartera, /cartera/clientes y /cartera/cliente, sincronización de cobros desde la agenda, confirmar/cancelar cobros, novedades de cobro; también el botón y diálogo "Novedad de cobro" y la "línea de vida" horizontal (lineaDeVidaH) que usa la agenda (registra sus rutas con cartera.rutas(app, auth))
-├── menu.js        → Menú de navegación común de las páginas de administración (Agenda · Pendientes · Nómina · Cartera · Cerrar sesión): MENU_CSS y menuHtml(rutaActual, admin)
+├── pagos.js       → Ingresos: página /cartera/pagos, registro de ingresos (por servicios u otros), reparto entre servicios, saldo a favor, depósito, anulación; estado de pago de cada cobro (estadoCobro) y sección de ingresos de la página del cliente
+├── egresos.js     → Egresos: página /cartera/egresos, pagos de nómina (por liquidación o eventuales) y gastos, débito en banco, anulación
+├── reportes.js    → Página /cartera/reportes (solo lectura): antigüedad de cartera, ingresos/egresos por cuenta, método y categoría, conciliación, por depositar/debitar, pagos a empleados, mes a mes
+├── notas.js       → Notas de retroalimentación por servicio o cliente (NOTAS_SERVICIO): botón y diálogo en la agenda, bloque en la línea de vida, sección en la página del cliente
+├── calidad.js     → Páginas /cartera/calidad y /cartera/calidad/cliente (solo lectura): semáforo de calidad por cliente y ficha con su historial
+├── resumen.js     → Página /resumen (inicio tras el login): semáforos de hoy y mañana, cartera vencida, pendientes, quejas, acciones correctivas, clientes sin inspección
+├── directorio.js  → Páginas /directorio/clientes y /directorio/empleados: alta, edición y activación/desactivación; coordenadas desde el enlace de Google Maps
+├── layout.js      → Cabecera común de las páginas de administración (head, cabecera con secciones y sub-pestañas, kpis)
+├── marca.js       → Nombre de la empresa, del producto y logos (sobrescribibles con variables MARCA_*)
+├── menu.js        → Menú antiguo (MENU_CSS, menuHtml). Ya casi no se usa: lo reemplazó layout.js
+├── public/        → tc.css (estilos comunes), tc.js (TC.post, TC.toast, TC.alerta, TC.confirmar, TC.pedir) y logos; se sirven en /static
 ├── sheets.js      → Módulo genérico de lectura/escritura a Google Sheets (con caché corta opcional)
 ├── package.json   → Dependencias: express, googleapis, twilio (el login usa `crypto`, incluido en Node)
 ├── CLAUDE.md      → Guía para Claude Code (resumen técnico del repositorio)
@@ -89,13 +103,33 @@ tampa-cleaning-servidor/
 | `POST /cartera/cancelar` | Sesión | Cancela un cobro (motivo obligatorio) |
 | `POST /cartera/novedad` | Sesión | Registra una novedad de cobro, por `idCobro` (desde la cartera) o por `idProgramacion` (desde la agenda) |
 | `POST /cartera/novedad/anular` | Sesión | Anula una novedad de cobro (motivo obligatorio) |
+| `GET /cartera/pagos?mes=&tipo=&estado=&metodo=&cuenta=` | Sesión | Ingresos del mes (`metodo` y `cuenta` admiten varios valores) |
+| `POST /cartera/pagos/registrar` | Sesión | Registra un ingreso (de servicios, con su reparto, u otro ingreso) |
+| `POST /cartera/pagos/aplicar` | Sesión | Aplica el saldo a favor de un ingreso a servicios pendientes |
+| `POST /cartera/pagos/deposito` | Sesión | Registra fecha de banco (y cuenta/código) de un ingreso por depositar |
+| `POST /cartera/pagos/anular` | Sesión | Anula un ingreso (motivo obligatorio); sus servicios vuelven a quedar pendientes |
+| `GET /cartera/egresos?…` | Sesión | Egresos del mes |
+| `POST /cartera/egresos/registrar` | Sesión | Registra un egreso: pago de una liquidación, pago eventual a un empleado o gasto |
+| `POST /cartera/egresos/debito` | Sesión | Registra la fecha de banco de un egreso por debitar |
+| `POST /cartera/egresos/anular` | Sesión | Anula un egreso (motivo obligatorio) |
+| `GET /cartera/reportes?desde=&hasta=&anio=&metodo=&cuenta=` | Sesión | Reportes de cartera y flujo |
+| `POST /cartera/notas/registrar`, `POST /cartera/notas/anular` | Sesión | Registra o anula una nota de retroalimentación |
+| `GET /cartera/calidad?nivel=` | Sesión | Semáforo de calidad de los clientes vigentes (`nivel` = rojo / amarillo / verde) |
+| `GET /cartera/calidad/cliente?c=` | Sesión | Ficha de calidad de un cliente |
+| `GET /resumen` | Sesión | Resumen del día (página de inicio tras el login) |
+| `GET /directorio` → `/directorio/clientes`, `GET /directorio/empleados` | Sesión | Directorio de clientes y empleados |
+| `POST /directorio/cliente/guardar`, `POST /directorio/empleado/guardar` | Sesión | Crea o edita un cliente / empleado |
+| `POST /directorio/estado` | Sesión | Activa o desactiva un cliente o empleado |
+| `POST /directorio/coordenadas` | Sesión | Obtiene latitud/longitud de un enlace de Google Maps |
+| `POST /pendientes/editar` | Sesión | Edita un pendiente abierto (avisa al empleado si ya estaba enviado) |
+| `GET /static/*` | — | Estilos, scripts y logos de `public/` |
 | `GET /liquidacion?t=` | — (token firmado, vence a los 60 días) | Página del empleado con el detalle de su liquidación cerrada (solo lectura) |
 | `GET/POST /pendiente?id=` | — (link único por pendiente) | Página del empleado para marcar el pendiente como resuelto o "sigue pendiente" |
 | `GET /test-sheets` | — | Prueba de conexión con Sheets |
 
 ### 4.2 Caché de lectura (`sheets.js`)
 
-`leerHoja(nombre)` sigue leyendo en vivo por defecto. Con `leerHoja(nombre, { cache: true })` devuelve datos de hasta **45 segundos** — lo usan las vistas de la agenda, la nómina y la cartera (`PROGRAMACION_DIARIA`, `EMPLEADOS`, `SITIOS`, `CONFIG_NOMINA`, `CONFIG_CARTERA` y las hojas propias de la nómina, las millas y la cartera) para no releer el Sheets en cada clic. La nómina, las millas y la cartera además recuerdan qué pestañas ya verificaron con `asegurarHoja`, para no repetir esa llamada en cada carga. Toda escritura (`agregarFila`, `agregarFilas`, `actualizarCelda`, `actualizarCeldas`) invalida la caché de esa hoja. Las operaciones que **escriben** (guardar, cancelar, enviar) siempre releen en vivo antes de validar; el cierre de nómina invalida antes la caché de todas las hojas que usa. La caché vive en memoria del proceso: se pierde al redesplegar, sin consecuencias.
+`leerHoja(nombre)` sigue leyendo en vivo por defecto. Con `leerHoja(nombre, { cache: true })` devuelve datos de hasta **45 segundos** — lo usan las vistas de la agenda, la nómina, la cartera, la calidad, el resumen y el directorio (`PROGRAMACION_DIARIA`, `EMPLEADOS`, `SITIOS`, `CONFIG_NOMINA`, `CONFIG_CARTERA` y las hojas propias de la nómina, las millas y la cartera) para no releer el Sheets en cada clic. La nómina, las millas y la cartera además recuerdan qué pestañas ya verificaron con `asegurarHoja`, para no repetir esa llamada en cada carga. Toda escritura (`agregarFila`, `agregarFilas`, `actualizarCelda`, `actualizarCeldas`) invalida la caché de esa hoja. Las operaciones que **escriben** (guardar, cancelar, enviar) siempre releen en vivo antes de validar; el cierre de nómina invalida antes la caché de todas las hojas que usa. La caché vive en memoria del proceso: se pierde al redesplegar, sin consecuencias.
 
 Funciones nuevas en `sheets.js`: `actualizarCeldas` (varias celdas en una sola llamada), `agregarFilas` (varias filas a la vez), `asegurarHoja` (crea una pestaña con encabezados si no existe), `invalidarCache`, `edadCacheSegundos`.
 
@@ -111,6 +145,7 @@ Funciones nuevas en `sheets.js`: `actualizarCeldas` (varias celdas en una sola l
 | `TWILIO_AUTH_TOKEN` | Autentica las llamadas a la API de Twilio |
 | `CLAVE_ADMIN_1` … `CLAVE_ADMIN_4` | Clave personal de cada administrador para entrar a la agenda (1 = Wilmar Lopez, 2 = Carolina Gallego, 3 = Andres Madrid, 4 = Claudia Lopez). El orden es fijo y las cuatro deben ser distintas. Si una no está definida, ese administrador simplemente no puede entrar |
 | `SESSION_SECRET` | Firma las cookies de sesión. **Obligatoria, mínimo 32 caracteres** — sin ella el login falla. Cambiarla cierra la sesión de todos **e invalida todos los enlaces de liquidación** ya enviados a empleados (`/liquidacion`) |
+| `MARCA_PRODUCTO`, `MARCA_EMPRESA`, `MARCA_LOGO`, `MARCA_LOGO_CLARO` | **Opcionales.** Cambian el nombre del producto (por defecto "ADB Consulting"), de la empresa ("Tampa Cleaning") y los logos (`/static/logo-adb.png`, `/static/logo-adb-claro.png`) que muestran el login y la cabecera (`marca.js`) |
 | `GOOGLE_MAPS_API_KEY` | Clave de Google Maps Platform con la **Routes API** habilitada, para calcular millas (`millas.js`). **Necesaria** desde que las millas están conectadas a `/nomina`. Si falta, los días con millas quedan en "Revisar" con el mensaje "Falta GOOGLE_MAPS_API_KEY en Render". Requiere Node 18+ (usa `fetch`) |
 
 **Pendiente de seguridad:** la clave privada de Google y el Auth Token de Twilio se compartieron en el chat de esta conversación en algún momento durante la configuración — conviene regenerar ambas credenciales cuando haya tiempo (Google Cloud Console y Twilio Console, respectivamente, tienen un botón para esto sin romper nada más).
@@ -179,12 +214,12 @@ Función centralizada, con tres niveles de prioridad visual:
 
 **Vista (`agenda.js`).**
 - Tira semanal (lunes a domingo) con número de servicios por día y un punto de color: 🟢 todo finalizado, 🟡 pendiente, 🔴 alerta (algún "No puede", acción correctiva pendiente, o un día pasado con servicios sin finalizar), gris sin servicios.
-- Navegación por día (←, Hoy, →, selector de fecha) y filtros por cliente, empleado, estado y tipo. En la cabecera, el menú común (`menu.js`): nombre del administrador, Agenda · Pendientes · Nómina · Cartera (resaltando la página actual) y Cerrar sesión.
+- Navegación por día (←, Hoy, →, selector de fecha) y filtros por cliente, empleado, estado y tipo. En la cabecera, la barra común (`layout.js`, ver 6.19). Debajo, tarjetas con los totales del día: servicios, finalizados, en curso, por confirmar, borrador y "no puede".
 - Cada servicio muestra un **estado calculado** a partir de sus columnas: Borrador → Enviado → Confirmado / No puede → En curso → Salida (falta cierre) → Finalizado, o Cancelado. Marcas adicionales: **Retroactivo** (con el motivo al pasar el mouse), ✍️ si las horas reales se escribieron a mano (`Origen_Registro = Manual`), 👥N si varios empleados atienden el mismo cliente y tipo ese día (equipo).
 - ⚠️ **Acción pendiente:** si el servicio tiene pendientes vinculados (`PENDIENTES.ID_Programacion`), se marca mientras alguno siga `Abierto`. Si no tiene ninguno, se usa el criterio antiguo (`Requiere_Accion_Correctiva = Sí` y `Estado_Correccion = Pendiente`).
 - **Franja de pendientes:** debajo del editor se listan los pendientes abiertos cuya fecha límite es la del día mostrado; si el día mostrado es hoy, también los **vencidos**.
-- **"Detalle" (línea de vida):** botón que abre, en un renglón ancho debajo del servicio, todo lo que se sabe de él en bloques horizontales (4 columnas, 2 en pantallas angostas; los bloques sin datos no se muestran) — programación (con quién lo creó/modificó, cancelación, retroactivo y origen del registro), envío y confirmación, entrada, salida, cierre, inspección, avisos, **cobro** (estado en cartera, valor, total y novedades de cobro; no aparece en inspecciones), cambios posteriores al envío (de `CAMBIOS_PROGRAMACION`), pendientes vinculados y quejas/dudas asociadas. La función que lo dibuja (`lineaDeVidaH`) vive en `cartera.js` y la comparte la página de cliente de la cartera.
-- **"Novedad de cobro":** botón en las acciones de cada servicio de limpieza no cancelado; abre un diálogo para registrar una novedad (ver 6.11) sin salir de la agenda.
+- **"Detalle" (línea de vida):** botón que abre, en un renglón ancho debajo del servicio, todo lo que se sabe de él en bloques horizontales (4 columnas, 2 en pantallas angostas; los bloques sin datos no se muestran) — programación (con quién lo creó/modificó, cancelación, retroactivo y origen del registro), envío y confirmación, entrada, salida, cierre, inspección, avisos, **cobro** (estado en cartera, valor, total y novedades de cobro; no aparece en inspecciones), **retroalimentación** (notas de `NOTAS_SERVICIO`, ver 6.15), cambios posteriores al envío (de `CAMBIOS_PROGRAMACION`), pendientes vinculados y quejas/dudas asociadas. La función que lo dibuja (`lineaDeVidaH`) vive en `cartera.js` y la comparte la página de cliente de la cartera.
+- **Menú "Acciones ▾"** en cada fila: reúne Editar / Reasignar / Cancelar, **"Novedad de cobro"** (servicios de limpieza no cancelados; registra una novedad, ver 6.11, sin salir de la agenda) y **"Nota"** (retroalimentación del servicio, ver 6.15).
 - Usa la caché de 45 s; la pantalla indica la antigüedad de los datos y el botón **"Actualizar"** fuerza una lectura nueva.
 
 **Edición (`edicion.js`).** Para hoy y fechas futuras aparece una grilla "Programar servicios" (para fechas pasadas, ver *Registro retroactivo* más abajo):
@@ -193,7 +228,7 @@ Función centralizada, con tres niveles de prioridad visual:
 - **Validación en vivo** (mientras se escribe) y otra vez al guardar: cliente activo y con coordenadas, empleado activo y con WhatsApp, horas válidas y fin posterior al inicio, el mismo **empleado** no puede estar dos veces en el mismo cliente con el mismo tipo el mismo día, y un empleado no puede tener **horarios cruzados**. Varios empleados distintos **sí** pueden ir al mismo cliente el mismo día (servicio en equipo: una fila por empleado). Si una fila falla, no se guarda nada del lote.
 - Los servicios nuevos reciben un ID `PRG-AAAAMMDD-NN` (consecutivo por fecha) y quedan en **Borrador** con `Estado_Confirmacion = Pendiente`. `Horario` se llena solo a partir de las horas (ej. `8:00-12:00`).
 - **Editar / Reasignar / Cancelar** desde la tabla. "Reasignar" abre la fila con solo el empleado editable. Un servicio **ya iniciado** (con hora de entrada) no se puede cancelar ni cambiar — solo sus observaciones.
-- **Cancelar** pide un motivo obligatorio. La fila **nunca se borra**: queda `Cancelado = Sí` + `Motivo_Cancelacion`. Los servicios cancelados se ignoran en check-in, confirmación y envío.
+- **Cancelar** pide un motivo obligatorio. La fila **nunca se borra**: queda `Cancelado = Sí` + `Motivo_Cancelacion`. Los servicios cancelados se ignoran en check-in, confirmación y envío. Si es el **último servicio de limpieza no cancelado** de ese cliente ese día y su cobro ya tiene **pagos aplicados** (ver 6.12), la cancelación se rechaza: primero hay que anular el ingreso.
 - Las escrituras se hacen **una tras otra** (cola en memoria), para que dos administradores guardando a la vez no generen el mismo ID. Máximo 60 filas por operación.
 
 **Cambios después de enviar.** Si un servicio ya enviado cambia de empleado, cliente, horario o tipo, el servidor:
@@ -231,7 +266,9 @@ Cada resolución o "sigue abierto" avisa a gerencia (✅ rutina) con la nota.
 
 **Orden en el webhook.** La respuesta por Reply a un pendiente se evalúa **primero**, antes que la confirmación de programación. El "Ok" sin Reply se evalúa **después** de la confirmación de programación y del "Recibido" de avisos — así un "Ok" sigue confirmando la programación del día siguiente si hay una pendiente de confirmar. Orden completo: Reply a pendiente → confirmación de programación → "Recibido" → "Ok" sin Reply a pendiente → `aviso` → queja → duda → ubicación → ayuda.
 
-**Seguimiento (administrador).** La lista se filtra por responsable, estado (por defecto solo `Abierto`), tipo y "solo vencidos" (abiertos con fecha límite anterior a hoy), y ordena los vencidos primero. Acciones por fila: **Resolver** (nota opcional), **Recordar** (reenvía el mensaje como "Recordatorio", solo si ya fue enviado), **Cancelar** (motivo obligatorio). Con un responsable filtrado aparece "Recordar los abiertos de …". Los recordatorios son **manuales** — no hay envío automático. Cada evento (creado, enviado, recordatorio, resuelto, sigue abierto, cancelado) queda en `PENDIENTES_HISTORIAL`.
+**Seguimiento (administrador).** La lista se filtra por responsable, estado (por defecto solo `Abierto`), tipo y "solo vencidos" (abiertos con fecha límite anterior a hoy), y ordena los vencidos primero. Acciones por fila: **Resolver** (nota opcional), **Recordar** (reenvía el mensaje como "Recordatorio", solo si ya fue enviado), **Editar**, **Cancelar** (motivo obligatorio).
+
+**Editar (`POST /pendientes/editar`).** Solo pendientes `Abierto`. Se validan igual que al crearlos (un cliente o responsable que ya no está activo se acepta si no se cambió) y se escriben solo los campos que cambiaron. Si el pendiente **ya estaba enviado**: si cambió el responsable, el anterior recibe "ya no estás asignado/a" y el nuevo recibe el pendiente completo como "Nuevo pendiente" (si ese envío falla, el pendiente vuelve a **Borrador** para reenviarlo); si cambió otro campo que no sea las observaciones, el responsable recibe el antes → después (el SID de ese mensaje también se guarda en `PENDIENTES_MENSAJES`, así que puede responder con Reply). Cambiar solo las observaciones no avisa. Si un aviso falla, se alerta a gerencia 🔴. Queda en `PENDIENTES_HISTORIAL` como `Editado`, con cada cambio y el resultado de los avisos. Con un responsable filtrado aparece "Recordar los abiertos de …". Los recordatorios son **manuales** — no hay envío automático. Cada evento (creado, enviado, recordatorio, resuelto, sigue abierto, cancelado) queda en `PENDIENTES_HISTORIAL`.
 
 Las escrituras de pendientes usan su propia cola en memoria (mismo patrón que la agenda). Las tres hojas de pendientes **se crean solas** con sus encabezados la primera vez que se usan.
 
@@ -258,7 +295,7 @@ Calcula horas, millas, propinas, bonos y descuentos. La nómina **no envía What
 
 Se puede cerrar una semana que solo tenga millas (sin servicios ni conceptos), por ejemplo si se marcó como parada un servicio cancelado.
 
-Una liquidación cerrada se muestra desde la foto, **no** desde el cálculo en vivo; si después cambiaron la agenda, la tarifa o la configuración, aparece un aviso ⚠️ de que el cálculo de **horas** en vivo ya no coincide (las millas no se comparan), pero lo cerrado no se toca. **Reabrir** pide motivo y marca la liquidación como `Reabierta` (con quién, cuándo y por qué); desde ahí vuelve el cálculo en vivo, y al cerrar de nuevo se crea una liquidación nueva (siguiente `NN`) — la anterior y su foto quedan como historial.
+Una liquidación cerrada se muestra desde la foto, **no** desde el cálculo en vivo; si después cambiaron la agenda, la tarifa o la configuración, aparece un aviso ⚠️ de que el cálculo de **horas** en vivo ya no coincide (las millas no se comparan), pero lo cerrado no se toca. Si la liquidación ya tiene un **egreso** de pago activo (ver 6.13), el resumen y el detalle la marcan **Pagada** y **no se puede reabrir** hasta anular ese egreso. **Reabrir** pide motivo y marca la liquidación como `Reabierta` (con quién, cuándo y por qué); desde ahí vuelve el cálculo en vivo, y al cerrar de nuevo se crea una liquidación nueva (siguiente `NN`) — la anterior y su foto quedan como historial.
 
 **Enlace para el empleado (`/liquidacion`).** En el detalle de una liquidación cerrada aparece el botón **"Copiar mensaje con enlace"**, que copia al portapapeles (o muestra para copiar, si el navegador no lo permite) un mensaje del tipo *"Hola <empleado>, esta es tu liquidación de la semana <lunes> al <domingo> (el enlace vale 60 días): <URL>"*. El administrador lo pega y lo envía por WhatsApp él mismo; el servidor no lo manda. Cómo funciona:
 - El enlace lleva un token `t` = datos (`ID_Liquidacion` + vencimiento, en base64url) + firma HMAC-SHA256. La clave de firma se deriva de `SESSION_SECRET`, así que no hace falta otra variable de entorno; si cambia `SESSION_SECRET`, todos los enlaces dejan de servir. La firma se compara en tiempo constante y el enlace vence a los **60 días** (`DIAS_ENLACE`). Cada clic en el botón genera un token nuevo, con 60 días desde ese momento.
@@ -281,7 +318,7 @@ Agregar concepto, anular, cerrar y reabrir pasan por una cola en memoria propia 
 
 ### 6.11 Cartera (`/cartera`, `cartera.js`)
 
-Lleva lo que hay que **cobrarle a cada cliente**. No envía WhatsApp ni registra pagos recibidos: muestra qué se ejecutó y cuánto vale.
+Lleva lo que hay que **cobrarle a cada cliente**. No envía WhatsApp. Muestra qué se ejecutó y cuánto vale; lo **cobrado** y el **saldo** salen de los ingresos aplicados (ver 6.12). Tiene sub-pestañas: Servicios · Clientes · Ingresos · Egresos · Reportes.
 
 **Qué es un cobro.** Un cobro = **un cliente en un día**. Si ese día va un equipo (varias filas de `PROGRAMACION_DIARIA` del mismo cliente), es un solo cobro, con todos los empleados y los `ID_Programacion` listados. Las **inspecciones no se cobran** y no entran. Cada cobro se identifica por su `Clave` = `Cliente|AAAA-MM-DD` y recibe un ID `COB-AAAAMMDD-NN` (consecutivo por **fecha del servicio**). Se guardan en `COBROS_SERVICIO`.
 
@@ -305,9 +342,83 @@ Los cobros con `Decision = Auto` se actualizan solos si la agenda cambia; los qu
 **Vistas.**
 - **Servicios** (`/cartera`): navegación por mes (←, Este mes, →) o "Ver todo el histórico", barra con el total del período, filtro por cliente (búsqueda con autocompletado: nombre exacto o parte del nombre) y por estado (`Por confirmar`, `Ejecutado`, `Cancelado`, `Sin tarifa`). Un renglón por cobro: fecha, cliente con su **método de pago** (etiqueta de color desde `SITIOS.Metodo_Pago`, con `Nota_Pago` al pasar el mouse) y quién paga si es distinto (`SITIOS.Pagador`), empleados, estado y motivo, valor, novedades (plegables, con botón Anular), total y acciones.
 - **Clientes** (`/cartera/clientes`): una fila por cliente con servicios ejecutados, valor, novedades, total, *por confirmar* y *sin tarifa*; primero los que tienen algo por revisar, luego por total. Buscador instantáneo. El nombre lleva a la página del cliente y la flecha ⇩ a la vista Servicios filtrada.
-- **Cliente** (`/cartera/cliente?c=`): totales del cliente en el período, quién paga y la nota de pago, y un renglón por día con el equipo (horas programadas y reales de cada empleado), estado, valor, novedades, total y acciones; **"Detalle"** abre la línea de vida de cada servicio de ese día (la misma de la agenda, con el bloque de Cobro).
+- **Cliente** (`/cartera/cliente?c=`): totales del cliente en el período (incluidos cobrado y saldo), quién paga y la nota de pago, y un renglón por día con el equipo (horas programadas y reales de cada empleado), estado, valor, novedades, total, **estado de pago** y acciones; **"Detalle"** abre la línea de vida de cada servicio de ese día (la misma de la agenda, con el bloque de Cobro). Debajo: los **ingresos del pagador** (con botón para aplicar un saldo a favor) y las **notas** del cliente (ver 6.15).
+
+En las vistas Servicios y Clientes también aparecen **Cobrado**, **Saldo** y una columna de **Pago** (Pendiente / Parcial / Pagado / Cortesía / Sin valor). Las acciones de cada cobro son un botón principal (Ejecutado o + Novedad) y un menú "⋯" con "Cancelar servicio".
 
 Avisos en pantalla: falta la columna `Tarifa_Servicio` en `SITIOS`, cuántos cobros están *por confirmar* o *sin tarifa* (con enlace al filtro), o error al sincronizar.
+
+### 6.12 Ingresos (`/cartera/pagos`, `pagos.js`)
+
+Registra el **dinero que entra**. Nada se envía por WhatsApp.
+
+**Tipos.** `Servicios` (pago de un cliente/pagador, que se reparte entre sus servicios) u `Otro ingreso` (categoría `Venta de productos`, `Reembolso recibido`, `Propina` u `Otro`, con concepto obligatorio; no se aplica a servicios).
+
+**Datos de cada ingreso:** pagador, valor, fecha de recibido (no futura), método (`Efectivo`, `Cheque`, `Zelle`, `Venmo`), cuenta destino (`Personal de la propietaria`, `Corriente empresa`, `Ahorros empresa`, `Efectivo en mano`), fecha de banco opcional, código de banco opcional y referencia (cheque/Zelle). Reglas: efectivo sin cuenta = "Efectivo en mano"; Zelle y Venmo no pueden quedar "en mano"; la fecha de banco no puede ser anterior a la de recibido; Venmo exige código de transacción (único entre los ingresos activos) y fecha. Reciben un ID `PAG-AAAAMMDD-NN` (por **día de registro**) y se guardan en `PAGOS`.
+
+**Reparto.** Un ingreso de servicios se aplica a uno o varios cobros *Ejecutado* con saldo (filas en `PAGOS_APLICACION`). No se puede aplicar más que el saldo de cada servicio ni más que el valor del ingreso. Lo que no se aplica queda como **saldo a favor** del pagador y se puede aplicar después ("Aplicar saldo").
+
+**Estado de pago de un cobro** (calculado, nunca escrito): **Pagado**, **Parcial** (muestra pagado y saldo), **Pendiente**, **Cortesía** (total $0) o **Sin valor** (sin tarifa). Solo cuentan los ingresos activos: **anular** un ingreso (motivo obligatorio) devuelve sus servicios a pendiente.
+
+**Por depositar.** Un ingreso sin fecha de banco está "por depositar" (o "por acreditar" si entró a una cuenta); con **"Depositado"** se registra la fecha de banco, la cuenta y el código. La **fecha efectiva** de un ingreso es la de banco o, si sigue como efectivo en mano, la de recibido; es la que usan la lista del mes y los reportes.
+
+**Vista.** Navegación por mes o histórico, filtros por tipo, estado (`Activo`, `Anulado`, `Por depositar`), métodos y cuentas (casillas múltiples), y una barra con el total del filtro, lo por depositar y el saldo a favor sin aplicar. Los ingresos por depositar se ven en cualquier mes. Toda acción queda en `COBROS_BITACORA` y pasa por la cola en memoria de la cartera.
+
+### 6.13 Egresos (`/cartera/egresos`, `egresos.js`)
+
+Registra el **dinero que sale**:
+- **Nómina de una liquidación** — se elige una liquidación `Cerrada` con total > 0; el valor, beneficiario y concepto ("Liquidación semana …") salen de ella. Cada liquidación admite **un solo** pago activo; mientras exista, la liquidación no se puede reabrir (ver 6.10).
+- **Pago eventual a un empleado** (bono, adelanto…) — tipo `Nómina` sin liquidación, concepto "Pago eventual: …".
+- **Gasto** — categoría (`Insumos y productos`, `Combustible y transporte`, `Equipos y herramientas`, `Seguros y licencias`, `Publicidad`, `Impuestos`, `Servicios (teléfono, software)`, `Créditos`, `Otro`), beneficiario, concepto y factura opcionales. Si el beneficiario coincide con el nombre de un empleado, se guarda automáticamente como **nómina** (pago eventual) y se avisa en pantalla.
+
+Mismas reglas de método, cuenta, fecha de banco y código que los ingresos (con "fecha de pago" en lugar de "recibido"). Sin fecha de banco, un egreso de banco queda **por debitar** hasta registrar "Debitado". Reciben un ID `EGR-AAAAMMDD-NN` (por día de registro) y se guardan en `EGRESOS`; se anulan con motivo (si era el pago de una liquidación, esta vuelve a quedar por pagar). Bitácora en `COBROS_BITACORA`.
+
+### 6.14 Reportes (`/cartera/reportes`, `reportes.js`)
+
+Solo lectura, con secciones plegables y pestañas. Rango `desde`–`hasta` (por defecto el mes en curso), año, y filtro de métodos y cuentas. Ingresos y egresos cuentan por su **fecha efectiva**; los que aún no la tienen solo aparecen en sus listas de pendientes.
+- **Antigüedad de cartera** — saldos pendientes por pagador/sitio en tramos de 0-30, 31-60, 61-90 y 90+ días desde la fecha del servicio.
+- **Ingresos** y **Egresos** del rango — por cuenta × método y por categoría.
+- **Movimiento por cuenta** (conciliación) — ingresos, egresos y neto por cuenta.
+- **Por depositar** (efectivo en mano), **ingresos por acreditar** y **egresos por debitar**.
+- **Pagos a empleados** del año (enero a diciembre), con aviso de los pagos de nómina aún por debitar y de los empleados activos sin pagos.
+- **Ingresos vs egresos por mes** del año (resumen y por categoría).
+
+### 6.15 Notas de retroalimentación (`notas.js`)
+
+Sirven **solo para retroalimentación**: las instrucciones permanentes van en `CLIENTES.Instrucciones` y las del día en las observaciones de la agenda. Cada nota tiene fuente (`Cliente` / `Interna`), categoría (`Calidad del servicio`, `Comentario del cliente`, `Otro`), calificación opcional de 1 a 5 en medios puntos (**obligatoria** en "Calidad del servicio") y detalle. Puede ir atada a un servicio (que debe ser de ese cliente y no futuro) o ser general del cliente con una fecha. Se registran desde el menú de acciones de la agenda o desde la página del cliente en la cartera, reciben un ID `NOT-AAAAMMDD-NN`, se guardan en `NOTAS_SERVICIO` y se anulan con motivo. Se ven en la línea de vida (bloque "Retroalimentación") y en la página del cliente, con su calificación promedio.
+
+### 6.16 Calidad de clientes (`/cartera/calidad`, `calidad.js`)
+
+Solo lectura. Para cada cliente **vigente** calcula un semáforo:
+- 🔴 **Rojo** — queja o duda abierta de urgencia alta; 2 o más quejas en los últimos 60 días; última inspección con "No cumple"; o acción correctiva de inspección pendiente.
+- 🟡 **Amarillo** — 1 queja en 60 días; quejas/dudas abiertas; tareas pendientes o insumos faltantes en 2 de los últimos 3 cierres; o **sin revisión de supervisor** (inspección) desde el 5.º servicio ejecutado más reciente.
+- 🟢 **Verde** — nada de lo anterior.
+
+La lista ordena de mayor a menor riesgo, con último servicio ejecutado, número de servicios, quejas abiertas, última inspección, supervisor y calificación promedio de las notas. La ficha (`/cartera/calidad/cliente?c=`) muestra los motivos y el historial: quejas, observaciones de los últimos 10 cierres, inspecciones y la cartera del cliente (saldo por antigüedad). Un "servicio ejecutado" es uno de limpieza finalizado; varias filas del mismo cliente y día cuentan como uno.
+
+### 6.17 Resumen (`/resumen`, `resumen.js`)
+
+Página de inicio después del login (y destino por defecto de `volver`). Se recarga sola cada 2 minutos si la pestaña está visible. Muestra:
+- **KPIs:** servicios de hoy, hoy en rojo, mañana sin notificar, cartera vencida, pendientes vencidos, quejas abiertas.
+- **Hoy**, en tres columnas (Por iniciar · Iniciado · Finalizado) con semáforo por servicio: atrasado o "no puede" = rojo, a 15 min de iniciar = amarillo; sin salida pasada la hora de fin (+15 min) = rojo; salida sin cierre: amarillo, rojo a los 30 min; finalizado con entrada/salida fuera de rango o duración menor al 70 % de lo programado = rojo, llegada tarde (>15 min) o cierre con tareas/insumos pendientes = amarillo.
+- **Mañana** (Sin notificar · Por confirmar · Confirmada); lo sin notificar pasa a rojo después de las 5:00 PM.
+- **Cartera vencida** — saldos por pagador con más de 10 días después de su **fecha regular de cobro**, calculada con `SITIOS.Frecuencia_Cobro` (Semanal / Quincenal / Mensual) y `SITIOS.Fecha_Referencia_Cobro`; sin esos datos, se usa la fecha del servicio.
+- **Seguimiento** — pendientes (vencidos primero), quejas y dudas abiertas, acciones correctivas pendientes (indicando si ya tienen un pendiente creado) y clientes sin inspección.
+
+Los parámetros (minutos, días de gracia, hora de corte, cuántos ítems mostrar) están al principio de `resumen.js`.
+
+### 6.18 Directorio (`/directorio`, `directorio.js`)
+
+Alta y edición de **clientes** y **empleados** sin entrar al Sheets. Las filas **nunca se borran** (se desactivan) y el **nombre queda bloqueado** una vez creado, porque es la llave que usa el resto del sistema.
+- **Cliente** — escribe a la vez en `CLIENTES` (dirección, enlace de Maps, descripción, instrucciones, ciudad, vigente/vencido) y en `SITIOS` (dirección, enlace, coordenadas, radio de tolerancia, checklist, tipo de cliente, estatus, tarifa, pagador, método y nota de pago, frecuencia y fecha de referencia de cobro). Un sitio nuevo recibe el siguiente `ID_Sitio` (ej. `SIT-NNN`). El pagador por defecto es el mismo cliente. Frecuencia y fecha de referencia de cobro van juntas o vacías.
+- **Coordenadas** — se sacan del enlace de Google Maps (también enlaces cortos, que el servidor sigue solo hacia dominios de Google) o se escriben a mano como "latitud, longitud". Se guardan como texto y se aceptan con punto o coma decimal. Guardar sin coordenadas está permitido, con aviso: los check-ins de ese cliente saldrán fuera de rango.
+- **Empleado** — WhatsApp (10 dígitos → se antepone el 1; no puede repetirse entre empleados), rol, estatus, tarifa por hora y dirección de residencia (sin ella, aviso: no se calculan millas).
+- **Activar / desactivar** — cliente: `Cliente Vigente/Vencido` + `SITIOS.Estatus`; empleado: `Estatus`.
+- Exige que existan todas sus columnas en `CLIENTES`, `SITIOS` y `EMPLEADOS` (ver sección 7); si falta alguna, la página muestra el error con los nombres. Escribe por nombre de columna, solo las celdas que cambiaron, y antepone `'` a textos que empiecen con `= + - @` para que Sheets no los tome como fórmula. Usa su propia cola en memoria.
+
+### 6.19 Interfaz común (`layout.js`, `public/`)
+
+Todas las páginas de administración comparten la cabecera de `layout.js`: barra con logo, secciones **Resumen · Agenda · Pendientes · Calidad · Cartera · Nómina · Directorio**, nombre del administrador y "Cerrar sesión"; sub-pestañas en Cartera (Servicios · Clientes · Ingresos · Egresos · Reportes) y Directorio (Clientes · Empleados); y tarjetas KPI. `public/tc.css` (fuente Inter) y `public/tc.js` se sirven en `/static` con caché de 1 hora y un `?v=` según la fecha del archivo, así que un cambio se ve sin forzar recarga. `tc.js` define `TC.post` (fetch JSON que manda al login si la sesión venció), `TC.toast`, `TC.alerta`, `TC.confirmar` y `TC.pedir` (diálogos con promesa que reemplazan `alert`/`confirm`/`prompt`). El pie de página y el login muestran la marca de `marca.js`.
 
 ---
 
@@ -316,8 +427,8 @@ Avisos en pantalla: falta la columna `Tarifa_Servicio` en `SITIOS`, cuántos cob
 | Hoja | Contiene |
 |---|---|
 | `EMPLEADOS` | Nombre, número de WhatsApp (columna `ID_Telegram`, heredada), `Rol`, `Estatus` (solo los `Activo` aparecen en la agenda), `Tarifa_Hora` (USD por hora, para la nómina — se crea a mano), `Direccion_Residencia` (punto de salida y regreso para las millas — se crea a mano) |
-| `CLIENTES` | Nombre (columna `clientes`), `Direccion`, `Google Maps`, `Descripcion_Servicio`, `Instrucciones`, `Cliente Vigente/Vencido`. Es la fuente **en vivo** de dirección/instrucciones cuando la fila de programación no las trae |
-| `SITIOS` | `Nombre_Cliente`, coordenadas GPS (`Latitud`, `Longitud`) y radio de tolerancia para geofencing, `Checklist_Tareas` (lista separada por comas) para el formulario de cierre, `Estatus`. Para la cartera (se crean a mano, opcionales salvo la tarifa): `Tarifa_Servicio` (USD por servicio/día), `Pagador` (si paga alguien distinto del cliente), `Metodo_Pago` (Efectivo, Cheque, Zelle, Venmo…) y `Nota_Pago` |
+| `CLIENTES` | Nombre (columna `clientes`), `Direccion`, `Google Maps`, `Descripcion_Servicio`, `Instrucciones`, `Cliente Vigente/Vencido`, `Ciudad` (la exige el directorio). Es la fuente **en vivo** de dirección/instrucciones cuando la fila de programación no las trae |
+| `SITIOS` | `Nombre_Cliente`, coordenadas GPS (`Latitud`, `Longitud`) y radio de tolerancia para geofencing, `Checklist_Tareas` (lista separada por comas) para el formulario de cierre, `Estatus`. Para la cartera (se crean a mano, opcionales salvo la tarifa): `Tarifa_Servicio` (USD por servicio/día), `Pagador` (si paga alguien distinto del cliente), `Metodo_Pago` (Efectivo, Cheque, Zelle, Venmo…) y `Nota_Pago`. Para el resumen: `Frecuencia_Cobro` (Semanal / Quincenal / Mensual) y `Fecha_Referencia_Cobro`. El directorio exige además `ID_Sitio`, `Direccion`, `Google_Maps_Link`, `Radio_Tolerancia_m` y `Tipo_Cliente` |
 | `PROGRAMACION_DIARIA` | El corazón del sistema — un renglón por servicio, con columnas para programación, confirmación, check-in, y cierre. `Tipo_Servicio` distingue limpieza de `Inspeccion`; las inspecciones usan además `Resultado_Inspeccion`, `Requiere_Accion_Correctiva` y `Estado_Correccion` (todas opcionales — si la columna no existe, el servidor simplemente no la escribe). Ver columnas de la agenda abajo |
 | `REGISTRO_TURNOS` | Bitácora de auditoría de cada check-in |
 | `QUEJAS` | Quejas y dudas, diferenciadas por columna `Tipo`, asociadas al servicio por `ID_Programacion` |
@@ -338,11 +449,15 @@ Avisos en pantalla: falta la columna `Tarifa_Servicio` en `SITIOS`, cuántos cob
 | `CONFIG_CARTERA` | **Nueva.** Parámetros de la cartera (`Clave`, `Valor`, `Descripcion`); por ahora solo `Fecha_Inicio_Cobros` (AAAA-MM-DD). Para cargar meses anteriores, poner una fecha más antigua. **Se crea sola** |
 | `COBROS_SERVICIO` | **Nueva.** Un cobro por cliente y día: `ID_Cobro`, `Clave`, `Fecha`, `Cliente`, `Pagador`, `Empleados`, `IDs_Programacion`, `Estado` (`Ejecutado` / `Por confirmar` / `Cancelado`), `Motivo`, `Valor_Base`, `Valor_Original`, `Decision` (`Auto` / `Manual`), `Decidido_Por`, `Fecha_Decision`, `Origen`, `Fecha_Creacion`. **Se crea sola** |
 | `NOVEDADES_COBRO` | **Nueva.** `ID_Novedad`, `Cliente`, `Fecha_Servicio`, `ID_Programacion`, `Tipo`, `Detalle`, `Monto`, `Estado` (`Activa` / `Anulada`), `Registrado_Por`, `Fecha_Registro`, `Retroactivo`, `Anulado_Por`, `Motivo_Anulacion`. **Se crea sola** |
-| `COBROS_BITACORA` | **Nueva.** Bitácora de la cartera: `Fecha_Hora`, `ID_Cobro`, `Accion`, `Detalle`, `Motivo`, `Admin`. **Se crea sola** |
+| `COBROS_BITACORA` | **Nueva.** Bitácora de la cartera, los ingresos y los egresos: `Fecha_Hora`, `ID_Cobro` (o `ID_Pago` / `ID_Egreso`), `Accion`, `Detalle`, `Motivo`, `Admin`. **Se crea sola** |
+| `PAGOS` | **Nueva.** Un ingreso por fila: `ID_Pago`, `Tipo` (`Servicios` / `Otro ingreso`), `Pagador`, `Cliente`, `Categoria`, `Concepto`, `Valor`, `Fecha_Recibido`, `Fecha_Banco`, `Metodo`, `Cuenta_Destino`, `Venmo_ID`, `Venmo_Fecha`, `Referencia`, `Estado` (`Activo` / `Anulado`), `Motivo_Anulacion`, `Anulado_Por`, `Fecha_Anulacion`, `Registrado_Por`, `Fecha_Registro`, `Codigo_Banco`. **Se crea sola**; si le falta `Codigo_Banco`, el servidor la agrega al final |
+| `PAGOS_APLICACION` | **Nueva.** Reparto de cada ingreso entre cobros: `ID_Pago`, `ID_Cobro`, `Valor_Aplicado`, `Registrado_Por`, `Fecha_Registro`. Solo se agregan filas; anular el ingreso las deja sin efecto. **Se crea sola** |
+| `EGRESOS` | **Nueva.** Un egreso por fila: `ID_Egreso`, `Tipo` (`Nómina` / `Gasto`), `Beneficiario`, `ID_Liquidacion`, `Categoria`, `Concepto`, `Factura`, `Valor`, `Fecha_Pago`, `Metodo`, `Cuenta_Origen`, `Codigo_Banco`, `Referencia`, `Estado`, `Motivo_Anulacion`, `Anulado_Por`, `Fecha_Anulacion`, `Registrado_Por`, `Fecha_Registro`, `Fecha_Banco`. **Se crea sola**; si le falta `Fecha_Banco`, el servidor la agrega al final |
+| `NOTAS_SERVICIO` | **Nueva.** `ID_Nota`, `Cliente`, `ID_Programacion` (vacío = nota general del cliente), `Fecha`, `Fuente`, `Categoria`, `Calificacion`, `Detalle`, `Estado` (`Activa` / `Anulada`), `Registrado_Por`, `Fecha_Registro`, `Anulado_Por`, `Motivo_Anulacion`, `Fecha_Anulacion`. **Se crea sola** |
 
 **Columnas de `PROGRAMACION_DIARIA` que exige la agenda.** A diferencia del resto del sistema (donde las columnas son opcionales), la agenda **se niega a guardar** si falta alguna de estas: `ID_Programacion`, `Fecha_Servicio`, `Tipo_Servicio`, `Cliente`, `Empleado`, `Horario`, `Hora_Inicio`, `Hora_Fin`, `Observaciones_Puntuales`, `Estado_Envio`, `Estado_Confirmacion`, `Creado_Por`, `Fecha_Creacion`, `Modificado_Por`, `Fecha_Modificacion`, `Cancelado`, `Motivo_Cancelacion`. Las filas nuevas se escriben por **nombre de columna** (no por posición), así que el orden de las columnas puede cambiar sin romper nada.
 
-**Columnas adicionales para el registro retroactivo:** `Registro_Retroactivo` (Sí / vacío), `Motivo_Retroactivo`, `Origen_Registro` (`Manual` cuando las horas reales las escribió un administrador). Solo se exigen al guardar en una fecha pasada. `PENDIENTES_MENSAJES` usa posiciones fijas (columna A = SID, B = ID_Pendiente) y `PENDIENTES_HISTORIAL` se escribe en orden fijo: no reordenar sus columnas. Lo mismo para las hojas de nómina (`NOMINA_AJUSTES`, `PAGOS_ADICIONALES`, `LIQUIDACIONES`, `NOMINA_DIAS`, y las de millas: `DISTANCIAS`, `NOMINA_PARADAS`, `NOMINA_MILLAS_AJUSTES`, `NOMINA_TRAMOS`, `NOMINA_MILLAS_DIA`): las filas nuevas se escriben en el orden fijo de sus encabezados (aunque se leen por nombre de columna), así que tampoco se deben reordenar. En la cartera, `COBROS_SERVICIO` y `NOVEDADES_COBRO` se escriben según los encabezados que tenga la hoja (el orden puede cambiar), pero `COBROS_BITACORA` y `CONFIG_CARTERA` se escriben en orden fijo.
+**Columnas adicionales para el registro retroactivo:** `Registro_Retroactivo` (Sí / vacío), `Motivo_Retroactivo`, `Origen_Registro` (`Manual` cuando las horas reales las escribió un administrador). Solo se exigen al guardar en una fecha pasada. `PENDIENTES_MENSAJES` usa posiciones fijas (columna A = SID, B = ID_Pendiente) y `PENDIENTES_HISTORIAL` se escribe en orden fijo: no reordenar sus columnas. Lo mismo para las hojas de nómina (`NOMINA_AJUSTES`, `PAGOS_ADICIONALES`, `LIQUIDACIONES`, `NOMINA_DIAS`, y las de millas: `DISTANCIAS`, `NOMINA_PARADAS`, `NOMINA_MILLAS_AJUSTES`, `NOMINA_TRAMOS`, `NOMINA_MILLAS_DIA`): las filas nuevas se escriben en el orden fijo de sus encabezados (aunque se leen por nombre de columna), así que tampoco se deben reordenar. En la cartera, `COBROS_SERVICIO` y `NOVEDADES_COBRO` se escriben según los encabezados que tenga la hoja (el orden puede cambiar), pero `COBROS_BITACORA` y `CONFIG_CARTERA` se escriben en orden fijo. `PAGOS`, `PAGOS_APLICACION`, `EGRESOS` y `NOTAS_SERVICIO` se escriben según sus encabezados (el orden puede cambiar). El directorio escribe `CLIENTES`, `SITIOS` y `EMPLEADOS` por nombre de columna, pero **exige** que existan: `CLIENTES`: `clientes`, `Direccion`, `Google Maps`, `Descripcion_Servicio`, `Instrucciones`, `Ciudad`, `Cliente Vigente/Vencido`; `SITIOS`: `ID_Sitio`, `Nombre_Cliente`, `Direccion`, `Google_Maps_Link`, `Latitud`, `Longitud`, `Radio_Tolerancia_m`, `Checklist_Tareas`, `Tipo_Cliente`, `Estatus`, `Tarifa_Servicio`, `Pagador`, `Metodo_Pago`, `Nota_Pago`, `Frecuencia_Cobro`, `Fecha_Referencia_Cobro`; `EMPLEADOS`: `ID_Telegram`, `Nombre`, `Rol`, `Estatus`, `Tarifa_Hora`, `Direccion_Residencia`.
 
 ---
 
@@ -367,25 +482,27 @@ Avisos en pantalla: falta la columna `Tarifa_Servicio` en `SITIOS`, cuántos cob
 - **Acciones correctivas → pendientes automáticos** — hoy el seguimiento se hace con pendientes (ver 6.9), pero el administrador los crea a mano a partir del aviso de la inspección. `Estado_Correccion` no se actualiza al resolver el pendiente; la agenda ya no lo necesita cuando hay pendientes vinculados, pero la columna queda desactualizada en el Sheets.
 - **Recordatorios automáticos de pendientes** — por ahora solo existen los manuales (botón "Recordar"); no hay aviso automático de vencidos.
 - **Borrar `CLAVE_ADMIN` de Render** — la ruta `/enviar-programacion` ya se retiró del código; la variable quedó sin uso.
-- **Cartera: pagos recibidos** — hoy la cartera dice cuánto se debe cobrar, pero no registra pagos ni saldo pendiente por cliente.
-- **Cartera: llenar `Tarifa_Servicio`** (y `Metodo_Pago` / `Pagador` / `Nota_Pago`) en `SITIOS` para todos los clientes activos; sin tarifa los cobros quedan "Sin tarifa".
-- **Limpieza menor:** `cartera.js` registra dos veces la ruta `GET /cartera/clientes` (inofensivo, solo responde la primera).
+- **Error en `/cartera/cliente`** — la plantilla de `paginaCliente` (`cartera.js`) quedó con la cabecera de una página de ingresos y usa variables que no existen ahí (`etiqueta`, `nav`, `CSS_PAGOS`), así que la página de cliente de la cartera responde con error 500 ("etiqueta is not defined"). Viene del commit `1c2eef4`. Hay que cambiarla a `layout.head` / `layout.cabecera` como las demás.
+- **Cartera: llenar `Tarifa_Servicio`** (y `Metodo_Pago` / `Pagador` / `Nota_Pago` / `Frecuencia_Cobro` / `Fecha_Referencia_Cobro`) en `SITIOS` para todos los clientes activos — ahora se puede hacer desde el directorio. Sin tarifa los cobros quedan "Sin tarifa"; sin frecuencia, la cartera vencida del resumen se mide desde la fecha del servicio.
+- **IDs `PAG-` repetidos en dos hojas** — los ingresos (`PAGOS`) y los conceptos de nómina (`PAGOS_ADICIONALES`) usan el mismo formato `PAG-AAAAMMDD-NN`. No chocan (cada hoja lleva su consecutivo), pero un mismo ID puede referirse a dos cosas distintas; conviene cambiar el prefijo de uno de los dos.
+- **`menu.js`** solo lo usa ya la plantilla rota de `/cartera/cliente`; al corregirla se puede borrar.
 - **Millas: revisar la regla de "Servicios_Pago_Siempre"** — hoy el pago fijo se aplica solo cuando el día tiene **exactamente** 2 paradas; un día con 3 o más paradas y menos de 10 millas paga $0. Confirmar si la intención era "2 o más".
 - **Millas: requisitos de datos** — confirmar que `GOOGLE_MAPS_API_KEY` existe en Render y que cada empleado activo tiene `Direccion_Residencia` en `EMPLEADOS`; sin eso los días quedan en "Revisar" y bloquean el cierre.
 - **Envío automático del enlace de liquidación** — hoy el administrador copia el mensaje y lo manda a mano; podría enviarse por Twilio al cerrar (requiere plantilla aprobada una vez se migre a WhatsApp Business).
-- **Bloqueo de login y colas de escrituras en memoria** (agenda, pendientes, nómina y cartera) — funcionan porque hay una sola instancia del servidor; si algún día se escala a varias instancias, habría que moverlos a un almacenamiento compartido.
+- **Bloqueo de login y colas de escrituras en memoria** (agenda, pendientes, nómina, cartera —que incluye ingresos, egresos y notas— y directorio) — funcionan porque hay una sola instancia del servidor; si algún día se escala a varias instancias, habría que moverlos a un almacenamiento compartido.
 
-**Del mapa de problemas original** (los dolores que motivaron el sistema; aún sin resolver del todo). *Ya resuelto: nómina con horas y millas automáticas (`/nomina`, ver 6.10) — el millaje ya no se saca a mano en Google Maps.*
+**Del mapa de problemas original** (los dolores que motivaron el sistema; aún sin resolver del todo). *Ya resuelto: nómina con horas y millas automáticas (`/nomina`, ver 6.10) — el millaje ya no se saca a mano en Google Maps; y cobranza — al registrar un ingreso se ven los servicios pendientes del pagador y el saldo de cada uno (6.12).*
 
-- **Historial de calidad al programar** — las quejas (`QUEJAS`) y las inspecciones solo se ven en el detalle de cada servicio. El objetivo original era ver el historial de quejas/observaciones **del cliente y del empleado** en el editor, al momento de programar.
-- **Cobranza: servicios pendientes por cliente** — *en buena parte resuelto con la cartera (6.11)*: la página de cada cliente muestra sus servicios del mes y cuánto vale cada uno. Falta registrar el pago y ver el saldo pendiente.
+- **Historial de calidad al programar** — *en parte resuelto*: el historial **por cliente** ya existe (semáforo y ficha en `/cartera/calidad`, notas en la página del cliente, ver 6.15–6.16), pero no se muestra en el editor de la agenda al momento de programar, y no hay un historial **por empleado**.
+- **Ingresos y egresos con estructura estándar** — *resuelto en el servidor* (6.12–6.14): mes derivado de la fecha efectiva, categorías fijas y reportes. Queda pendiente decidir qué hacer con las hojas antiguas de ingresos/egresos del Sheets.
+- **Maestro de empleados** — `EMPLEADOS` es la única fuente que usa el servidor y ya se edita desde el directorio (6.18); las hojas antiguas (Valor empleados, Soporte de Nómina) no se usan.
 - **Tareas recurrentes** (ej. "aspirar los viernes" en oficinas) — los pendientes cubren tareas puntuales con seguimiento por WhatsApp, pero no se repiten solos: alguien tiene que crear cada uno. Falta la recurrencia programada.
 
 ---
 
 ## 10. Cómo hacer cambios de aquí en adelante
 
-1. Editar el archivo correspondiente (`index.js`, `logica.js`, `agenda.js`, `edicion.js`, `pendientes.js`, `nomina.js`, `millas.js`, `cartera.js`, `menu.js`, `auth.js` o `sheets.js`) local o directo en GitHub.
+1. Editar el archivo correspondiente (ver la sección 4: `index.js`, `logica.js`, `agenda.js`, `edicion.js`, `pendientes.js`, `nomina.js`, `millas.js`, `cartera.js`, `pagos.js`, `egresos.js`, `reportes.js`, `notas.js`, `calidad.js`, `resumen.js`, `directorio.js`, `layout.js`, `public/tc.css`, `public/tc.js`, `auth.js` o `sheets.js`) local o directo en GitHub.
 2. Subir el cambio a la rama `main` del repositorio.
 3. Render redespliega automáticamente al detectar el cambio.
 4. Revisar la pestaña "Logs" del servicio en Render para confirmar que el despliegue fue exitoso.

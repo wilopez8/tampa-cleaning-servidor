@@ -656,8 +656,8 @@ async function paginaCliente(query, admin) {
   const mesNav = mes === 'todo' ? '' : `<a class="btn" href="${esc(u({ mes: sumarMes(mes, -1) }))}">←</a>
     <a class="btn hoy" href="${esc(u({ mes: hoy.slice(0, 7) }))}">Este mes</a><a class="btn" href="${esc(u({ mes: sumarMes(mes, 1) }))}">→</a>`;
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ingresos ${esc(etiqueta)}</title><style>${CSS}${CSS_PAGOS}${menu.MENU_CSS}</style></head><body>
-<div class="top"><h2 style="margin:0;">Ingresos — ${esc(etiqueta)}</h2>${menu.menuHtml('/cartera', admin)}</div>
+  return `${layout.head('Ingresos ' + cliente, CSS + P().CSS_PAGOS)}
+${layout.cabecera({ titulo: 'Ingresos — ' + cliente, seccion: '/cartera', admin, sub: 'cartera', activa: 'clientes', mes })}
 <div class="nav"><a class="btn" href="/cartera">← Cartera</a><a class="btn" href="/cartera/egresos">Egresos</a><a class="btn" href="/cartera/reportes">Reportes</a>${nav}
   <a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
   <a class="btn" href="${esc(u({ sync: '1' }))}">Sincronizar ahora</a>${P().botonesPago(cliente, tar)}${N().botonNuevaNota(cliente)}<a class="btn" href="/cartera/pagos">Todos los pagos</a><b style="margin-left:8px;">${esc(etiquetaMes)}</b></div>

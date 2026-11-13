@@ -1,7 +1,8 @@
 const { leerHoja, agregarFila, actualizarCelda, asegurarHoja } = require('./sheets');
 const twilio = require('twilio');
 
-const clienteTwilio = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+const ENTORNO_PRUEBAS = process.env.ENTORNO === 'pruebas';
+const clienteTwilio = ENTORNO_PRUEBAS ? null : twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 const TWILIO_WHATSAPP_FROM = 'whatsapp:+14155238886'; // numero del Sandbox
 const BASE_URL = 'https://tampa-cleaning-servidor.onrender.com'; // tu propio servidor (sin AppSheet)
 const CHAT_ADMIN_WHATSAPP = 'whatsapp:+18133856059';  // numero personal de Will (gerencia)
@@ -11,6 +12,7 @@ function soloDigitos(texto) {
 }
 
 async function enviarWhatsApp(numeroConPrefijo, texto) {
+  if (ENTORNO_PRUEBAS) { console.log('[PRUEBAS] WhatsApp NO enviado a ' + numeroConPrefijo + ': ' + texto); return 'PRUEBAS'; }
   const m = await clienteTwilio.messages.create({
     from: TWILIO_WHATSAPP_FROM,
     to: numeroConPrefijo,
