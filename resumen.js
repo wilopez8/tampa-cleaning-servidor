@@ -1,7 +1,7 @@
 const { leerHoja, edadCacheSegundos } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida, sumarDias, diaSemana, filasDelRango, cargarPendientes, tipoDe } = require('./agenda');
 const layout = require('./layout');
-const { zonaHoraria: ZONA } = require('./empresa');
+const empresa = require('./empresa');
 const Cart = require('./cartera');
 const P = require('./pagos');
 const Cal = require('./calidad');
@@ -26,7 +26,7 @@ const urlCobros = c => '/cartera/cliente?c=' + encodeURIComponent(c);
 
 // ---------- tiempo (hora de Florida) ----------
 function minAhora() {
-  const t = new Intl.DateTimeFormat('en-GB', { timeZone: ZONA, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
+  const t = new Intl.DateTimeFormat('en-GB', { timeZone: empresa.zonaHoraria, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
 }
