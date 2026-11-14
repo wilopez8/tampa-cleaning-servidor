@@ -1,10 +1,26 @@
-// Datos propios de la empresa. Los valores por defecto son los de Tampa Cleaning (como estaba antes en el codigo).
-// Cualquiera se puede cambiar con una variable de entorno en Render, sin tocar el codigo.
+// Datos propios de la empresa. Orden de prioridad: variable de entorno > hoja CONFIG_EMPRESA > valor por defecto (Tampa Cleaning).
+// Se leen en cada uso (no al cargar el archivo), asi un cambio en la hoja se aplica sin reiniciar el servidor.
+const config = require('./config');
 const E = process.env;
+
+const ENV = { Zona_Horaria: 'EMPRESA_ZONA', Prefijo_Pais: 'EMPRESA_PREFIJO_PAIS', Gerencia_WhatsApp: 'CHAT_ADMIN_WHATSAPP' };
+const delEntorno = clave => { const v = ENV[clave] && E[ENV[clave]]; return v && config.valido(clave, v) ? v : ''; };
+const valor = clave => delEntorno(clave) || config.valor(clave);
+
 module.exports = {
-  zonaHoraria: E.EMPRESA_ZONA || 'America/New_York',
-  prefijoPais: E.EMPRESA_PREFIJO_PAIS || '1',
+  get zonaHoraria() { return valor('Zona_Horaria'); },
+  get prefijoPais() { return valor('Prefijo_Pais'); },
+  get gerenciaWhatsapp() { return valor('Gerencia_WhatsApp'); },
+  // Solo infraestructura (variables de entorno): no se cambian desde la hoja
   whatsappFrom: E.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886', // numero del Sandbox
-  gerenciaWhatsapp: E.CHAT_ADMIN_WHATSAPP || 'whatsapp:+18133856059', // numero de gerencia
   baseUrl: E.BASE_URL || 'https://tampa-cleaning-servidor.onrender.com',
+  // Para revisar que valor se esta usando y de donde viene (ruta /config-empresa)
+  estado() {
+    return config.CLAVES.map(clave => {
+      const crudo = ENV[clave] && E[ENV[clave]];
+      const fuente = delEntorno(clave) ? 'variable de entorno ' + ENV[clave] : (config.enHoja(clave) ? 'hoja CONFIG_EMPRESA' : 'por defecto');
+      const avisos = [config.aviso(clave), crudo && !delEntorno(clave) ? 'La variable ' + ENV[clave] + ' tiene un valor no valido y se ignora.' : ''].filter(Boolean);
+      return { clave, valor: valor(clave), fuente, avisos };
+    });
+  },
 };

@@ -3,7 +3,8 @@ const twilio = require('twilio');
 
 const ENTORNO_PRUEBAS = process.env.ENTORNO === 'pruebas';
 const clienteTwilio = ENTORNO_PRUEBAS ? null : twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-const { zonaHoraria: ZONA, whatsappFrom: TWILIO_WHATSAPP_FROM, baseUrl: BASE_URL, gerenciaWhatsapp: CHAT_ADMIN_WHATSAPP } = require('./empresa');
+const empresa = require('./empresa');
+const { whatsappFrom: TWILIO_WHATSAPP_FROM, baseUrl: BASE_URL } = empresa;
 
 function soloDigitos(texto) {
   return String(texto || '').replace(/\D/g, '');
@@ -22,7 +23,7 @@ async function enviarWhatsApp(numeroConPrefijo, texto) {
 async function notificarGerencia(mensaje, nivel) {
   const prefijos = { urgente: '🔴', atencion: '🟡', rutina: '✅' };
   const prefijo = prefijos[nivel] || 'ℹ️';
-  await enviarWhatsApp(CHAT_ADMIN_WHATSAPP, `${prefijo} ${mensaje}`);
+  await enviarWhatsApp(empresa.gerenciaWhatsapp, `${prefijo} ${mensaje}`);
 }
 
 function distanciaMetros(lat1, lon1, lat2, lon2) {
@@ -86,7 +87,7 @@ async function buscarProgramacionHoy(nombreEmpleado) {
   headers.forEach((h, i) => col[h] = i);
 
   // "Hoy" segun la hora de Florida, no la del servidor (evita el corrimiento de UTC)
-  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: ZONA });
+  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: empresa.zonaHoraria });
 
   for (let i = 1; i < datos.length; i++) {
     const fila = datos[i];
@@ -165,7 +166,7 @@ async function procesarCheckIn(telefono, lat, lon) {
     tipo = (!yaTieneEntrada) ? 'Entrada' : (!yaTieneSalida ? 'Salida' : 'Salida');
 
     if (prog.col[`Hora_${tipo}_Real`] !== undefined) {
-      const horaLegible = ahora.toLocaleString('en-US', { timeZone: ZONA });
+      const horaLegible = ahora.toLocaleString('en-US', { timeZone: empresa.zonaHoraria });
       await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Hora_${tipo}_Real`] + 1, horaLegible);
       await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Lat_${tipo}`] + 1, lat);
       await actualizarCelda('PROGRAMACION_DIARIA', prog.filaSheet, prog.col[`Lon_${tipo}`] + 1, lon);
@@ -174,8 +175,8 @@ async function procesarCheckIn(telefono, lat, lon) {
   }
 
   await agregarFila('REGISTRO_TURNOS', [
-    ahora.toLocaleDateString('en-US', { timeZone: ZONA }),
-    ahora.toLocaleTimeString('en-US', { timeZone: ZONA }),
+    ahora.toLocaleDateString('en-US', { timeZone: empresa.zonaHoraria }),
+    ahora.toLocaleTimeString('en-US', { timeZone: empresa.zonaHoraria }),
     telefono,
     nombreEmpleado,
     lat,
@@ -235,7 +236,7 @@ function construirMensajeProgramacion(fila, col, dc, titulo) {
 function fechaLegible(f) { const [y, m, d] = f.split('-'); return `${d}/${m}/${y}`; }
 
 function tituloProgramacion(fecha) {
-  const opt = { timeZone: ZONA };
+  const opt = { timeZone: empresa.zonaHoraria };
   const hoy = new Date().toLocaleDateString('en-CA', opt);
   const man = new Date(Date.now() + 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', opt);
   if (fecha === hoy) return 'Servicio programado para HOY';
@@ -292,7 +293,7 @@ async function registrarCambio({ id, fechaServicio, tipo, detalle, por, notifica
   try {
     await asegurarHoja(HOJA_CAMBIOS, ENCAB_CAMBIOS);
     await agregarFila(HOJA_CAMBIOS, [
-      new Date().toLocaleString('en-US', { timeZone: ZONA }),
+      new Date().toLocaleString('en-US', { timeZone: empresa.zonaHoraria }),
       id, fechaServicio, tipo, detalle, por, notificado || '', aviso,
     ]);
   } catch (err) { console.error('No se pudo registrar el cambio:', err); }
@@ -368,7 +369,7 @@ async function procesarRespuestaConfirmacion(telefono, texto) {
   const col = {};
   headers.forEach((h, i) => col[h] = i);
 
-  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: ZONA });
+  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: empresa.zonaHoraria });
 
   for (let i = 1; i < datos.length; i++) {
     const fila = datos[i];
@@ -380,7 +381,7 @@ async function procesarRespuestaConfirmacion(telefono, texto) {
 
       await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Estado_Confirmacion'] + 1, nuevoEstado);
       await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Fecha_Hora_Confirmacion'] + 1,
-        new Date().toLocaleString('en-US', { timeZone: ZONA }));
+        new Date().toLocaleString('en-US', { timeZone: empresa.zonaHoraria }));
 
       if (nuevoEstado === 'Confirmado') {
         return `✅ Confirmado. Nos vemos en ${cliente}.`;
@@ -401,7 +402,7 @@ async function procesarQuejaODuda(telefono, tipo, descripcion, fotoUrl) {
 
   await agregarFila('QUEJAS', [
     idQueja,
-    ahora.toLocaleString('en-US', { timeZone: ZONA }),
+    ahora.toLocaleString('en-US', { timeZone: empresa.zonaHoraria }),
     tipo,
     'WhatsApp',
     prog ? prog.idProgramacion : '',
@@ -434,12 +435,12 @@ async function buscarProgramacionPorClienteHoy() {
   const headers = datos[0];
   const col = {};
   headers.forEach((h, i) => col[h] = i);
-  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: ZONA });
+  const hoyTexto = new Date().toLocaleDateString('en-CA', { timeZone: empresa.zonaHoraria });
   return { datos, col, hoyTexto };
 }
 
 async function procesarAviso(telefonoEmisor, texto) {
-  const esWill = soloDigitos(telefonoEmisor) === soloDigitos(CHAT_ADMIN_WHATSAPP.replace('whatsapp:', ''));
+  const esWill = soloDigitos(telefonoEmisor) === soloDigitos(empresa.gerenciaWhatsapp.replace('whatsapp:', ''));
   if (!esWill) return null; // silencio total para cualquiera que no sea Will
 
   const match = texto.match(/^aviso\s+([^:]+):\s*(.+)$/i);
@@ -465,7 +466,7 @@ async function procesarAviso(telefonoEmisor, texto) {
 
       if (col['Avisos_Durante_Servicio'] !== undefined) {
         const previo = fila[col['Avisos_Durante_Servicio']] || '';
-        const marca = `[${new Date().toLocaleString('en-US', { timeZone: ZONA })}] ${mensajeAviso}`;
+        const marca = `[${new Date().toLocaleString('en-US', { timeZone: empresa.zonaHoraria })}] ${mensajeAviso}`;
         await actualizarCelda('PROGRAMACION_DIARIA', i + 1, col['Avisos_Durante_Servicio'] + 1, previo ? `${previo}\n${marca}` : marca);
       }
       if (col['Aviso_Confirmado'] !== undefined) {

@@ -11,6 +11,8 @@ const { paginaAgenda } = require('./agenda');
 const nomina = require('./nomina');
 const path = require('path');
 const marca = require('./marca');
+const config = require('./config');
+const empresa = require('./empresa');
 
 function escaparHtml(t) {
   return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -46,6 +48,7 @@ app.use(express.urlencoded({ extended: false }));
 
 app.use(express.json({ limit: '200kb' }));
 app.use('/static', express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
+app.use((req, res, next) => { config.refrescarSiHaceFalta(); next(); }); // relee CONFIG_EMPRESA como maximo cada 60 s
 
 // Ruta de salud, para confirmar que el servidor esta vivo
 app.get('/', (req, res) => {
@@ -345,7 +348,12 @@ app.post('/pendiente', async (req, res) => {
 });
 
 
+// Muestra que valor de configuracion usa la empresa y de donde viene (variable de entorno, hoja o valor por defecto)
+app.get('/config-empresa', auth.requiereAdmin, (req, res) => res.json(empresa.estado()));
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en puerto ${PORT}`);
+config.cargar().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Servidor corriendo en puerto ${PORT}`);
+  });
 });

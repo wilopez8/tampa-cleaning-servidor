@@ -1,7 +1,7 @@
 // Directorio: alta y edición de Clientes (CLIENTES + SITIOS) y Empleados (EMPLEADOS).
 // Nunca se borran filas: un registro se desactiva. El nombre queda bloqueado una vez creado.
 const { leerHoja, agregarFila, actualizarCeldas } = require('./sheets');
-const { prefijoPais: PREFIJO_PAIS } = require('./empresa');
+const empresa = require('./empresa');
 const { normalizarFecha, fechaValida } = require('./agenda');
 const layout = require('./layout');
 
@@ -236,7 +236,7 @@ function revisarEmpleado(p) {
   const mal = t => ({ error: t });
   if (!f.nombre || f.nombre.length < 2) return mal('Escribe el nombre del empleado.');
   if (f.nombre.length > 80) return mal('El nombre es demasiado largo (máximo 80).');
-  if (f.wa.length === 10) f.wa = PREFIJO_PAIS + f.wa;
+  if (f.wa.length === 10) f.wa = empresa.prefijoPais + f.wa;
   if (f.wa.length < 11 || f.wa.length > 15) return mal('Escribe el número de WhatsApp con código de país (ejemplo: 18135551234).');
   if (!f.rol) return mal('Escribe el rol del empleado.');
   if (f.tarifa !== '') { const t = num(f.tarifa); if (!(t >= 0)) return mal('La tarifa por hora debe ser un número mayor o igual a 0.'); f.tarifa = Math.round(t * 100) / 100; }
