@@ -53,7 +53,7 @@ app.get('/', (req, res) => {
 });
 
 // Ruta de prueba: confirma que el servidor SI puede leer tu Google Sheet
-app.get('/test-sheets', async (req, res) => {
+app.get('/test-sheets', auth.requiereAdmin, async (req, res) => {
   try {
     const datos = await leerHoja('EMPLEADOS');
     res.json({ ok: true, datos });
