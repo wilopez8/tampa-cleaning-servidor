@@ -4,6 +4,9 @@
 body{font-family:Inter,-apple-system,"Segoe UI",Arial,sans-serif;margin:0;padding:24px var(--g) 28px;background:var(--bg);color:var(--navy);font-size:14.5px;line-height:1.5;}
 
 a{color:#1f5a8a;text-decoration:none;} a:hover{text-decoration:underline;}
+/* enlaces entre registros (enlaces.js): mismo color del texto, subrayado punteado */
+a.lnk{color:inherit;text-decoration:underline dotted #9aa6b2;text-underline-offset:3px;} a.lnk:hover{color:#1f5a8a;text-decoration:underline solid;}
+tr.resaltado>td{background:#fef9c3 !important;}
 small{color:var(--gray-d);} h2,h3,h4{color:var(--navy);} h3{font-size:17px;}
 
 /* barra superior */

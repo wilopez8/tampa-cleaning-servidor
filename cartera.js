@@ -2,6 +2,7 @@ const { leerHoja, agregarFila, agregarFilas, actualizarCeldas, asegurarHoja } = 
 const { normalizarFecha, fechaValida, hoyFlorida, filasDelRango } = require('./agenda');
 const menu = require('./menu');
 const layout = require('./layout');
+const E = require('./enlaces');
 const P = () => require('./pagos'); // carga diferida: pagos.js usa los helpers de este archivo
 const N = () => require('./notas'); // carga diferida: notas.js usa los helpers de este archivo
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -437,8 +438,8 @@ async function paginaCartera(query, admin, vista) {
     ? ` <button class="btn mini" data-modo="anular" data-id="${esc(n.ID_Novedad)}" data-t="${esc('Anular novedad ' + n.ID_Novedad)}" onclick="tcAbrir(this)">Anular</button>`
     : ' · anulada: ' + esc(n.Motivo_Anulacion)}</small></div>`).join('')}</details>` : '<small>—</small>';
     const cls = c.Estado === 'Ejecutado' ? (c._sinTarifa ? 'rev' : 'ok') : (c.Estado === 'Por confirmar' ? 'rev' : 'cn');
-      return `<tr><td>${esc(c._fecha)}</td><td>${esc(c.Cliente)}${mp(c.Cliente)}${c.Pagador && c.Pagador !== c.Cliente ? `<br><small>Paga: ${esc(c.Pagador)}</small>` : ''}</td>
-        <td><small>${esc(c.Empleados)}</small></td>
+      return `<tr><td>${esc(c._fecha)}</td><td>${E.cliente(c.Cliente, { mes: c._fecha.slice(0, 7) })}${mp(c.Cliente)}${c.Pagador && c.Pagador !== c.Cliente ? `<br><small>Paga: ${esc(c.Pagador)}</small>` : ''}</td>
+        <td><small>${String(c.Empleados || '').split(',').map(x => x.trim()).filter(Boolean).map(x => E.empleado(x, { fecha: c._fecha })).join(', ')}</small></td>
         <td><span class="est ${cls}">${esc(c.Estado)}</span>${c._sinTarifa ? '<br><small class="neg">Sin tarifa en SITIOS</small>' : ''}${c.Motivo ? `<br><small>${esc(c.Motivo)}</small>` : ''}</td>
         <td class="num">${c.Estado === 'Ejecutado' && c._base ? usd(c._base) : '—'}</td><td>${nvHtml}</td>
         <td class="num"><b>${c.Estado === 'Ejecutado' ? usd(c._total) : '—'}</b></td><td>${P().badgePago(pe(c))}</td><td>${acc}</td></tr>`;
@@ -636,13 +637,13 @@ async function paginaCliente(query, admin) {
     
     const equipo = fs.map(r => {
       const hp = (r.Hora_Inicio && r.Hora_Fin) ? `${r.Hora_Inicio}–${r.Hora_Fin}` : r.Horario;
-      return `<div><b>${esc(r.Empleado)}</b>${r._estado === 'Cancelado' ? ' <small>(cancelado)</small>' : ''}<br><small>Prog. ${esc(hp || '—')} · Real ${esc(r.Hora_Entrada_Real || '—')} → ${esc(r.Hora_Salida_Real || '—')}</small></div>`;
+      return `<div><b>${E.empleado(r.Empleado, { fecha: r._fecha })}</b>${r._estado === 'Cancelado' ? ' <small>(cancelado)</small>' : ''}<br><small>Prog. ${esc(hp || '—')} · Real ${esc(r.Hora_Entrada_Real || '—')} → ${esc(r.Hora_Salida_Real || '—')}</small></div>`;
     }).join('') || '<small>—</small>';
     const nvHtml = c._nvs.length ? `<details><summary><small>${c._nvs.filter(n => n.Estado === 'Activa').length} novedad(es) · ${usd(c._nov)}</small></summary>${c._nvs.map(n => `<div${n.Estado !== 'Activa' ? ' class="anu"' : ''}><small>${esc(n.Tipo)}: ${esc(n.Detalle)} (${usd(numero(n.Monto) || 0)}) · ${esc(n.Registrado_Por)}${n.Estado === 'Activa'
       ? ` <button class="btn mini" data-modo="anular" data-id="${esc(n.ID_Novedad)}" data-t="${esc('Anular novedad ' + n.ID_Novedad)}" onclick="tcAbrir(this)">Anular</button>`
       : ' · anulada: ' + esc(n.Motivo_Anulacion)}</small></div>`).join('')}</details>` : '<small>—</small>';
     const info = infoCobro(c, c._nvs);
-    const det = fs.map((r, i) => `<div style="margin:6px 0 2px;"><b>${esc(r.Empleado)}</b> <small>${esc(r.ID_Programacion)}</small></div>${lineaDeVidaH(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion], pends[r.ID_Programacion], i === 0 ? info : null, notasSrv[r.ID_Programacion])}`).join('') || '<small>No hay servicios en la agenda para esta fecha.</small>';
+    const det = fs.map((r, i) => `<div style="margin:6px 0 2px;"><b>${E.empleado(r.Empleado, { fecha: r._fecha })}</b> <small>${E.servicio(r.ID_Programacion)}</small></div>${lineaDeVidaH(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion], pends[r.ID_Programacion], i === 0 ? info : null, notasSrv[r.ID_Programacion])}`).join('') || '<small>No hay servicios en la agenda para esta fecha.</small>';
     const cls = c.Estado === 'Ejecutado' ? (c._sinTarifa ? 'rev' : 'ok') : (c.Estado === 'Por confirmar' ? 'rev' : 'cn');
     return `<tr><td>${esc(c._fecha)}</td><td>${equipo}</td>
       <td><span class="est ${cls}">${esc(c.Estado)}</span>${c._sinTarifa ? '<br><small class="neg">Sin tarifa en SITIOS</small>' : ''}${c.Motivo ? `<br><small>${esc(c.Motivo)}</small>` : ''}</td>
@@ -656,9 +657,9 @@ async function paginaCliente(query, admin) {
   const mesNav = mes === 'todo' ? '' : `<a class="btn" href="${esc(u({ mes: sumarMes(mes, -1) }))}">←</a>
     <a class="btn hoy" href="${esc(u({ mes: hoy.slice(0, 7) }))}">Este mes</a><a class="btn" href="${esc(u({ mes: sumarMes(mes, 1) }))}">→</a>`;
 
-  return `${layout.head('Ingresos ' + cliente, CSS + P().CSS_PAGOS)}
-${layout.cabecera({ titulo: 'Ingresos — ' + cliente, seccion: '/cartera', admin, sub: 'cartera', activa: 'clientes', mes })}
-<div class="nav"><a class="btn" href="/cartera">← Cartera</a><a class="btn" href="/cartera/egresos">Egresos</a><a class="btn" href="/cartera/reportes">Reportes</a>${mesNav}
+  return `${layout.head('Cliente ' + cliente, CSS + P().CSS_PAGOS)}
+${layout.cabecera({ titulo: 'Cliente — ' + cliente, seccion: '/cartera', admin, sub: 'cartera', activa: 'clientes', mes })}
+<div class="nav"><a class="btn" href="${esc('/cartera/clientes' + (mes !== 'todo' ? '?mes=' + mes : ''))}">← Clientes</a><a class="btn" href="${esc(E.url.calidadCliente(cliente))}">Calidad del cliente</a><a class="btn" href="${esc('/agenda?cliente=' + encodeURIComponent(cliente))}">Agenda de hoy</a>${mesNav}
   <a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
   <a class="btn" href="${esc(u({ sync: '1' }))}">Sincronizar ahora</a>${P().botonesPago(cliente, tar)}${N().botonNuevaNota(cliente)}<a class="btn" href="/cartera/pagos">Todos los pagos</a><b style="margin-left:8px;">${esc(etiquetaMes)}</b></div>
 ${errSync ? `<div class="aviso r">No se pudo sincronizar con la agenda: ${esc(errSync)}</div>` : ''}

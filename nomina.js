@@ -3,6 +3,7 @@ const { normalizarFecha, fechaValida, hoyFlorida, sumarDias, inicioSemana, diaSe
 const millas = require('./millas');
 const menu = require('./menu');
 const layout = require('./layout');
+const E = require('./enlaces');
 const crypto = require('crypto');
 
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -469,7 +470,7 @@ async function paginaNomina(query, admin) {
 
   const conceptosHtml = (lista, editable) => `<table>
     <tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Servicio</th><th class="num">Monto</th><th>Registrado por</th><th></th></tr>
-    ${lista.length ? lista.map(c => `<tr><td>${esc(normalizarFecha(c.Fecha))}</td><td>${esc(c.Tipo)}</td><td>${esc(c.Descripcion)}</td><td><small>${esc(c.ID_Programacion)}</small></td>
+    ${lista.length ? lista.map(c => `<tr><td>${esc(normalizarFecha(c.Fecha))}</td><td>${esc(c.Tipo)}</td><td>${esc(c.Descripcion)}</td><td><small>${E.servicio(c.ID_Programacion)}</small></td>
       <td class="num ${c.Tipo === 'Descuento' ? 'neg' : ''}">${c.Tipo === 'Descuento' ? '− ' : ''}${usd(c._monto)}</td><td>${esc(c.Creado_Por)}</td>
       <td>${editable ? `<button class="btn" data-id="${esc(c.ID_Concepto)}" onclick="tcAnular(this)">Anular</button>` : ''}</td></tr>`).join('')
       : '<tr><td colspan="7" style="text-align:center;color:#999;">Sin conceptos</td></tr>'}</table>`;
@@ -492,7 +493,7 @@ async function paginaNomina(query, admin) {
       const filasSnap = snapDias.map(s => {
         const f = normalizarFecha(s.Fecha_Servicio);
         const pi = minutosDe(s.Pago_Inicio), pf = minutosDe(s.Pago_Fin);
-        return `<tr><td>${diaSemana(f)} ${f.slice(8)}</td><td>${esc(s.Cliente)}<br><small>${esc(s.Tipo_Servicio)}</small></td>
+        return `<tr><td>${diaSemana(f)} ${f.slice(8)}</td><td>${E.cliente(s.Cliente, { mes: f.slice(0, 7) })}<br><small>${E.servicio(s.ID_Programacion, { texto: s.Tipo_Servicio || 'Servicio' })}</small></td>
           <td>${f12(minutosDe(s.Prog_Inicio))} – ${f12(minutosDe(s.Prog_Fin))}</td><td>${f12(minutosDe(s.Real_Entrada))} – ${f12(minutosDe(s.Real_Salida))}</td>
           <td>${pi !== null ? `${f12(pi)} – ${f12(pf)}` : '—'}</td><td class="num">${fmtDur(numero(s.Minutos) || 0)}</td>
           <td class="num">${numero(s.Tarifa_Efectiva) > 0 ? usd(numero(s.Tarifa_Efectiva)) + '/h' : '—'}</td><td class="num">${usd(numero(s.Monto_Horas) || 0)}</td>
@@ -515,7 +516,7 @@ async function paginaNomina(query, admin) {
         const titulo = c.ajuste ? ` title="${esc(c.ajuste.motivo + ' — ' + c.ajuste.por)}"` : '';
         return `<tr>
           <td>${diaSemana(r._fecha)} ${r._fecha.slice(8)}${c.sabado ? '<br><small>sábado</small>' : ''}</td>
-          <td>${esc(r.Cliente)}<br><small>${esc(r.Tipo_Servicio || 'Limpieza')}</small></td>
+          <td>${E.cliente(r.Cliente, { mes: r._fecha.slice(0, 7) })}<br><small>${E.servicio(r.ID_Programacion, { texto: r.Tipo_Servicio || 'Limpieza' })}</small></td>
           <td>${f12(c.prog.ini)} – ${f12(c.prog.fin)}</td>
           <td>${f12(c.real.ini)} – ${f12(c.real.fin)}${r.Origen_Registro === 'Manual' ? ' ✍️' : ''}</td>
           <td>${c.pago.ini !== null ? `${f12(c.pago.ini)} – ${f12(c.pago.fin)}` : '—'}</td>

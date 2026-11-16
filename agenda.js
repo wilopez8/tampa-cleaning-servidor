@@ -1,5 +1,6 @@
 const { leerHoja, edadCacheSegundos } = require('./sheets');
 const layout = require('./layout');
+const enlaces = require('./enlaces');
 const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const ESTADOS = ['Borrador', 'Enviado', 'Confirmado', 'No puede', 'En curso', 'Salida (falta cierre)', 'Finalizado', 'Cancelado'];
 
@@ -186,7 +187,7 @@ async function paginaAgenda(query, admin) {
   });
   const franja = enFecha.length ? `<div class="aviso" style="background:#fff7ed">📌 <b>Pendientes (${enFecha.length})</b> · <a href="/pendientes">Ver todos</a><br>${enFecha.map(p => {
     const f = normalizarFecha(p.Fecha_Limite);
-    return `${esc(p.ID_Pendiente)} — ${esc(p.Titulo)} · ${esc(p.Responsable)}${p.Hora_Inicio ? ' · ' + esc(p.Hora_Inicio) : ''}${fechaValida(f) && f < hoy ? ' · <b>vencido</b>' : ''}`;
+    return `${enlaces.pendiente(p.ID_Pendiente)} — ${esc(p.Titulo)} · ${enlaces.empleado(p.Responsable, { fecha })}${p.ID_Programacion ? ' · servicio ' + enlaces.servicio(p.ID_Programacion) : ''}${p.Hora_Inicio ? ' · ' + esc(p.Hora_Inicio) : ''}${fechaValida(f) && f < hoy ? ' · <b>vencido</b>' : ''}`;
   }).join('<br>')}</div>` : '';
 
   const delDia = filasSemana.filter(r => r._fecha === fecha);
@@ -199,6 +200,12 @@ async function paginaAgenda(query, admin) {
     (!f.cliente || r.Cliente === f.cliente) && (!f.empleado || r.Empleado === f.empleado) &&
     (!f.estado || r._estado === f.estado) && (!f.tipo || tipoDe(r) === f.tipo))
     .sort((a, b) => (a.Hora_Inicio || a.Horario || '').localeCompare(b.Hora_Inicio || b.Horario || ''));
+
+  // ?id=PRG-…: abre el Detalle de ese servicio y lo resalta (lo usan los enlaces de /servicio)
+  const idAbrir = enlaces.RE_SERVICIO.test(String(query.id || '')) ? String(query.id) : '';
+  const abrirId = idAbrir ? `<script>(function(){var id=${JSON.stringify(idAbrir)};var d=document.getElementById('det-'+id);
+if(!d){TC.toast('El servicio '+id+' no aparece en esta fecha o con este filtro.');return;}
+d.style.display='table-row';var f=d.previousElementSibling;if(f)f.classList.add('resaltado');(f||d).scrollIntoView({block:'center'});})();</script>` : '';
 
   const unicos = campo => [...new Set(delDia.map(r => r[campo]).filter(Boolean))].sort();
   const sel = (nombre, etiqueta, opciones) => `<select name="${nombre}"><option value="">${etiqueta}</option>` +
@@ -239,7 +246,7 @@ async function paginaAgenda(query, admin) {
     const grupo = delDia.filter(x => x._estado !== 'Cancelado' && x.Cliente === r.Cliente && tipoDe(x) === tipoDe(r));
     const equipo = grupo.length > 1 ? ` <span title="${esc(grupo.map(x => x.Empleado).join(', '))}">👥${grupo.length}</span>` : '';
     return `<tr class="${r._estado === 'Cancelado' ? 'canc' : ''}">
-      <td>${esc(horario)}</td><td>${esc(tipoDe(r))}</td><td>${esc(r.Cliente)}${equipo}</td><td>${esc(r.Empleado)}</td>
+      <td>${esc(horario)}</td><td>${esc(tipoDe(r))}</td><td>${enlaces.cliente(r.Cliente, { mes: fecha.slice(0, 7) })}${equipo}</td><td>${enlaces.empleado(r.Empleado, { fecha })}</td>
       <td><span class="est ${esc(r._estado)}">${esc(r._estado)}</span>${r.Registro_Retroactivo === 'Sí' ? ` <span class="est" style="background:#fecaca" title="${esc(r.Motivo_Retroactivo)}">Retroactivo</span>` : ''}${r.Origen_Registro === 'Manual' ? ' ✍️' : ''}${accionPendiente(r) ? ' ⚠️' : ''}</td>
       <td><button class="btn" data-id="${esc(r.ID_Programacion)}" onclick="tcDetalle(this.dataset.id)">Detalle</button></td>
       <td>${menuFila(r)}</td></tr>
@@ -276,6 +283,7 @@ ${franja}
   ${sel('estado', 'Todos los estados', ESTADOS)}${sel('tipo', 'Todos los tipos', ['Limpieza', 'Inspeccion'])}
   <button class="btn">Filtrar</button> <a class="btn" href="/agenda?fecha=${fecha}">Limpiar</a></form>
 <table><tr><th>Horario</th><th>Tipo</th><th>Cliente</th><th>Empleado</th><th>Estado</th><th></th><th>Acciones</th></tr>${filasHtml}</table>${cartera.dialogoNovedad()}${notas.dialogoNota(notas.mapaServicios(delDia))}
+${abrirId}
 </body></html>`;
 }
 
