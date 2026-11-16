@@ -458,7 +458,7 @@ async function paginaNomina(query, admin) {
     Object.keys(G).forEach(k => { G[k] += t[k]; });
     return `<tr><td><a href="${q(lunes, n)}">${esc(n)}</a></td><td class="num">${t.n}</td><td class="num">${fmtDur(t.min)}</td><td class="num">${usd(t.montoH)}</td><td class="num">${usd(t.millas)}</td>
       <td class="num">${usd(t.mas)}</td><td class="num neg">${t.menos ? '− ' + usd(t.menos) : usd(0)}</td><td class="num"><b>${usd(t.total)}</b></td>
-      <td class="num">${t.rev ? `<span class="est rev">${t.rev}</span>` : '0'}</td><td>${t.cerrada ? '<span class="est cer">Cerrada</span>' + (pagadas[cerradas[n].ID_Liquidacion] ? ' <span class="est ok">Pagada</span>' : ' <span class="est sp">Por pagar</span>') : '<span class="est">Abierta</span>'}</td></tr>`;
+      <td class="num">${t.rev ? `<span class="est rev">${t.rev}</span>` : '0'}</td><td>${t.cerrada ? '<span class="est cer">Cerrada</span>' + (pagadas[cerradas[n].ID_Liquidacion] ? ' <span class="est ok">Pagada</span>' : numero(cerradas[n].Total) > 0.004 ? ` <a class="est sp" href="${esc(E.url.pagarLiquidacion(cerradas[n].ID_Liquidacion))}" title="Registrar el pago en Egresos">Por pagar →</a>` : ' <span class="est">Sin valor</span>') : '<span class="est">Abierta</span>'}</td></tr>`;
   }).join('') || '<tr><td colspan="10" style="text-align:center;color:#888;padding:20px;">No hay servicios ni conceptos esta semana.</td></tr>';
 
   // ----- bloques reutilizables -----
@@ -506,7 +506,7 @@ async function paginaNomina(query, admin) {
         ${sec('Millas', millas.tablaCerrada(snapM))}
         ${sec('Otros conceptos', conceptosHtml(consLiq, false))}
         ${caja(tot(emp))}
-        <button class="btn hoy" data-msg="${esc(msgEnlace)}" data-path="${esc(rutaEnlace)}" onclick="tcCopiar(this)">Copiar mensaje con enlace</button> ${pagadas[liq.ID_Liquidacion] ? '<span class="est ok">Pagada · ' + esc(pagadas[liq.ID_Liquidacion].ID_Egreso) + '</span>' : '<button class="btn warn" onclick="tcReabrir()">Reabrir liquidación</button>'}<span id="cp" style="font-size:13px;color:#2e7d32;"></span>`;
+        <button class="btn hoy" data-msg="${esc(msgEnlace)}" data-path="${esc(rutaEnlace)}" onclick="tcCopiar(this)">Copiar mensaje con enlace</button> ${pagadas[liq.ID_Liquidacion] ? '<span class="est ok">Pagada · ' + esc(pagadas[liq.ID_Liquidacion].ID_Egreso) + '</span>' : (numero(liq.Total) > 0.004 ? `<a class="btn hoy" href="${esc(E.url.pagarLiquidacion(liq.ID_Liquidacion))}">Registrar pago</a> ` : '') + '<button class="btn warn" onclick="tcReabrir()">Reabrir liquidación</button>'}<span id="cp" style="font-size:13px;color:#2e7d32;"></span>`;
     } else {
       const dm = millasEmp[emp] || [];
       const filasHtml = g.map(c => {

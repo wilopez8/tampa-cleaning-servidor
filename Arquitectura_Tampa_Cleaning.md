@@ -371,7 +371,7 @@ Registra el **dinero que entra**. Nada se envía por WhatsApp.
 ### 6.13 Egresos (`/cartera/egresos`, `egresos.js`)
 
 Registra el **dinero que sale**:
-- **Nómina de una liquidación** — se elige una liquidación `Cerrada` con total > 0; el valor, beneficiario y concepto ("Liquidación semana …") salen de ella. Cada liquidación admite **un solo** pago activo; mientras exista, la liquidación no se puede reabrir (ver 6.10).
+- **Nómina de una liquidación** — se elige una liquidación `Cerrada` con total > 0; el valor, beneficiario y concepto ("Liquidación semana …") salen de ella. Desde la nómina se llega directo: el botón **"Registrar pago"** del detalle de una liquidación cerrada sin pagar (y el estado "Por pagar →" del resumen semanal) abre `/cartera/egresos?pagar=LIQ-…`, que resalta esa liquidación y abre su diálogo de pago, con un enlace para volver a la nómina del empleado. Si la liquidación ya está pagada, reabierta, en $0 o no existe, la página lo dice en vez de abrir el diálogo. Cada liquidación admite **un solo** pago activo; mientras exista, la liquidación no se puede reabrir (ver 6.10).
 - **Pago eventual a un empleado** (bono, adelanto…) — tipo `Nómina` sin liquidación, concepto "Pago eventual: …".
 - **Gasto** — categoría (`Insumos y productos`, `Combustible y transporte`, `Equipos y herramientas`, `Seguros y licencias`, `Publicidad`, `Impuestos`, `Servicios (teléfono, software)`, `Créditos`, `Otro`), beneficiario, concepto y factura opcionales. Si el beneficiario coincide con el nombre de un empleado, se guarda automáticamente como **nómina** (pago eventual) y se avisa en pantalla.
 

@@ -2,6 +2,7 @@ const { leerHoja, agregarFila, actualizarCeldas } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida } = require('./agenda');
 const menu = require('./menu');
 const layout = require('./layout');
+const E = require('./enlaces');
 const K = require('./cartera').helpers; // cartera.js no carga este archivo, así que no hay ciclo
 const { METODOS, CUENTAS, EFECTIVO_MANO, CSS_PAGOS, seleccion, qsDe, grupoChecks } = require('./pagos');
 const { cargarTabla, enCola, bit, aFila, poner, numero, r2, usd, esc, err, motivoOk, ahora, mesValido, sumarMes, CSS } = K;
@@ -234,6 +235,7 @@ async function paginaEgresos(query, admin) {
   const hoy = hoyFlorida();
   const mes = query.mes === 'todo' ? 'todo' : (mesValido(query.mes) ? query.mes : hoy.slice(0, 7));
   const [d, liqs, emps] = await Promise.all([datos(), liquidaciones(), empleadosTodos()]);
+  const idPagar = /^LIQ-\d{8}-\d+$/.test(String(query.pagar || '')) ? String(query.pagar) : '';
   const fTipo = [TIPO_NOM, TIPO_GASTO].includes(query.tipo) ? query.tipo : '';
   const fCat = [...CATEGORIAS, 'Nómina'].includes(query.categoria) ? query.categoria : '';
   const sMet = seleccion(query, 'metodo', METODOS), sCta = seleccion(query, 'cuenta', CUENTAS);
@@ -255,9 +257,24 @@ async function paginaEgresos(query, admin) {
   const totPorPagar = r2(porPagar.reduce((a, l) => a + numero(l.Total), 0));
   const filasPP = porPagar.map(l => {
     const t = `${l.Empleado} · semana ${normalizarFecha(l.Semana_Inicio)} · ${usd(numero(l.Total))}`;
-    return `<tr><td>${esc(normalizarFecha(l.Semana_Inicio))}<br><small>${esc(l.ID_Liquidacion)}</small></td><td>${esc(l.Empleado)}</td><td class="num">${esc(l.Servicios)}</td><td class="num"><b>${usd(numero(l.Total))}</b></td>
+    const sem = normalizarFecha(l.Semana_Inicio);
+    return `<tr${l.ID_Liquidacion === idPagar ? ' class="resaltado"' : ''}><td>${esc(sem)}<br><small>${esc(l.ID_Liquidacion)}</small></td><td>${E.empleado(l.Empleado, { fecha: sem })}</td><td class="num">${esc(l.Servicios)}</td><td class="num"><b>${usd(numero(l.Total))}</b></td>
       <td><button class="btn mini hoy" data-id="${esc(l.ID_Liquidacion)}" data-t="${esc(t)}" onclick="egPagarLiq(this)">Registrar pago</button></td></tr>`;
   }).join('');
+
+  // ?pagar=LIQ-…: abre el pago de esa liquidación (lo usa el botón "Registrar pago" de la nómina)
+  const lPagar = idPagar ? liqs.find(l => l.ID_Liquidacion === idPagar) : null;
+  const volverNom = lPagar ? ` · <a href="${esc(E.url.empleado(lPagar.Empleado, normalizarFecha(lPagar.Semana_Inicio)))}">← Volver a la nómina de ${esc(lPagar.Empleado)}</a>` : '';
+  let avisoPagar = '', abrirPagar = '';
+  if (idPagar) {
+    if (porPagar.some(l => l.ID_Liquidacion === idPagar)) {
+      avisoPagar = `<div class="aviso" style="background:#eff6ff">💵 Pago de la liquidación <b>${esc(idPagar)}</b>. Revisa método, cuenta y fecha, y guarda.${volverNom}</div>`;
+      abrirPagar = `<script>(function(){var b=document.querySelector('button[data-id=${JSON.stringify(idPagar)}][onclick^="egPagarLiq"]');if(b){b.scrollIntoView({block:'center'});egPagarLiq(b);}})();</script>`;
+    } else {
+      const motivo = !lPagar ? 'no existe' : d.porLiq[idPagar] ? `ya está pagada (${esc(d.porLiq[idPagar].ID_Egreso)})` : lPagar.Estado !== 'Cerrada' ? `está ${esc(String(lPagar.Estado).toLowerCase())}: solo se paga una liquidación cerrada` : 'tiene total $0: no hay nada que pagar';
+      avisoPagar = `<div class="aviso r">La liquidación ${esc(idPagar)} ${motivo}.${volverNom}</div>`;
+    }
+  }
 
   const filas = vis.map(e => {
     const act2 = e.Estado === 'Activo';
@@ -289,6 +306,7 @@ ${layout.cabecera({ titulo: 'Egresos — ' + etiqueta, seccion: '/cartera', admi
 <div class="nav">${nav}  
   <a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
   <button class="btn hoy" onclick="egGasto()">Registrar gasto</button><button class="btn hoy" onclick="egEventual()">Pago eventual a empleado</button></div>
+${avisoPagar}
 <h3 style="margin:8px 0;">Liquidaciones por pagar${porPagar.length ? ` <small>(${porPagar.length} · ${usd(totPorPagar)})</small>` : ''}</h3>
 ${porPagar.length ? `<div class="scroll"><table><tr><th>Semana</th><th>Empleado</th><th class="num">Servicios</th><th class="num">Total</th><th></th></tr>${filasPP}</table></div>` : '<div class="aviso">No hay liquidaciones cerradas pendientes de pago.</div>'}
 <div class="aviso" style="background:#fef2f2;">Egresos activos en el filtro: <b>${act.length}</b> · <b>${usd(suma(act))}</b> (nómina ${usd(suma(act.filter(e => e.Tipo === TIPO_NOM)))} · gastos ${usd(suma(act.filter(e => e.Tipo === TIPO_GASTO)))}) · por debitar <b>${usd(suma(pend))}</b> (${pend.length})${catTxt ? `<br><small>Por categoría: ${catTxt}</small>` : ''}<br><small>El mes se cuenta por la fecha de banco (efectivo en mano: fecha de pago). Los que están por debitar se ven siempre.</small></div>
@@ -298,6 +316,7 @@ ${porPagar.length ? `<div class="scroll"><table><tr><th>Semana</th><th>Empleado<
   <button class="btn">Filtrar</button> <a class="btn" href="${esc(u({ tipo: '', categoria: '', metodo: '', cuenta: '', estado: '' }))}">Limpiar</a></form>
 <div class="scroll g"><table><tr><th>Pagado</th><th>Beneficiario / concepto</th><th>Método y cuenta</th><th class="num">Valor</th><th>Banco</th><th>Estado</th></tr>${filas}</table></div>
 ${dialogos(emps)}
+${abrirPagar}
 </body></html>`;
 }
 
