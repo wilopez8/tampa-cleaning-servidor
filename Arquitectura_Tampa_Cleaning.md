@@ -1,6 +1,6 @@
 # Arquitectura — Sistema Tampa Cleaning
 
-**Última actualización:** 12 de noviembre de 2026
+**Última actualización:** 16 de noviembre de 2026
 **Propósito de este documento:** referencia técnica para entender cómo funciona el sistema, qué piezas lo componen y cómo se conectan.
 
 ---
@@ -62,6 +62,7 @@ tampa-cleaning-servidor/
 ├── resumen.js     → Página /resumen (inicio tras el login): semáforos de hoy y mañana, cartera vencida, pendientes, quejas, acciones correctivas, clientes sin inspección
 ├── directorio.js  → Páginas /directorio/clientes y /directorio/empleados: alta, edición y activación/desactivación; coordenadas desde el enlace de Google Maps
 ├── layout.js      → Cabecera común de las páginas de administración (head, cabecera con secciones y sub-pestañas, kpis)
+├── enlaces.js    → Enlaces comunes entre páginas: nombre de cliente → /cartera/cliente, empleado → su semana en /nomina, ID PRG- → /servicio, ID PND- → /pendientes?id=. Registra la ruta /servicio
 ├── marca.js       → Nombre de la empresa, del producto y logos (sobrescribibles con variables MARCA_*)
 ├── menu.js        → Menú antiguo (MENU_CSS, menuHtml). Ya casi no se usa: lo reemplazó layout.js
 ├── public/        → tc.css (estilos comunes), tc.js (TC.post, TC.toast, TC.alerta, TC.confirmar, TC.pedir) y logos; se sirven en /static
@@ -122,6 +123,7 @@ tampa-cleaning-servidor/
 | `POST /directorio/estado` | Sesión | Activa o desactiva un cliente o empleado |
 | `POST /directorio/coordenadas` | Sesión | Obtiene latitud/longitud de un enlace de Google Maps |
 | `POST /pendientes/editar` | Sesión | Edita un pendiente abierto (avisa al empleado si ya estaba enviado) |
+| `GET /servicio?id=` | Sesión | Busca la fecha del servicio y redirige a `/agenda?fecha=…&id=…`, que abre su Detalle y resalta la fila (`enlaces.js`) |
 | `GET /static/*` | — | Estilos, scripts y logos de `public/` |
 | `GET /liquidacion?t=` | — (token firmado, vence a los 60 días) | Página del empleado con el detalle de su liquidación cerrada (solo lectura) |
 | `GET/POST /pendiente?id=` | — (link único por pendiente) | Página del empleado para marcar el pendiente como resuelto o "sigue pendiente" |
@@ -420,6 +422,8 @@ Alta y edición de **clientes** y **empleados** sin entrar al Sheets. Las filas 
 
 Todas las páginas de administración comparten la cabecera de `layout.js`: barra con logo, secciones **Resumen · Agenda · Pendientes · Calidad · Cartera · Nómina · Directorio**, nombre del administrador y "Cerrar sesión"; sub-pestañas en Cartera (Servicios · Clientes · Ingresos · Egresos · Reportes) y Directorio (Clientes · Empleados); y tarjetas KPI. `public/tc.css` (fuente Inter) y `public/tc.js` se sirven en `/static` con caché de 1 hora y un `?v=` según la fecha del archivo, así que un cambio se ve sin forzar recarga. `tc.js` define `TC.post` (fetch JSON que manda al login si la sesión venció), `TC.toast`, `TC.alerta`, `TC.confirmar` y `TC.pedir` (diálogos con promesa que reemplazan `alert`/`confirm`/`prompt`). El pie de página y el login muestran la marca de `marca.js`.
 
+**Enlaces entre registros (`enlaces.js`).** Un nombre o ID siempre lleva al mismo lugar, en todas las páginas (agenda, resumen, pendientes, nómina, cartera): **cliente** → página del cliente en la cartera (`/cartera/cliente`, conservando el mes), **empleado** → su semana en la nómina (`/nomina?fecha=&empleado=`), **servicio** (`PRG-`) → `/servicio?id=` (agenda de ese día con el Detalle abierto), **pendiente** (`PND-`) → `/pendientes?id=` (la lista mostrando solo ese pendiente, en cualquier estado, con su detalle abierto). Se ven con subrayado punteado (`a.lnk` en `tc.css`). Las tarjetas de servicios del resumen tienen además "Ver servicio →". La página del cliente tiene botones a su ficha de calidad y a su agenda.
+
 ---
 
 ## 7. Estructura de las hojas de Google Sheets relevantes
@@ -482,10 +486,9 @@ Todas las páginas de administración comparten la cabecera de `layout.js`: barr
 - **Acciones correctivas → pendientes automáticos** — hoy el seguimiento se hace con pendientes (ver 6.9), pero el administrador los crea a mano a partir del aviso de la inspección. `Estado_Correccion` no se actualiza al resolver el pendiente; la agenda ya no lo necesita cuando hay pendientes vinculados, pero la columna queda desactualizada en el Sheets.
 - **Recordatorios automáticos de pendientes** — por ahora solo existen los manuales (botón "Recordar"); no hay aviso automático de vencidos.
 - **Borrar `CLAVE_ADMIN` de Render** — la ruta `/enviar-programacion` ya se retiró del código; la variable quedó sin uso.
-- **Error en `/cartera/cliente`** — la plantilla de `paginaCliente` (`cartera.js`) quedó con la cabecera de una página de ingresos y usa variables que no existen ahí (`etiqueta`, `nav`, `CSS_PAGOS`), así que la página de cliente de la cartera responde con error 500 ("etiqueta is not defined"). Viene del commit `1c2eef4`. Hay que cambiarla a `layout.head` / `layout.cabecera` como las demás.
 - **Cartera: llenar `Tarifa_Servicio`** (y `Metodo_Pago` / `Pagador` / `Nota_Pago` / `Frecuencia_Cobro` / `Fecha_Referencia_Cobro`) en `SITIOS` para todos los clientes activos — ahora se puede hacer desde el directorio. Sin tarifa los cobros quedan "Sin tarifa"; sin frecuencia, la cartera vencida del resumen se mide desde la fecha del servicio.
 - **IDs `PAG-` repetidos en dos hojas** — los ingresos (`PAGOS`) y los conceptos de nómina (`PAGOS_ADICIONALES`) usan el mismo formato `PAG-AAAAMMDD-NN`. No chocan (cada hoja lleva su consecutivo), pero un mismo ID puede referirse a dos cosas distintas; conviene cambiar el prefijo de uno de los dos.
-- **`menu.js`** solo lo usa ya la plantilla rota de `/cartera/cliente`; al corregirla se puede borrar.
+- **`menu.js`** ya no lo usa ninguna página (`cartera.js` y `nomina.js` todavía lo importan sin usarlo); se puede borrar.
 - **Millas: revisar la regla de "Servicios_Pago_Siempre"** — hoy el pago fijo se aplica solo cuando el día tiene **exactamente** 2 paradas; un día con 3 o más paradas y menos de 10 millas paga $0. Confirmar si la intención era "2 o más".
 - **Millas: requisitos de datos** — confirmar que `GOOGLE_MAPS_API_KEY` existe en Render y que cada empleado activo tiene `Direccion_Residencia` en `EMPLEADOS`; sin eso los días quedan en "Revisar" y bloquean el cierre.
 - **Envío automático del enlace de liquidación** — hoy el administrador copia el mensaje y lo manda a mano; podría enviarse por Twilio al cerrar (requiere plantilla aprobada una vez se migre a WhatsApp Business).

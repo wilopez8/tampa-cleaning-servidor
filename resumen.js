@@ -21,8 +21,7 @@ const vacioTxt = t => { const x = kp(t); return !x || x === 'ninguna' || x === '
 const dias = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
 const fechaLeg = f => String(f).split('-').reverse().join('/');
 const corto = (t, n) => { t = String(t ?? '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
-const urlCliente = c => '/cartera/calidad/cliente?c=' + encodeURIComponent(c);
-const urlCobros = c => '/cartera/cliente?c=' + encodeURIComponent(c);
+const E = require('./enlaces'); // todos los nombres e IDs llevan al mismo lugar en todas las páginas
 
 // ---------- tiempo (hora de Florida) ----------
 function minAhora() {
@@ -91,7 +90,7 @@ function itemServicio(r, s) {
   const { ini, fin } = horario(r), ent = aMin(r.Hora_Entrada_Real), sal = aMin(r.Hora_Salida_Real);
   const prog = ini !== null ? hh(ini) + (fin !== null ? ' – ' + hh(fin) : '') : esc(r.Horario);
   const real = [ent !== null ? 'Entrada ' + hh(ent) : '', sal !== null ? 'Salida ' + hh(sal) : ''].filter(Boolean).join(' · ');
-  return `<div class="it ${s.n}"><b>${esc(r.Cliente)}</b>${tipoDe(r) === 'Inspeccion' ? ' <span class="est">Inspección</span>' : ''}<br><small>${esc(r.Empleado)} · ${prog}</small>${real ? `<br><small>${real}</small>` : ''}<br><span class="ds">${esc(s.t)}</span></div>`;
+  return `<div class="it ${s.n}"><b>${E.cliente(r.Cliente, { mes: r._fecha.slice(0, 7) })}</b>${tipoDe(r) === 'Inspeccion' ? ' <span class="est">Inspección</span>' : ''}<br><small>${E.empleado(r.Empleado, { fecha: r._fecha })} · ${prog}</small>${real ? `<br><small>${real}</small>` : ''}<br><span class="ds">${esc(s.t)}</span> <a class="ver" href="${esc(E.url.servicio(r.ID_Programacion))}">Ver servicio →</a></div>`;
 }
 const ordenar = (a, b) => NV[b.s.n] - NV[a.s.n] || ((horario(a.r).ini ?? 9999) - (horario(b.r).ini ?? 9999));
 
@@ -139,7 +138,7 @@ async function cartera(hoy) {
   return { venc, total: venc.reduce((a, g) => a + g.vSaldo, 0) };
 }
 function itemCartera(g) {
-  const cl = [...g.clientes].sort().map(c => `<a href="${esc(urlCobros(c))}">${esc(c)}</a>`).join(', ');
+  const cl = [...g.clientes].sort().map(c => E.cliente(c)).join(', ');
   const sf = g.sinFrec.size ? `<br><small class="mal">Sin frecuencia de cobro en SITIOS: ${esc([...g.sinFrec].join(', '))} (se cuenta desde la fecha del servicio)</small>` : '';
   return `<div class="it"><div class="fila"><div><b>${esc(g.pagador)}</b><br><small>${cl}</small><br><small>${g.n} servicio(s) pendiente(s) · saldo <b>${usd(Math.round(g.saldo * 100) / 100)}</b><br>Cobro vencido desde ${fechaLeg(g.vCobro)} (hace ${g.vMax + GRACIA_COBRO} días)</small>${sf}</div>
     <div class="dias"><b>${g.desdeUltimo}</b><small>días desde el<br>último servicio</small></div></div></div>`;
@@ -156,7 +155,7 @@ const CSS_RES = `
 .h2r{margin:24px 0 10px;font-size:18px;} .h2r small{font-weight:400;}
 .it{border-left:4px solid #cdd3d9;background:#f7f9fb;border-radius:8px;padding:8px 12px;margin:0 0 8px;line-height:1.35;}
 .it.verde{border-left-color:#16a34a;} .it.amarillo{border-left-color:#eab308;} .it.rojo{border-left-color:#dc2626;background:#fff7f7;}
-.it .ds{font-size:13px;font-weight:500;} .it.verde .ds{color:#15803d;} .it.amarillo .ds{color:#8a6100;} .it.rojo .ds{color:#b91c1c;}
+.it .ds{font-size:13px;font-weight:500;} .it.verde .ds{color:#15803d;} .it.amarillo .ds{color:#8a6100;} .it.rojo .ds{color:#b91c1c;} .it a.ver{font-size:12.5px;font-weight:600;white-space:nowrap;}
 .fila{display:flex;justify-content:space-between;gap:12px;align-items:center;}
 .dias{text-align:center;min-width:92px;} .dias b{display:block;font-size:28px;line-height:1;font-variant-numeric:tabular-nums;} .dias small{font-size:11px;}
 .cnt{display:inline-block;min-width:24px;text-align:center;padding:0 8px;border-radius:999px;background:#e8ebee;font-size:12.5px;margin-left:8px;font-weight:600;}
@@ -204,7 +203,7 @@ async function paginaResumen(query, admin) {
   const listaP = [...vencidos.sort((a, b) => fLim(a).localeCompare(fLim(b))), ...abiertos.filter(p => !vencidos.includes(p)).sort((a, b) => (fLim(a) || '9').localeCompare(fLim(b) || '9'))];
   const itemsP = listaP.slice(0, TOP).map(p => {
     const v = vencidos.includes(p);
-    return `<div class="it ${v ? 'rojo' : ''}"><b>${p.Prioridad === 'Alta' ? '❗ ' : ''}${esc(p.Titulo)}</b><br><small>${esc(p.Responsable)}${p.Cliente ? ' · ' + esc(p.Cliente) : ''}${fechaValida(fLim(p)) ? ' · ' + fechaLeg(fLim(p)) : ''}</small>${v ? `<br><span class="ds">Vencido hace ${dias(fLim(p), hoy)} día(s)</span>` : ''}</div>`;
+    return `<div class="it ${v ? 'rojo' : ''}"><b>${p.Prioridad === 'Alta' ? '❗ ' : ''}${E.pendiente(p.ID_Pendiente, { texto: p.Titulo })}</b><br><small>${E.empleado(p.Responsable)}${p.Cliente ? ' · ' + E.cliente(p.Cliente) : ''}${fechaValida(fLim(p)) ? ' · ' + fechaLeg(fLim(p)) : ''}</small>${v ? `<br><span class="ds">Vencido hace ${dias(fLim(p), hoy)} día(s)</span>` : ''}</div>`;
   });
   const pieP = `<a href="/pendientes?vencidos=1">Ver vencidos (${vencidos.length})</a> · <a href="/pendientes">Ver abiertos (${abiertos.length})</a>`;
 
@@ -215,7 +214,7 @@ async function paginaResumen(query, admin) {
     nQ = qs.length;
     blQ = sec('Quejas y dudas abiertas', qs.length, qs.slice(0, TOP).map(q => {
       const alta = kp(q.Urgencia) === 'alta';
-      return `<div class="it ${alta ? 'rojo' : 'amarillo'}"><b><a href="${esc(urlCliente(q.Cliente))}">${esc(q.Cliente)}</a></b><br><small>${esc(q.Tipo)} · ${esc(q.Urgencia || 'sin urgencia')}${fechaValida(normalizarFecha(q.Fecha_Recepcion)) ? ' · ' + fechaLeg(normalizarFecha(q.Fecha_Recepcion)) : ''}</small><br><span class="ds">${esc(corto(q.Descripcion, 110))}</span></div>`;
+      return `<div class="it ${alta ? 'rojo' : 'amarillo'}"><b>${E.cliente(q.Cliente)}</b><br><small>${esc(q.Tipo)} · ${esc(q.Urgencia || 'sin urgencia')}${fechaValida(normalizarFecha(q.Fecha_Recepcion)) ? ' · ' + fechaLeg(normalizarFecha(q.Fecha_Recepcion)) : ''}</small><br><span class="ds">${esc(corto(q.Descripcion, 110))}</span>${E.RE_SERVICIO.test(String(q.ID_Programacion || '').trim()) ? ` <a class="ver" href="${esc(E.url.servicio(q.ID_Programacion))}">Ver servicio →</a>` : ''}</div>`;
     }).concat(masQue(qs.length, TOP) ? [masQue(qs.length, TOP)] : []), 'Sin quejas ni dudas abiertas.', '<a href="/cartera/calidad">Ver calidad de clientes</a>');
 
     const porServ = {};
@@ -225,14 +224,14 @@ async function paginaResumen(query, admin) {
       .sort((a, b) => a._fecha.localeCompare(b._fecha));
     blA = sec('Acciones correctivas pendientes', acc.length, acc.slice(0, TOP).map(r => {
       const l = (porServ[r.ID_Programacion] || []).filter(p => p.Estado === 'Abierto');
-      return `<div class="it rojo"><b><a href="${esc(urlCliente(r.Cliente))}">${esc(r.Cliente)}</a></b><br><small>Inspección ${esc(fechaLeg(r._fecha))} · ${esc(r.Empleado)}</small><br><span class="ds">${esc(corto(r.Comentario_Empleado, 110))}</span><br><small>${l.length ? 'Pendiente abierto: ' + esc(l.map(p => p.ID_Pendiente).join(', ')) : 'Aún no tiene un pendiente creado'}</small></div>`;
+      return `<div class="it rojo"><b>${E.cliente(r.Cliente)}</b><br><small>${E.servicio(r.ID_Programacion, { texto: 'Inspección ' + fechaLeg(r._fecha) })} · ${E.empleado(r.Empleado, { fecha: r._fecha })}</small><br><span class="ds">${esc(corto(r.Comentario_Empleado, 110))}</span><br><small>${l.length ? 'Pendiente abierto: ' + l.map(p => E.pendiente(p.ID_Pendiente)).join(', ') : 'Aún no tiene un pendiente creado · <a href="/pendientes">Crear pendiente</a>'}</small></div>`;
     }).concat(masQue(acc.length, TOP) ? [masQue(acc.length, TOP)] : []), 'Sin acciones correctivas pendientes.', '<a href="/cartera/calidad?nivel=rojo">Ver clientes en rojo</a> · <a href="/pendientes">Crear o ver pendientes</a>');
 
     const sin = [...cal.vig].map(c => Cal.evaluar(c, cal)).filter(e => e.supervisor && !e.supervisor.ok && e.supervisor.completa).map(e => {
       const ult = e.ins[0] ? e.ins[0]._fecha : '';
       return { e, ult, n: e.ej.filter(s => !ult || s.fecha > ult).length };
     }).sort((a, b) => b.n - a.n || a.e.cliente.localeCompare(b.e.cliente));
-    blI = sec('Clientes sin inspección', sin.length, sin.slice(0, TOP).map(x => `<div class="it amarillo"><b><a href="${esc(urlCliente(x.e.cliente))}">${esc(x.e.cliente)}</a></b><br><span class="ds">${x.n} servicios ejecutados sin inspección</span><br><small>Última inspección: ${x.ult ? esc(fechaLeg(x.ult)) : 'nunca'}</small></div>`)
+    blI = sec('Clientes sin inspección', sin.length, sin.slice(0, TOP).map(x => `<div class="it amarillo"><b>${E.cliente(x.e.cliente)}</b><br><span class="ds">${x.n} servicios ejecutados sin inspección</span><br><small>Última inspección: ${x.ult ? esc(fechaLeg(x.ult)) : 'nunca'}</small></div>`)
       .concat(masQue(sin.length, TOP) ? [masQue(sin.length, TOP)] : []), 'Todos los clientes tienen inspección al día.', '<a href="/cartera/calidad">Ver calidad de clientes</a>');
   }
 

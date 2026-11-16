@@ -3,6 +3,7 @@ const { enviarWhatsApp, notificarGerencia, buscarTelefonoPorNombre, buscarEmplea
 const { fechaValida, hoyFlorida, normalizarFecha } = require('./agenda');
 const edicion = require('./edicion');
 const layout = require('./layout');
+const enlaces = require('./enlaces');
 
 const HOJA = 'PENDIENTES', HOJA_MSG = 'PENDIENTES_MENSAJES', HOJA_HIST = 'PENDIENTES_HISTORIAL';
 const ENC = ['ID_Pendiente', 'Tipo', 'Titulo', 'Observaciones', 'Cliente', 'ID_Programacion', 'Responsable', 'Fecha_Limite', 'Hora_Inicio', 'Hora_Fin',
@@ -488,7 +489,9 @@ async function paginaPendientes(query, admin) {
   const m = await edicion.maestros(false);
   const hoy = hoyFlorida();
   const f = { responsable: query.responsable || '', estado: query.estado === undefined ? 'Abierto' : query.estado, tipo: query.tipo || '', venc: query.vencidos === '1' };
-  const vis = filas.filter(p => (!f.responsable || p.Responsable === f.responsable) && (!f.estado || p.Estado === f.estado) &&
+  // ?id=PND-…: muestra solo ese pendiente, en cualquier estado (lo usan los enlaces de enlaces.js)
+  const idSolo = String(query.id || '').trim();
+  const vis = filas.filter(p => idSolo ? p.ID_Pendiente === idSolo : (!f.responsable || p.Responsable === f.responsable) && (!f.estado || p.Estado === f.estado) &&
     (!f.tipo || p.Tipo === f.tipo) && (!f.venc || vencido(p, hoy)))
     .sort((a, b) => (vencido(b, hoy) - vencido(a, hoy)) || (normalizarFecha(a.Fecha_Limite) || '9').localeCompare(normalizarFecha(b.Fecha_Limite) || '9'));
   const sel = (n, et, ops, v) => `<select name="${n}"><option value="">${et}</option>${ops.map(o => `<option value="${esc(o)}"${v === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
@@ -513,10 +516,11 @@ async function paginaPendientes(query, admin) {
         <button class="mnu-i pel" data-id="${id}" onclick="tpCancelar(this.dataset.id)">Cancelar pendiente</button></div></details>` : '';
     const det = [['Observaciones', p.Observaciones], ['Seguimiento', p.Notas_Seguimiento], ['Cierre', p.Nota_Cierre && `${p.Nota_Cierre} — ${p.Cerrado_Por} ${p.Fecha_Cierre}`], ['Creado', `${p.Creado_Por} ${p.Fecha_Creacion}`], ['Último recordatorio', p.Ultimo_Recordatorio]]
       .filter(x => x[1]).map(x => `<div style="margin-top:6px;"><small>${esc(x[0])}</small><br><span style="white-space:pre-wrap">${esc(x[1])}</span></div>`).join('');
-    return `<tr><td>${id}</td><td>${esc(p.Tipo)}</td><td>${p.Prioridad === 'Alta' ? '<span class="neg">❗</span> ' : ''}<b>${esc(p.Titulo)}</b>${p.ID_Programacion ? `<br><small>Servicio: ${esc(p.ID_Programacion)}</small>` : ''}<details><summary><small>Detalle</small></summary>${det}</details></td>
-      <td>${esc(p.Cliente)}</td><td>${esc(p.Responsable)}</td><td>${esc(fechaLeg(p.Fecha_Limite))}${p.Hora_Inicio ? `<br><small>${esc(hora(p.Hora_Inicio))}–${esc(hora(p.Hora_Fin))}</small>` : ''}</td>
+    return `<tr><td>${id}</td><td>${esc(p.Tipo)}</td><td>${p.Prioridad === 'Alta' ? '<span class="neg">❗</span> ' : ''}<b>${esc(p.Titulo)}</b>${p.ID_Programacion ? `<br><small>Servicio: ${enlaces.servicio(p.ID_Programacion)}</small>` : ''}<details${idSolo ? ' open' : ''}><summary><small>Detalle</small></summary>${det}</details></td>
+      <td>${enlaces.cliente(p.Cliente)}</td><td>${enlaces.empleado(p.Responsable)}</td><td>${esc(fechaLeg(p.Fecha_Limite))}${p.Hora_Inicio ? `<br><small>${esc(hora(p.Hora_Inicio))}–${esc(hora(p.Hora_Fin))}</small>` : ''}</td>
       <td><span class="est ${esc(p.Estado)}">${esc(p.Estado)}</span>${v ? ' <span class="est venc">Vencido</span>' : ''}<br><small>${esc(p.Estado_Envio)}</small></td><td>${acc}</td></tr>`;
-  }).join('') : '<tr><td colspan="8" style="text-align:center;color:#888;padding:24px;">No hay pendientes con este filtro.</td></tr>';
+  }).join('') : `<tr><td colspan="8" style="text-align:center;color:#888;padding:24px;">${idSolo ? 'No existe el pendiente ' + esc(idSolo) + '.' : 'No hay pendientes con este filtro.'}</td></tr>`;
+  const avisoId = idSolo ? `<div class="aviso">Mostrando solo el pendiente <b>${esc(idSolo)}</b> · <a href="/pendientes">Ver todos los abiertos</a></div>` : '';
 
   return `${layout.head('Pendientes', CSS_PEND)}
 ${layout.cabecera({ titulo: 'Pendientes', seccion: '/pendientes', admin })}
@@ -528,6 +532,7 @@ ${tarjetas}
 ${sel('tipo', 'Todos los tipos', TIPOS, f.tipo)}<label><input type="checkbox" name="vencidos" value="1"${f.venc ? ' checked' : ''}> Solo vencidos</label>
 <button class="btn hoy">Filtrar</button> <a class="btn" href="/pendientes?estado=">Todos</a> <a class="btn" href="/pendientes">Limpiar</a>
 ${f.responsable ? `<button type="button" class="btn" onclick="tpRecordarEmp(${esc(js(f.responsable))})">Recordar los abiertos de ${esc(f.responsable)}</button>` : ''}</form>
+${avisoId}
 <table><tr><th>ID</th><th>Tipo</th><th>Pendiente</th><th>Cliente</th><th>Responsable</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr>${rows}</table>
 <script>var M=${js({ clientes: m.clientes.map(c => c.n), empleados: m.empleados.map(e => ({ n: e.n, wa: e.wa })) })}, TIPOS=${js(TIPOS)}, PRIOS=${js(PRIOS)}, EDIT=${js(datosEdicion(filas))};</script>
 <script>${SCRIPT_PEND}</script>
