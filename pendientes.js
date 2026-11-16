@@ -489,8 +489,9 @@ const SCRIPT_PEND = String.raw`
 `;
 
 // Valores para pre-llenar un pendiente nuevo a partir de un servicio (?nuevo=PRG-…).
-// Inspección → "Acción correctiva" con las áreas que no cumplieron y los hallazgos; responsable = quien hizo el
-// servicio inspeccionado (ID_Servicio_Inspeccionado), si se conoce. Otro servicio → "Revisión de servicio" a su empleado.
+// Inspección → "Acción correctiva" con las áreas que no cumplieron y los hallazgos. Otro servicio → "Revisión de servicio".
+// El responsable NUNCA se adivina (cada caso es distinto: supervisor, administrador u otro empleado): queda vacío y
+// se muestran como referencia las personas relacionadas (quien hizo el servicio y quienes limpiaron ese cliente ese día).
 async function borradorDesdeServicio(id, filas, m) {
   if (!enlaces.RE_SERVICIO.test(id)) return { error: 'El ID de servicio no es válido: ' + id };
   const datos = await leerHoja('PROGRAMACION_DIARIA', { cache: true });
@@ -500,15 +501,18 @@ async function borradorDesdeServicio(id, filas, m) {
   if (!r) return { error: 'No existe el servicio ' + id + '.' };
   const insp = g(r, 'Tipo_Servicio') === 'Inspeccion';
   const cliente = g(r, 'Cliente'), fecha = normalizarFecha(g(r, 'Fecha_Servicio'));
-  let responsable = insp ? '' : g(r, 'Empleado');
-  const idIns = g(r, 'ID_Servicio_Inspeccionado');
-  if (insp && idIns) { const o = datos.slice(1).find(x => g(x, 'ID_Programacion') === idIns); if (o) responsable = g(o, 'Empleado'); }
+  const quien = g(r, 'Empleado');
+  const limpiaron = [...new Set(datos.slice(1).filter(x => g(x, 'Cliente') === cliente && normalizarFecha(g(x, 'Fecha_Servicio')) === fecha
+    && g(x, 'Tipo_Servicio') !== 'Inspeccion' && g(x, 'Cancelado') !== 'Sí').map(x => g(x, 'Empleado')).filter(Boolean))];
+  const relacionados = insp
+    ? [quien ? 'supervisor: ' + quien : '', limpiaron.length ? 'limpiaron ese día: ' + limpiaron.join(', ') : 'nadie limpió ese cliente ese día'].filter(Boolean)
+    : [limpiaron.length ? 'hicieron el servicio: ' + limpiaron.join(', ') : ''].filter(Boolean);
   const malas = g(r, 'Resultado_Inspeccion').split(';').map(s => s.trim()).filter(s => s && !/:\s*cumple$/i.test(s));
   const obs = [malas.length ? 'Áreas: ' + malas.join('; ') : '', g(r, 'Comentario_Empleado') ? 'Hallazgos: ' + g(r, 'Comentario_Empleado') : ''].filter(Boolean).join(' · ');
   const avisos = [];
   if (cliente && !m.clientes.some(c => c.n === cliente)) avisos.push(`El cliente ${cliente} no está activo: elige otro o déjalo sin cliente.`);
-  if (responsable && !m.empleados.some(e => e.n === responsable)) { avisos.push(`${responsable} no está activo: elige otro responsable.`); responsable = ''; }
-  if (!responsable) avisos.push('Elige el responsable.');
+  avisos.push('Elige el responsable' + (relacionados.length ? ' (relacionados con este servicio — ' + relacionados.join(' · ') + ').' : '.'));
+  const responsable = '';
   return {
     tipo: insp ? 'Acción correctiva' : 'Revisión de servicio',
     titulo: ((insp ? 'Acción correctiva' : 'Revisión de servicio') + ' — ' + cliente + (fechaValida(fecha) ? ' ' + fechaLeg(fecha) : '')).slice(0, 150),
