@@ -238,7 +238,8 @@ d.style.display='table-row';var f=d.previousElementSibling;if(f)f.classList.add(
 
   const aItem = h => String(h).replace(/class="btn"/g, 'class="mnu-i"');
   const menuFila = r => {
-    const it = aItem(acciones(r)) + aItem(cartera.botonNovedad(r)) + aItem(notas.botonNota(r));
+    const crearPend = r._estado === 'Cancelado' ? '' : `<a class="mnu-i" href="${esc(enlaces.url.nuevoPendiente(r.ID_Programacion))}">Crear pendiente</a>`;
+    const it = aItem(acciones(r)) + aItem(cartera.botonNovedad(r)) + aItem(notas.botonNota(r)) + crearPend;
     return it.trim() ? `<details class="mnu"><summary class="btn mini">Acciones ▾</summary><div class="mnu-l">${it}</div></details>` : '';
   };
   const filasHtml = visibles.length ? visibles.map(r => {

@@ -340,17 +340,18 @@ const SCRIPT_PEND = String.raw`
   function el(t,p){var e=document.createElement(t);for(var k in p)e[k]=p[k];return e;}
   function sel(c,ops,v,vacio){var s=el('select',{className:c});if(vacio)s.appendChild(el('option',{value:'',textContent:vacio}));ops.forEach(function(o){var n=o.n||o;s.appendChild(el('option',{value:n,textContent:n+(o.wa===false?' ⚠ sin WhatsApp':'')}));});s.value=v||'';return s;}
   function td(h){var c=el('td');c.appendChild(h);return c;}
-  function agregar(){
+  function agregar(v){ // v: valores iniciales opcionales (pendiente pre-llenado desde un servicio)
+    v=v&&v.tipo?v:{};
     var tr=el('tr');
-    tr.appendChild(td(sel('t',TIPOS,'Otro')));
-    tr.appendChild(td(el('input',{type:'text',className:'ti',placeholder:'Título',maxLength:150})));
-    tr.appendChild(td(sel('c',M.clientes,'','(sin cliente)')));
-    tr.appendChild(td(el('input',{type:'text',className:'sv',placeholder:'PRG-AAAAMMDD-NN'})));
-    tr.appendChild(td(sel('r',M.empleados,'','Responsable…')));
-    tr.appendChild(td(el('input',{type:'date',className:'fe'})));
+    tr.appendChild(td(sel('t',TIPOS,v.tipo||'Otro')));
+    tr.appendChild(td(el('input',{type:'text',className:'ti',placeholder:'Título',maxLength:150,value:v.titulo||''})));
+    tr.appendChild(td(sel('c',M.clientes,v.cliente||'','(sin cliente)')));
+    tr.appendChild(td(el('input',{type:'text',className:'sv',placeholder:'PRG-AAAAMMDD-NN',value:v.idServ||''})));
+    tr.appendChild(td(sel('r',M.empleados,v.responsable||'','Responsable…')));
+    tr.appendChild(td(el('input',{type:'date',className:'fe',value:v.fecha||''})));
     var h=el('td');h.appendChild(el('input',{type:'time',className:'i'}));h.appendChild(document.createTextNode(' – '));h.appendChild(el('input',{type:'time',className:'f'}));tr.appendChild(h);
-    tr.appendChild(td(sel('p',PRIOS,'Normal')));
-    tr.appendChild(td(el('input',{type:'text',className:'o',placeholder:'Observaciones',maxLength:800})));
+    tr.appendChild(td(sel('p',PRIOS,v.prioridad||'Normal')));
+    tr.appendChild(td(el('input',{type:'text',className:'o',placeholder:'Observaciones',maxLength:800,value:v.obs||''})));
     tr.appendChild(el('td',{className:'mal'}));
     tr.appendChild(td(el('button',{type:'button',className:'btn mini',textContent:'✕',onclick:function(){tr.remove();}})));
     cuerpo.appendChild(tr);
@@ -480,14 +481,52 @@ const SCRIPT_PEND = String.raw`
     F.nota.textContent=d.env?'Ya enviado: cualquier cambio, salvo observaciones, avisa al empleado por WhatsApp. Si cambias el responsable, avisa al anterior y al nuevo.':'Borrador: no se avisa a nadie.';
     F.err.textContent='';dlg.showModal();
   };
-  agregar();
+  if(window.PRE&&PRE.tipo){ // ?nuevo=PRG-…: abre "Nuevos pendientes" con la fila ya llena
+    agregar(PRE);var sec=cuerpo.closest('details');if(sec){sec.open=true;sec.scrollIntoView({block:'start'});}
+    var fila=cuerpo.rows[0];if(fila&&!fila.querySelector('.r').value)fila.querySelector('.r').focus();else if(fila)fila.querySelector('.fe').focus();
+  } else agregar();
 })();
 `;
+
+// Valores para pre-llenar un pendiente nuevo a partir de un servicio (?nuevo=PRG-…).
+// Inspección → "Acción correctiva" con las áreas que no cumplieron y los hallazgos; responsable = quien hizo el
+// servicio inspeccionado (ID_Servicio_Inspeccionado), si se conoce. Otro servicio → "Revisión de servicio" a su empleado.
+async function borradorDesdeServicio(id, filas, m) {
+  if (!enlaces.RE_SERVICIO.test(id)) return { error: 'El ID de servicio no es válido: ' + id };
+  const datos = await leerHoja('PROGRAMACION_DIARIA', { cache: true });
+  const h = datos[0] || [];
+  const g = (r, c) => { const i = h.indexOf(c); return i < 0 ? '' : String(r[i] ?? '').trim(); };
+  const r = datos.slice(1).find(x => g(x, 'ID_Programacion') === id);
+  if (!r) return { error: 'No existe el servicio ' + id + '.' };
+  const insp = g(r, 'Tipo_Servicio') === 'Inspeccion';
+  const cliente = g(r, 'Cliente'), fecha = normalizarFecha(g(r, 'Fecha_Servicio'));
+  let responsable = insp ? '' : g(r, 'Empleado');
+  const idIns = g(r, 'ID_Servicio_Inspeccionado');
+  if (insp && idIns) { const o = datos.slice(1).find(x => g(x, 'ID_Programacion') === idIns); if (o) responsable = g(o, 'Empleado'); }
+  const malas = g(r, 'Resultado_Inspeccion').split(';').map(s => s.trim()).filter(s => s && !/:\s*cumple$/i.test(s));
+  const obs = [malas.length ? 'Áreas: ' + malas.join('; ') : '', g(r, 'Comentario_Empleado') ? 'Hallazgos: ' + g(r, 'Comentario_Empleado') : ''].filter(Boolean).join(' · ');
+  const avisos = [];
+  if (cliente && !m.clientes.some(c => c.n === cliente)) avisos.push(`El cliente ${cliente} no está activo: elige otro o déjalo sin cliente.`);
+  if (responsable && !m.empleados.some(e => e.n === responsable)) { avisos.push(`${responsable} no está activo: elige otro responsable.`); responsable = ''; }
+  if (!responsable) avisos.push('Elige el responsable.');
+  return {
+    tipo: insp ? 'Acción correctiva' : 'Revisión de servicio',
+    titulo: ((insp ? 'Acción correctiva' : 'Revisión de servicio') + ' — ' + cliente + (fechaValida(fecha) ? ' ' + fechaLeg(fecha) : '')).slice(0, 150),
+    cliente, idServ: id, responsable, obs: obs.slice(0, 800),
+    prioridad: malas.some(s => /no cumple/i.test(s)) ? 'Alta' : 'Normal',
+    abiertos: filas.filter(p => p.ID_Programacion === id && p.Estado === 'Abierto').map(p => p.ID_Pendiente),
+    avisos,
+  };
+}
 
 async function paginaPendientes(query, admin) {
   const { filas } = await cargar();
   const m = await edicion.maestros(false);
   const hoy = hoyFlorida();
+  const idNuevo = String(query.nuevo || '').trim();
+  const pre = idNuevo ? await borradorDesdeServicio(idNuevo, filas, m) : null;
+  const avisoPre = !pre ? '' : pre.error ? `<div class="aviso r">${esc(pre.error)}</div>`
+    : `<div class="aviso" style="background:#eff6ff">📝 Nuevo pendiente <b>pre-llenado</b> desde el servicio ${enlaces.servicio(idNuevo)}. Revisa los datos, ponle fecha límite y guarda.${pre.avisos.length ? '<br>' + pre.avisos.map(esc).join('<br>') : ''}${pre.abiertos.length ? `<br>⚠️ Este servicio ya tiene pendiente(s) abierto(s): ${pre.abiertos.map(x => enlaces.pendiente(x)).join(', ')}` : ''}</div>`;
   const f = { responsable: query.responsable || '', estado: query.estado === undefined ? 'Abierto' : query.estado, tipo: query.tipo || '', venc: query.vencidos === '1' };
   // ?id=PND-…: muestra solo ese pendiente, en cualquier estado (lo usan los enlaces de enlaces.js)
   const idSolo = String(query.id || '').trim();
@@ -525,6 +564,7 @@ async function paginaPendientes(query, admin) {
   return `${layout.head('Pendientes', CSS_PEND)}
 ${layout.cabecera({ titulo: 'Pendientes', seccion: '/pendientes', admin })}
 ${tarjetas}
+${avisoPre}
 <details class="sec"><summary>Nuevos pendientes <small>(se guardan como Borrador)</small></summary>
 <div class="scroll"><table class="gridn"><thead><tr><th>Tipo</th><th>Título</th><th>Cliente</th><th>ID servicio</th><th>Responsable</th><th>Fecha</th><th>Horario</th><th>Prioridad</th><th>Observaciones</th><th>Validación</th><th></th></tr></thead><tbody id="gc"></tbody></table></div>
 <div class="acc-nuevo"><button class="btn" id="mas">+ Fila</button><button class="btn" id="gu">Guardar borrador</button><button class="btn hoy" id="en">Guardar y enviar al equipo</button><span id="msg" class="mal"></span></div></details>
@@ -534,7 +574,7 @@ ${sel('tipo', 'Todos los tipos', TIPOS, f.tipo)}<label><input type="checkbox" na
 ${f.responsable ? `<button type="button" class="btn" onclick="tpRecordarEmp(${esc(js(f.responsable))})">Recordar los abiertos de ${esc(f.responsable)}</button>` : ''}</form>
 ${avisoId}
 <table><tr><th>ID</th><th>Tipo</th><th>Pendiente</th><th>Cliente</th><th>Responsable</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr>${rows}</table>
-<script>var M=${js({ clientes: m.clientes.map(c => c.n), empleados: m.empleados.map(e => ({ n: e.n, wa: e.wa })) })}, TIPOS=${js(TIPOS)}, PRIOS=${js(PRIOS)}, EDIT=${js(datosEdicion(filas))};</script>
+<script>var M=${js({ clientes: m.clientes.map(c => c.n), empleados: m.empleados.map(e => ({ n: e.n, wa: e.wa })) })}, TIPOS=${js(TIPOS)}, PRIOS=${js(PRIOS)}, EDIT=${js(datosEdicion(filas))}, PRE=${js(pre && !pre.error ? pre : null)};</script>
 <script>${SCRIPT_PEND}</script>
 </body></html>`;
 }

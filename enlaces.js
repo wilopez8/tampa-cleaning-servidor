@@ -4,6 +4,7 @@
 //   empleado  → /nomina?empleado=        (su semana: servicios, horas, millas y liquidación)
 //   servicio  → /servicio?id=            (redirige al día de la agenda con el Detalle abierto)
 //   pendiente → /pendientes?id=          (la lista mostrando solo ese pendiente)
+//   nuevoPendiente → /pendientes?nuevo=PRG-…  (nuevo pendiente pre-llenado desde ese servicio)
 const { leerHoja } = require('./sheets');
 
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -17,6 +18,7 @@ const url = {
   empleado: (e, fecha) => '/nomina?' + (fecha ? 'fecha=' + enc(fecha) + '&' : '') + 'empleado=' + enc(limpio(e)),
   servicio: id => '/servicio?id=' + enc(limpio(id)),
   pendiente: id => '/pendientes?id=' + enc(limpio(id)),
+  nuevoPendiente: idServicio => '/pendientes?nuevo=' + enc(limpio(idServicio)), // grilla con el pendiente pre-llenado
 };
 
 const a = (href, texto, titulo) => `<a class="lnk" href="${esc(href)}" title="${esc(titulo)}">${esc(texto)}</a>`;

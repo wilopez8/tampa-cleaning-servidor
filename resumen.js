@@ -224,7 +224,7 @@ async function paginaResumen(query, admin) {
       .sort((a, b) => a._fecha.localeCompare(b._fecha));
     blA = sec('Acciones correctivas pendientes', acc.length, acc.slice(0, TOP).map(r => {
       const l = (porServ[r.ID_Programacion] || []).filter(p => p.Estado === 'Abierto');
-      return `<div class="it rojo"><b>${E.cliente(r.Cliente)}</b><br><small>${E.servicio(r.ID_Programacion, { texto: 'Inspección ' + fechaLeg(r._fecha) })} · ${E.empleado(r.Empleado, { fecha: r._fecha })}</small><br><span class="ds">${esc(corto(r.Comentario_Empleado, 110))}</span><br><small>${l.length ? 'Pendiente abierto: ' + l.map(p => E.pendiente(p.ID_Pendiente)).join(', ') : 'Aún no tiene un pendiente creado · <a href="/pendientes">Crear pendiente</a>'}</small></div>`;
+      return `<div class="it rojo"><b>${E.cliente(r.Cliente)}</b><br><small>${E.servicio(r.ID_Programacion, { texto: 'Inspección ' + fechaLeg(r._fecha) })} · ${E.empleado(r.Empleado, { fecha: r._fecha })}</small><br><span class="ds">${esc(corto(r.Comentario_Empleado, 110))}</span><br><small>${l.length ? 'Pendiente abierto: ' + l.map(p => E.pendiente(p.ID_Pendiente)).join(', ') : `Aún no tiene un pendiente creado · <a class="ver" href="${esc(E.url.nuevoPendiente(r.ID_Programacion))}">Crear pendiente →</a>`}</small></div>`;
     }).concat(masQue(acc.length, TOP) ? [masQue(acc.length, TOP)] : []), 'Sin acciones correctivas pendientes.', '<a href="/cartera/calidad?nivel=rojo">Ver clientes en rojo</a> · <a href="/pendientes">Crear o ver pendientes</a>');
 
     const sin = [...cal.vig].map(c => Cal.evaluar(c, cal)).filter(e => e.supervisor && !e.supervisor.ok && e.supervisor.completa).map(e => {
