@@ -429,8 +429,11 @@ async function paginaCartera(query, admin, vista) {
     
     const bp = (m, txt) => accBtn(m, txt, c.ID_Cobro, titulo, 'btn mini hoy');
     const bm = (m, txt) => accBtn(m, txt, c.ID_Cobro, titulo, 'mnu-i pel');
+    const bn = (m, txt) => accBtn(m, txt, c.ID_Cobro, titulo, 'mnu-i');
+    const saldo = (pe(c) || {}).saldo > 0.004;
     let acc = '';
     if (c.Estado === 'Por confirmar') acc = menuAcc(bp('ejecutar', 'Ejecutado'), bm('cancelar', 'Cancelar servicio'));
+    else if (c.Estado === 'Ejecutado' && saldo) acc = menuAcc(`<a class="btn mini hoy" href="${esc(E.url.registrarIngreso(c.Cliente, c._fecha, c.ID_Cobro))}">Registrar ingreso</a>`, bn('novedad', '+ Novedad') + bm('cancelar', 'Cancelar servicio'));
     else if (c.Estado === 'Ejecutado') acc = menuAcc(bp('novedad', '+ Novedad'), bm('cancelar', 'Cancelar servicio'));
     else if (c.Estado === 'Cancelado' && c.Decision === 'Manual') acc = bp('ejecutar', 'Ejecutado');
   
@@ -631,7 +634,10 @@ async function paginaCliente(query, admin) {
     const bp = (m, txt) => accBtn(m, txt, c.ID_Cobro, titulo, 'btn mini hoy');
     const bm = (m, txt) => accBtn(m, txt, c.ID_Cobro, titulo, 'mnu-i pel');
     let acc = `<button class="btn mini" data-id="${esc(c.ID_Cobro)}" onclick="tcDetalle(this.dataset.id)">Detalle</button>`;
+    const bn = (m, txt) => accBtn(m, txt, c.ID_Cobro, titulo, 'mnu-i');
+    const saldo = (pe(c) || {}).saldo > 0.004;
     if (c.Estado === 'Por confirmar') acc += menuAcc(bp('ejecutar', 'Ejecutado'), bm('cancelar', 'Cancelar servicio'));
+    else if (c.Estado === 'Ejecutado' && saldo) acc += menuAcc(`<button class="btn mini hoy" data-id="${esc(c.ID_Cobro)}" onclick="pgAbrirCobro(this.dataset.id)">Registrar ingreso</button>`, bn('novedad', '+ Novedad') + bm('cancelar', 'Cancelar servicio'));
     else if (c.Estado === 'Ejecutado') acc += menuAcc(bp('novedad', '+ Novedad'), bm('cancelar', 'Cancelar servicio'));
     else if (c.Estado === 'Cancelado' && c.Decision === 'Manual') acc += bp('ejecutar', 'Ejecutado');
     
@@ -652,6 +658,9 @@ async function paginaCliente(query, admin) {
       <tr class="filadet" id="det-${esc(c.ID_Cobro)}" style="display:none"><td colspan="8">${det}</td></tr>`;
   }).join('') || '<tr><td colspan="8" style="text-align:center;color:#888;padding:20px;">Sin servicios en este período.</td></tr>';
 
+  // ?ingreso=COB-…: abre el ingreso de ese cobro (enlace "Registrar ingreso" de otras páginas)
+  const idIng = /^COB-\d{8}-\d+$/.test(String(query.ingreso || '')) ? String(query.ingreso) : '';
+  const abrirIngreso = idIng ? `<script>(function(){if(!pgAbrirCobro(${JSON.stringify(idIng)}))TC.toast('Ese servicio ya no tiene saldo pendiente.');})();</script>` : '';
   const u = o => '/cartera/cliente?' + Object.entries({ c: cliente, mes, ...o }).filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
   const etiquetaMes = mes === 'todo' ? 'Todo el histórico' : mes;
   const mesNav = mes === 'todo' ? '' : `<a class="btn" href="${esc(u({ mes: sumarMes(mes, -1) }))}">←</a>
@@ -670,6 +679,7 @@ ${t && (t.nota || t.pagador) ? `<div class="aviso">${t.pagador ? `Paga: <b>${esc
 ${P().seccionCliente(cliente, todos, pgd, tar)}
 ${notasHtml}
 ${DIALOGO_COBRO}
+${abrirIngreso}
 </body></html>`;
 }
 

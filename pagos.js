@@ -281,6 +281,11 @@ function pgMostrar(){
  pgE('pgConcL').textContent=otro?'Concepto (obligatorio)':'Nota (opcional)';
  pgE('pgPagador').readOnly=ap;}
 function pgAbrir(tipo,pagador){pgModo='nuevo';pgIdPago='';pgTipo=tipo;pgReset();pgE('pgPagador').value=pagador||'';pgMetodoCambio();pgListar();pgE('pgDlg').showModal();}
+// Abre el ingreso para UN cobro: su pagador, valor = saldo del cobro y solo ese servicio marcado (botón "Registrar ingreso").
+function pgAbrirCobro(id){var c=null;for(var i=0;i<PGD.pend.length;i++){if(PGD.pend[i].id===id)c=PGD.pend[i];}
+ if(!c)return false;pgAbrir('Servicios',c.pagador);pgE('pgValor').value=c.saldo.toFixed(2);
+ for(var j=0;j<pgRows.length;j++){pgE('pgA'+j).value=pgRows[j].id===id?c.saldo.toFixed(2):'';}
+ pgTot();pgE('pgSub').textContent='Pago del servicio de '+c.cliente+' del '+c.fecha+' (saldo '+pgUsd(c.saldo)+'). Si el cliente pagó otro valor o varios servicios, cambia el valor y el reparto.';return true;}
 function pgAplicarSaldo(id){var p=null;for(var i=0;i<PGD.libres.length;i++){if(PGD.libres[i].id===id)p=PGD.libres[i];}
  if(!p)return;pgModo='aplicar';pgIdPago=id;pgTipo='Servicios';pgReset();pgLibre=p.libre;pgE('pgPagador').value=p.pagador;
  pgE('pgSub').textContent='Ingreso '+id+' · saldo disponible '+pgUsd(p.libre);pgMostrar();pgListar();pgE('pgDlg').showModal();}

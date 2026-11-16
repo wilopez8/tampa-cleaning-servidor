@@ -18,6 +18,7 @@ const url = {
   empleado: (e, fecha) => '/nomina?' + (fecha ? 'fecha=' + enc(fecha) + '&' : '') + 'empleado=' + enc(limpio(e)),
   servicio: id => '/servicio?id=' + enc(limpio(id)),
   pendiente: id => '/pendientes?id=' + enc(limpio(id)),
+  registrarIngreso: (cliente, fecha, idCobro) => '/cartera/cliente?c=' + enc(limpio(cliente)) + (fecha ? '&mes=' + enc(String(fecha).slice(0, 7)) : '') + '&ingreso=' + enc(limpio(idCobro)), // abre el ingreso de ese cobro
   pagarLiquidacion: idLiq => '/cartera/egresos?pagar=' + enc(limpio(idLiq)), // abre el pago de esa liquidación
   nuevoPendiente: idServicio => '/pendientes?nuevo=' + enc(limpio(idServicio)), // grilla con el pendiente pre-llenado
 };
