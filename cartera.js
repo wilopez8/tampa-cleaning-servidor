@@ -525,12 +525,20 @@ async function datosCobroDia(filas) {
   const rows = filas.filter(r => r.Cliente && (r.Tipo_Servicio || 'Limpieza') !== 'Inspeccion');
   if (!rows.length) return out;
   const [lista, listaNv] = await Promise.all([cargarTabla('COBROS_SERVICIO', CS_H), cargarTabla('NOVEDADES_COBRO', NV_H)]);
+  // saldo de cada cobro (para el enlace "Registrar ingreso"); si los ingresos no se pueden leer, la agenda se ve igual sin el enlace
+  let pgd = null;
+  try { pgd = await P().datos(); } catch (e) { console.error('Agenda: no se pudieron leer los ingresos para el saldo del cobro:', e.message); }
+  const armados = new Map(armar(lista, listaNv).map(c => [c.ID_Cobro, c]));
   const porClave = new Map();
   lista.forEach(o => { if (o.Clave) porClave.set(o.Clave, o); });
   rows.forEach(r => {
     const cli = r.Cliente.trim();
     const nvs = listaNv.filter(n => n.ID_Novedad && n.Cliente === cli && normalizarFecha(n.Fecha_Servicio) === r._fecha);
-    out[r.ID_Programacion] = infoCobro(porClave.get(`${cli}|${r._fecha}`), nvs);
+    const c = porClave.get(`${cli}|${r._fecha}`);
+    const info = infoCobro(c, nvs);
+    const e = c && pgd && armados.has(c.ID_Cobro) ? P().estadoCobro(armados.get(c.ID_Cobro), pgd) : null;
+    if (e && e.saldo > 0.004) Object.assign(info, { saldo: e.saldo, idCobro: c.ID_Cobro, cliente: cli, fecha: r._fecha });
+    out[r.ID_Programacion] = info;
   });
   return out;
 }
@@ -546,6 +554,8 @@ function lineaDeVidaH(r, quejas, cambios, pends, cobro, notas) {
     ['Estado en cartera', cobro.estado + (cobro.motivo ? ' — ' + cobro.motivo : '')],
     ['Valor del servicio', cobro.ejecutado && cobro.base ? usd(cobro.base) : ''],
     ['Total a cobrar', cobro.ejecutado ? usd(cobro.total) : ''],
+    // solo lo trae la agenda (datosCobroDia): la página del cliente ya tiene el botón en la fila del cobro
+    ['Saldo', cobro.saldo ? { __html: `${usd(cobro.saldo)} · <a href="${esc(E.url.registrarIngreso(cobro.cliente, cobro.fecha, cobro.idCobro))}">Registrar ingreso →</a>` } : ''],
     ['Novedades de cobro', cobro.nvs.map(n => `${n.Fecha_Registro} · ${n.Registrado_Por}: ${n.Tipo} — ${n.Detalle} (${usd(numero(n.Monto) || 0)})${n.Estado === 'Activa' ? '' : ' [ANULADA: ' + n.Motivo_Anulacion + ']'}`).join('\n')],
   ], true) : '';
   return '<div class="vidaH">' + [
