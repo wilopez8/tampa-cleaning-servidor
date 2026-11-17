@@ -1,5 +1,4 @@
 const { normalizarFecha, fechaValida, hoyFlorida } = require('./agenda');
-const menu = require('./menu');
 const layout = require('./layout');
 const K = require('./cartera').helpers;
 const C = () => require('./cartera'); // diferido: evita ciclos

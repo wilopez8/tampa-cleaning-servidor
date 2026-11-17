@@ -490,7 +490,7 @@ Todas las páginas de administración comparten la cabecera de `layout.js`: barr
 - **Borrar `CLAVE_ADMIN` de Render** — la ruta `/enviar-programacion` ya se retiró del código; la variable quedó sin uso.
 - **Cartera: llenar `Tarifa_Servicio`** (y `Metodo_Pago` / `Pagador` / `Nota_Pago` / `Frecuencia_Cobro` / `Fecha_Referencia_Cobro`) en `SITIOS` para todos los clientes activos — ahora se puede hacer desde el directorio. Sin tarifa los cobros quedan "Sin tarifa"; sin frecuencia, la cartera vencida del resumen se mide desde la fecha del servicio.
 - **IDs `PAG-` repetidos en dos hojas** — los ingresos (`PAGOS`) y los conceptos de nómina (`PAGOS_ADICIONALES`) usan el mismo formato `PAG-AAAAMMDD-NN`. No chocan (cada hoja lleva su consecutivo), pero un mismo ID puede referirse a dos cosas distintas; conviene cambiar el prefijo de uno de los dos.
-- **`menu.js`** ya no lo usa ninguna página (`cartera.js` y `nomina.js` todavía lo importan sin usarlo); se puede borrar.
+- **`menu.js`** ya no lo usa ni lo importa ninguna página; se puede borrar (previsto en la fase 4 de navegación).
 - **Millas: revisar la regla de "Servicios_Pago_Siempre"** — hoy el pago fijo se aplica solo cuando el día tiene **exactamente** 2 paradas; un día con 3 o más paradas y menos de 10 millas paga $0. Confirmar si la intención era "2 o más".
 - **Millas: requisitos de datos** — confirmar que `GOOGLE_MAPS_API_KEY` existe en Render y que cada empleado activo tiene `Direccion_Residencia` en `EMPLEADOS`; sin eso los días quedan en "Revisar" y bloquean el cierre.
 - **Envío automático del enlace de liquidación** — hoy el administrador copia el mensaje y lo manda a mano; podría enviarse por Twilio al cerrar (requiere plantilla aprobada una vez se migre a WhatsApp Business).

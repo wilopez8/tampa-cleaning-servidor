@@ -1,6 +1,5 @@
 const { agregarFila, agregarFilas, actualizarCeldas } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida } = require('./agenda');
-const menu = require('./menu');
 const layout = require('./layout');
 const E = require('./enlaces');
 const K = require('./cartera').helpers; // cartera.js solo carga pagos.js de forma diferida, así que no hay ciclo

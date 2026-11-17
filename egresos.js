@@ -1,6 +1,5 @@
 const { leerHoja, agregarFila, actualizarCeldas } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida } = require('./agenda');
-const menu = require('./menu');
 const layout = require('./layout');
 const E = require('./enlaces');
 const K = require('./cartera').helpers; // cartera.js no carga este archivo, así que no hay ciclo

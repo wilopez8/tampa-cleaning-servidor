@@ -1,6 +1,5 @@
 const { leerHoja } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida, filasDelRango } = require('./agenda');
-const menu = require('./menu');
 const layout = require('./layout');
 const E = require('./enlaces');
 const K = require('./cartera').helpers;

@@ -1,6 +1,5 @@
 const { leerHoja, agregarFila, agregarFilas, actualizarCeldas, asegurarHoja } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida, filasDelRango } = require('./agenda');
-const menu = require('./menu');
 const layout = require('./layout');
 const E = require('./enlaces');
 const P = () => require('./pagos'); // carga diferida: pagos.js usa los helpers de este archivo
