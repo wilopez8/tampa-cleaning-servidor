@@ -4,6 +4,7 @@
 //   empleado  → /nomina?empleado=        (su semana: servicios, horas, millas y liquidación)
 //   servicio  → /servicio?id=            (redirige al día de la agenda con el Detalle abierto)
 //   pendiente → /pendientes?id=          (la lista mostrando solo ese pendiente)
+//   liquidación (LIQ-) → /nomina?fecha=&empleado=  (la semana del empleado, donde se ve la liquidación)
 //   nuevoPendiente → /pendientes?nuevo=PRG-…  (nuevo pendiente pre-llenado desde ese servicio)
 const { leerHoja } = require('./sheets');
 
@@ -18,6 +19,7 @@ const url = {
   empleado: (e, fecha) => '/nomina?' + (fecha ? 'fecha=' + enc(fecha) + '&' : '') + 'empleado=' + enc(limpio(e)),
   servicio: id => '/servicio?id=' + enc(limpio(id)),
   pendiente: id => '/pendientes?id=' + enc(limpio(id)),
+  liquidacion: (empleado, semana) => '/nomina?' + (semana ? 'fecha=' + enc(semana) + '&' : '') + 'empleado=' + enc(limpio(empleado)), // la liquidación se ve en la semana del empleado
   registrarIngreso: (cliente, fecha, idCobro) => '/cartera/cliente?c=' + enc(limpio(cliente)) + (fecha ? '&mes=' + enc(String(fecha).slice(0, 7)) : '') + '&ingreso=' + enc(limpio(idCobro)), // abre el ingreso de ese cobro
   pagarLiquidacion: idLiq => '/cartera/egresos?pagar=' + enc(limpio(idLiq)), // abre el pago de esa liquidación
   nuevoPendiente: idServicio => '/pendientes?nuevo=' + enc(limpio(idServicio)), // grilla con el pendiente pre-llenado
@@ -29,6 +31,8 @@ const cliente = (nombre, opts = {}) => limpio(nombre) ? a(url.cliente(nombre, op
 const empleado = (nombre, opts = {}) => limpio(nombre) ? a(url.empleado(nombre, opts.fecha), opts.texto ?? limpio(nombre), 'Ver su semana en Nómina') : esc(opts.texto ?? nombre);
 const servicio = (id, opts = {}) => limpio(id) ? a(url.servicio(id), opts.texto ?? limpio(id), 'Ver servicio en la agenda') : esc(opts.texto ?? id);
 const pendiente = (id, opts = {}) => limpio(id) ? a(url.pendiente(id), opts.texto ?? limpio(id), 'Ver pendiente') : esc(opts.texto ?? id);
+// opts.empleado (obligatorio para enlazar) y opts.semana (lunes AAAA-MM-DD): el ID solo no dice de quién es.
+const liquidacion = (id, opts = {}) => limpio(id) && limpio(opts.empleado) ? a(url.liquidacion(opts.empleado, opts.semana), opts.texto ?? limpio(id), 'Ver liquidación en Nómina') : esc(opts.texto ?? id);
 
 // Fecha de un servicio: la de PROGRAMACION_DIARIA; si no se encuentra, la que trae el propio ID (PRG-AAAAMMDD-NN).
 async function fechaServicio(id) {
@@ -54,4 +58,4 @@ function rutas(app, auth) {
   });
 }
 
-module.exports = { url, cliente, empleado, servicio, pendiente, rutas, RE_SERVICIO };
+module.exports = { url, cliente, empleado, servicio, pendiente, liquidacion, rutas, RE_SERVICIO };

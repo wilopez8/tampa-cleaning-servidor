@@ -2,6 +2,7 @@ const { agregarFila, agregarFilas, actualizarCeldas } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida } = require('./agenda');
 const menu = require('./menu');
 const layout = require('./layout');
+const E = require('./enlaces');
 const K = require('./cartera').helpers; // cartera.js solo carga pagos.js de forma diferida, así que no hay ciclo
 const { cargarTabla, cargarTarifas, armar, enCola, bit, aFila, poner, numero, r2, usd, esc, err, motivoOk, ahora, mesValido, sumarMes, CS_H, NV_H, CSS } = K;
 
@@ -373,19 +374,22 @@ function dialogoPago(todos, d, tar) {
 const botonesPago = (cliente, tar) => `<button class="btn hoy" data-p="${esc(pagadorDeCliente(cliente, tar))}" onclick="pgAbrir('Servicios',this.dataset.p)">Registrar ingreso</button>`;
 
 function tablaPagos(lista, d, cobMap) {
+  // El pagador puede ser un tercero (no un cliente): solo se enlaza si es el nombre de un cliente con cobros.
+  const clientes = new Set([...cobMap.values()].map(c => String(c.Cliente || '').trim()).filter(Boolean));
+  const pagadorHtml = n => clientes.has(String(n || '').trim()) ? E.cliente(n) : esc(n);
   const filas = lista.map(p => {
     const act = p.Estado === 'Activo', v = numero(p.Valor) || 0;
     const aplicado = act ? (d.porPago[p.ID_Pago] || 0) : 0;
     const libre = act && p.Tipo === TIPO_SERV ? r2(v - aplicado) : 0;
     const quien = p.Tipo === TIPO_OTRO
-      ? `<b>${esc(p.Categoria)}</b>: ${esc(p.Concepto)}<br><small>De: ${esc(p.Pagador)}${p.Cliente ? ' · Cliente: ' + esc(p.Cliente) : ''}</small>`
-      : `<b>${esc(p.Pagador)}</b>${p.Concepto ? `<br><small>${esc(p.Concepto)}</small>` : ''}`;
+      ? `<b>${esc(p.Categoria)}</b>: ${esc(p.Concepto)}<br><small>De: ${pagadorHtml(p.Pagador)}${p.Cliente ? ' · Cliente: ' + E.cliente(p.Cliente) : ''}</small>`
+      : `<b>${pagadorHtml(p.Pagador)}</b>${p.Concepto ? `<br><small>${esc(p.Concepto)}</small>` : ''}`;
     const metodo = `<span class="mp ${esc(kp(p.Metodo))}" style="margin-left:0;">${esc(p.Metodo)}</span><br><small>${esc(p.Cuenta_Destino)}${p.Venmo_ID ? `<br>Venmo ${esc(p.Venmo_ID)} · ${esc(normalizarFecha(p.Venmo_Fecha))}` : ''}${p.Referencia ? `<br>Ref. ${esc(p.Referencia)}` : ''}</small>`;
     const banco = normalizarFecha(p.Fecha_Banco);
     const bancoTxt = banco ? esc(banco) + (p.Codigo_Banco ? `<br><small>Cód. ${esc(p.Codigo_Banco)}</small>` : '') : (act ? '<span class="est rev">Por depositar</span>' : '<small>—</small>');
     const apps = d.apl.filter(a => a.ID_Pago === p.ID_Pago).map(a => {
       const c = cobMap.get(a.ID_Cobro);
-      return `<div><small>${c ? esc(c._fecha + ' · ' + c.Cliente) : esc(a.ID_Cobro)}: ${usd(numero(a.Valor_Aplicado) || 0)}</small></div>`;
+      return `<div><small>${c ? esc(c._fecha) + ' · ' + E.cliente(c.Cliente, { mes: String(c._fecha || '').slice(0, 7) }) : esc(a.ID_Cobro)}: ${usd(numero(a.Valor_Aplicado) || 0)}</small></div>`;
     }).join('');
     const aplTxt = p.Tipo === TIPO_OTRO ? '<small>No ligado a servicios</small>' : (apps || '<small>Sin aplicar</small>') + (libre > EPS ? `<div><small class="neg">Saldo a favor ${usd(libre)}</small></div>` : '');
     

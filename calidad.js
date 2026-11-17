@@ -2,6 +2,7 @@ const { leerHoja } = require('./sheets');
 const { normalizarFecha, fechaValida, hoyFlorida, filasDelRango } = require('./agenda');
 const menu = require('./menu');
 const layout = require('./layout');
+const E = require('./enlaces');
 const K = require('./cartera').helpers;
 const P = require('./pagos');
 const { cargarTabla, cargarTarifas, armar, numero, r2, usd, esc, CS_H, NV_H, CSS } = K;
@@ -107,7 +108,7 @@ async function paginaLista(query, admin) {
     const sup = e.supervisor ? (e.supervisor.ok ? '<span style="color:#15803d;">Revisado</span>' : '<b style="color:#c2410c;">Sin revisión</b>') : '<small>—</small>';
     const cal = (d.notas.filter(n => n.Cliente === e.cliente && n.Estado === 'Activa' && numero(n.Calificacion) > 0));
     const prom = cal.length ? '★ ' + (Math.round(cal.reduce((a, n) => a + numero(n.Calificacion), 0) / cal.length * 10) / 10) : '<small>—</small>';
-    return `<tr data-n="${esc(kp(e.cliente))}"><td>${punto(e.nivel)}${ETQ[e.nivel]}</td><td><a href="/cartera/calidad/cliente?c=${encodeURIComponent(e.cliente)}"><b>${esc(e.cliente)}</b></a>${e.motivos.length ? `<br><small>${esc(e.motivos.join(' · '))}</small>` : ''}</td>
+    return `<tr data-n="${esc(kp(e.cliente))}"><td>${punto(e.nivel)}${ETQ[e.nivel]}</td><td><b>${E.cliente(e.cliente)}</b> <small><a href="${esc(E.url.calidadCliente(e.cliente))}">Ficha de calidad →</a></small>${e.motivos.length ? `<br><small>${esc(e.motivos.join(' · '))}</small>` : ''}</td>
       <td>${ult ? esc(ult.fecha) + `<br><small>${esc(ult.emps.join(', '))}</small>` : '<small>Sin servicios ejecutados</small>'}</td><td class="num">${e.ej.length}</td><td class="num">${e.abiertas.length || '<small>0</small>'}</td>
       <td>${ci ? esc(ci._fecha) : '<small>Nunca</small>'}</td><td>${sup}</td><td class="num">${prom}</td></tr>`;
   }).join('') || '<tr><td colspan="8" style="text-align:center;color:#888;padding:20px;">No hay clientes para este filtro.</td></tr>';
@@ -141,7 +142,7 @@ async function carteraCliente(cliente) {
   });
   if (!saldo) return '<p><small>Sin saldo pendiente.</small></p>';
   return `<div class="scroll"><table><tr><th class="num">0-30 días</th><th class="num">31-60</th><th class="num">61-90</th><th class="num">90+</th><th class="num">Saldo pendiente</th></tr><tr>${B.map(v => `<td class="num">${v ? usd(v) : '<small>—</small>'}</td>`).join('')}<td class="num"><b>${usd(saldo)}</b></td></tr></table></div>
-    <p><a href="/cartera/cliente?c=${encodeURIComponent(cliente)}">Ver cobros y registrar ingresos de este cliente</a></p>`;
+    <p><a href="${esc(E.url.cliente(cliente))}">Ver cobros y registrar ingresos de este cliente</a></p>`;
 }
 
 async function paginaFicha(query, admin) {
@@ -187,7 +188,7 @@ async function paginaFicha(query, admin) {
 
 ${layout.cabecera({ tituloHtml: punto(e.nivel) + esc(cliente), seccion: '/cartera/calidad', admin })}
 
-<div class="nav"><a class="btn" href="/cartera/calidad">← Calidad de clientes</a><a class="btn" href="/cartera/cliente?c=${encodeURIComponent(cliente)}">Cobros del cliente</a></div>
+<div class="nav"><a class="btn" href="/cartera/calidad">← Calidad de clientes</a><a class="btn" href="${esc(E.url.cliente(cliente))}">Cobros del cliente</a></div>
 ${sec(`Semáforo: ${ETQ[e.nivel]}`, motivos + supHtml)}
 ${sec('Resumen de notas y retroalimentación', resNotas + tablaNotas)}
 ${sec(`Últimos ${ultimos.length || 10} servicios ejecutados (quién atendió)`, `<p><small>Solo servicios ejecutados, del más reciente al más antiguo.${quienes ? ' Atendieron: ' + quienes + '.' : ''}</small></p>` + tablaServ)}

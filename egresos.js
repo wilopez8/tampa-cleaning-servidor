@@ -258,7 +258,7 @@ async function paginaEgresos(query, admin) {
   const filasPP = porPagar.map(l => {
     const t = `${l.Empleado} · semana ${normalizarFecha(l.Semana_Inicio)} · ${usd(numero(l.Total))}`;
     const sem = normalizarFecha(l.Semana_Inicio);
-    return `<tr${l.ID_Liquidacion === idPagar ? ' class="resaltado"' : ''}><td>${esc(sem)}<br><small>${esc(l.ID_Liquidacion)}</small></td><td>${E.empleado(l.Empleado, { fecha: sem })}</td><td class="num">${esc(l.Servicios)}</td><td class="num"><b>${usd(numero(l.Total))}</b></td>
+    return `<tr${l.ID_Liquidacion === idPagar ? ' class="resaltado"' : ''}><td>${esc(sem)}<br><small>${E.liquidacion(l.ID_Liquidacion, { empleado: l.Empleado, semana: sem })}</small></td><td>${E.empleado(l.Empleado, { fecha: sem })}</td><td class="num">${esc(l.Servicios)}</td><td class="num"><b>${usd(numero(l.Total))}</b></td>
       <td><button class="btn mini hoy" data-id="${esc(l.ID_Liquidacion)}" data-t="${esc(t)}" onclick="egPagarLiq(this)">Registrar pago</button></td></tr>`;
   }).join('');
 
@@ -276,9 +276,11 @@ async function paginaEgresos(query, admin) {
     }
   }
 
+  const liqPorId = new Map(liqs.map(l => [l.ID_Liquidacion, l]));
+  const enlaceLiq = id => { const l = liqPorId.get(id); return l ? E.liquidacion(id, { empleado: l.Empleado, semana: normalizarFecha(l.Semana_Inicio) }) : esc(id); };
   const filas = vis.map(e => {
     const act2 = e.Estado === 'Activo';
-    const quien = e.Tipo === TIPO_NOM ? `<b>${esc(e.Beneficiario)}</b><br><small>${esc(e.Concepto)}${e.ID_Liquidacion ? ' · ' + esc(e.ID_Liquidacion) : ''}</small>`
+    const quien = e.Tipo === TIPO_NOM ? `<b>${esc(e.Beneficiario)}</b><br><small>${esc(e.Concepto)}${e.ID_Liquidacion ? ' · ' + enlaceLiq(e.ID_Liquidacion) : ''}</small>`
       : `<b>${esc(e.Categoria)}</b>: ${esc(e.Concepto)}${e.Beneficiario ? `<br><small>${esc(e.Beneficiario)}</small>` : ''}${e.Factura ? `<br><small>Factura ${esc(e.Factura)}</small>` : ''}`;
     const t = `Anular egreso ${e.ID_Egreso} · ${e.Beneficiario || e.Categoria}`;
     const tDeb = `Egreso ${e.ID_Egreso} · ${e.Beneficiario || e.Categoria} · ${usd(numero(e.Valor) || 0)}`;
