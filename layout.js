@@ -9,8 +9,8 @@ const V_CSS = ver('tc.css'), V_JS = ver('tc.js');
 const SECCIONES = [['/resumen', 'Resumen'], ['/agenda', 'Agenda'], ['/pendientes', 'Pendientes'], ['/cartera/calidad', 'Calidad'], ['/cartera', 'Cartera'], ['/nomina', 'Nómina'], ['/directorio', 'Directorio']];
 // [clave, ruta, texto, conserva ?mes=]
 const SUBS = {
-  cartera: [['servicios', '/cartera', 'Servicios', true], ['clientes', '/cartera/clientes', 'Clientes', true], ['ingresos', '/cartera/pagos', 'Ingresos', false],
-    ['egresos', '/cartera/egresos', 'Egresos', false], ['reportes', '/cartera/reportes', 'Reportes', false]],
+  cartera: [['servicios', '/cartera', 'Servicios', true], ['clientes', '/cartera/clientes', 'Clientes', true], ['ingresos', '/cartera/pagos', 'Ingresos', true],
+    ['egresos', '/cartera/egresos', 'Egresos', true], ['reportes', '/cartera/reportes', 'Reportes', false]],
   directorio: [['clientes', '/directorio/clientes', 'Clientes', false], ['empleados', '/directorio/empleados', 'Empleados', false]],
 };
 

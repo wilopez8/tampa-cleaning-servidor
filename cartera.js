@@ -668,7 +668,7 @@ async function paginaCliente(query, admin) {
 
   return `${layout.head('Cliente ' + cliente, CSS + P().CSS_PAGOS)}
 ${layout.cabecera({ titulo: 'Cliente — ' + cliente, seccion: '/cartera', admin, sub: 'cartera', activa: 'clientes', mes })}
-<div class="nav"><a class="btn" href="${esc('/cartera/clientes' + (mes !== 'todo' ? '?mes=' + mes : ''))}">← Clientes</a><a class="btn" href="${esc(E.url.calidadCliente(cliente))}">Calidad del cliente</a><a class="btn" href="${esc('/agenda?cliente=' + encodeURIComponent(cliente))}">Agenda de hoy</a>${mesNav}
+<div class="nav"><a class="btn" href="${esc('/cartera/clientes?mes=' + mes)}">← Clientes</a><a class="btn" href="${esc(E.url.calidadCliente(cliente))}">Calidad del cliente</a><a class="btn" href="${esc('/agenda?cliente=' + encodeURIComponent(cliente))}">Agenda de hoy</a>${mesNav}
   <a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
   <a class="btn" href="${esc(u({ sync: '1' }))}">Sincronizar ahora</a>${P().botonesPago(cliente, tar)}${N().botonNuevaNota(cliente)}<a class="btn" href="/cartera/pagos">Todos los pagos</a><b style="margin-left:8px;">${esc(etiquetaMes)}</b></div>
 ${errSync ? `<div class="aviso r">No se pudo sincronizar con la agenda: ${esc(errSync)}</div>` : ''}

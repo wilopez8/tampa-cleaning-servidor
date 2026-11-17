@@ -322,7 +322,7 @@ Agregar concepto, anular, cerrar y reabrir pasan por una cola en memoria propia 
 
 ### 6.11 Cartera (`/cartera`, `cartera.js`)
 
-Lleva lo que hay que **cobrarle a cada cliente**. No envía WhatsApp. Muestra qué se ejecutó y cuánto vale; lo **cobrado** y el **saldo** salen de los ingresos aplicados (ver 6.12). Tiene sub-pestañas: Servicios · Clientes · Ingresos · Egresos · Reportes.
+Lleva lo que hay que **cobrarle a cada cliente**. No envía WhatsApp. Muestra qué se ejecutó y cuánto vale; lo **cobrado** y el **saldo** salen de los ingresos aplicados (ver 6.12). Tiene sub-pestañas: Servicios · Clientes · Ingresos · Egresos · Reportes. **Servicios, Clientes, Ingresos y Egresos comparten el mes elegido** (o "todo el histórico"): al cambiar de pestaña se conserva `?mes=`, pero no los demás filtros. Reportes usa su propio rango de fechas. La barra superior siempre abre en hoy / este mes (decisión de navegación, opción B), y "← Clientes" en la página de un cliente también conserva el mes.
 
 **Qué es un cobro.** Un cobro = **un cliente en un día**. Si ese día va un equipo (varias filas de `PROGRAMACION_DIARIA` del mismo cliente), es un solo cobro, con todos los empleados y los `ID_Programacion` listados. Las **inspecciones no se cobran** y no entran. Cada cobro se identifica por su `Clave` = `Cliente|AAAA-MM-DD` y recibe un ID `COB-AAAAMMDD-NN` (consecutivo por **fecha del servicio**). Se guardan en `COBROS_SERVICIO`.
 
