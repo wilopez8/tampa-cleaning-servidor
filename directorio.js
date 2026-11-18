@@ -442,7 +442,7 @@ ${dl('dl_rol', L.rol)}
 function marco(tipo, admin, kpis, nuevoTxt, filasHtml, cabeceraTabla, dialogo, datos) {
   const js = CLIENTE_JS.replace('__DATA__', () => json(datos));
   return `${layout.head('Directorio', CSS)}
-${layout.cabecera({ titulo: 'Directorio — ' + (tipo === 'clientes' ? 'Clientes' : 'Empleados'), seccion: '/directorio', admin, sub: 'directorio', activa: tipo })}
+${layout.cabecera({ titulo: 'Directorio — ' + (tipo === 'clientes' ? 'Clientes' : 'Empleados'), seccion: tipo === 'clientes' ? 'clientes' : 'equipo', activa: tipo === 'clientes' ? 'directorio' : 'empleados', admin })}
 ${kpis}
 <div class="filtros"><button type="button" class="btn hoy" id="nuevo">${esc(nuevoTxt)}</button><input type="search" id="q" placeholder="Buscar…" autocomplete="off">
 <select id="fe"><option value="act">Activos</option><option value="ina">Inactivos</option><option value="todos">Todos</option></select><small id="cnt"></small></div>

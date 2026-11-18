@@ -115,7 +115,7 @@ async function paginaLista(query, admin) {
   
   return `${layout.head('Calidad de clientes', CSS + CSS_CAL, 'rep')}
 
-  ${layout.cabecera({ titulo: 'Calidad de clientes', seccion: '/cartera/calidad', admin })}
+  ${layout.cabecera({ titulo: 'Calidad de clientes', seccion: 'clientes', activa: 'calidad', admin })}
 
   <div class="nav">
 

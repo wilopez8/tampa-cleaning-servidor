@@ -566,7 +566,7 @@ async function paginaPendientes(query, admin) {
   const avisoId = idSolo ? `<div class="aviso">Mostrando solo el pendiente <b>${esc(idSolo)}</b> · <a href="/pendientes">Ver todos los abiertos</a></div>` : '';
 
   return `${layout.head('Pendientes', CSS_PEND)}
-${layout.cabecera({ titulo: 'Pendientes', seccion: '/pendientes', admin })}
+${layout.cabecera({ titulo: 'Pendientes', seccion: 'operacion', activa: 'pendientes', admin })}
 ${tarjetas}
 ${avisoPre}
 <details class="sec"><summary>Nuevos pendientes <small>(se guardan como Borrador)</small></summary>

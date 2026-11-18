@@ -227,9 +227,9 @@ ${cobro.pago ? par('Pago', esc(cobro.pago.txt) + (cobro.pago.aplicado ? ` · cob
   const cardVinc = `<div class="fs-card"><h3>Vinculado a este servicio</h3>${vinc.length ? `<div class="fs-lst">${vinc.join('')}</div>` : '<small>Sin pendientes, quejas ni notas.</small>'}</div>`;
   const cardProg = [par('Descripción', esc(r.Descripcion_Servicio)), par('Instrucciones', esc(r.Instrucciones)), par('Observaciones del día', esc(r.Observaciones_Puntuales))].join('');
 
-  const ruta = [['Agenda', '/agenda'], [fechaLarga(r._fecha), '/agenda?fecha=' + r._fecha], [r.ID_Programacion]];
+  const ruta = [['Operación', '/agenda'], ['Agenda', '/agenda'], [fechaLarga(r._fecha), '/agenda?fecha=' + r._fecha], [r.ID_Programacion]];
   return `${layout.head('Servicio ' + r.ID_Programacion, CSS)}
-${layout.cabecera({ tituloHtml: `${E.cliente(r.Cliente, { mes })} ${chips}`, seccion: '/agenda', admin, ruta })}
+${layout.cabecera({ tituloHtml: `${E.cliente(r.Cliente, { mes })} ${chips}`, seccion: 'operacion', admin, ruta })}
 <p class="fs-sub">${sub}</p>
 <div class="fs-acc">${acciones}</div>
 ${htmlPasos(pasos(r, cobro, pends))}
@@ -246,7 +246,7 @@ function paginaNoEncontrado(id, admin) {
   const m = id.match(/^PRG-(\d{4})(\d{2})(\d{2})-/);
   const f = m ? `${m[1]}-${m[2]}-${m[3]}` : '';
   return `${layout.head('Servicio no encontrado', CSS)}
-${layout.cabecera({ titulo: 'Servicio no encontrado', seccion: '/agenda', admin, ruta: [['Agenda', '/agenda'], [id]] })}
+${layout.cabecera({ titulo: 'Servicio no encontrado', seccion: 'operacion', admin, ruta: [['Operación', '/agenda'], ['Agenda', '/agenda'], [id]] })}
 <div class="aviso r">No hay ningún servicio con el ID <b>${esc(id)}</b> en la programación.${f ? ` <a href="/agenda?fecha=${f}">Ver la agenda del ${esc(fechaLarga(f))}</a>` : ''}</div>
 </body></html>`;
 }

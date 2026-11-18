@@ -156,7 +156,7 @@ async function paginaReportes(q, admin) {
     .ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;} .ctl label{font-size:13px;display:block;} .ctl input{padding:6px;border:1px solid #ccc;border-radius:6px;}`;
   
     return `${layout.head('Reportes', CSS + CSS_PAGOS + css, 'rep')}
-${layout.cabecera({ titulo: 'Reportes de cartera', seccion: '/cartera', admin, sub: 'cartera', activa: 'reportes' })}
+${layout.cabecera({ titulo: 'Reportes de cartera', seccion: 'cartera', activa: 'reportes', admin })}
 <div class="nav">
   <a class="btn" href="/cartera/reportes?${esc(qsDe({ ...base, desde: mesAct + '-01', hasta: finMes }))}">Este mes</a>
   <a class="btn" href="/cartera/reportes?${esc(qsDe({ ...base, desde: ay + '-01-01', hasta: ay + '-12-31', anio: String(ay) }))}">Este año</a></div>

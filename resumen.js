@@ -252,7 +252,7 @@ async function paginaResumen(query, admin) {
   ]);
 
   return `${layout.head('Resumen', CSS_RES)}
-${layout.cabecera({ titulo: 'Resumen — ' + diaSemana(hoy) + ' ' + hoy, seccion: '/resumen', admin })}
+${layout.cabecera({ titulo: 'Hoy — ' + diaSemana(hoy) + ' ' + hoy, seccion: 'hoy', admin })}
 <div class="nav"><a class="btn hoy" href="/agenda?fecha=${hoy}">Agenda de hoy</a><a class="btn" href="/agenda?fecha=${man}">Agenda de mañana</a>
   <form method="POST" action="/actualizar-cache" style="margin:0 0 0 auto;display:flex;gap:8px;align-items:center;"><small>Hora en Florida ${hh(now)} · datos de hace ${edad ?? 0} s</small>
   <input type="hidden" name="volver" value="/resumen"><button class="btn">Actualizar</button></form></div>

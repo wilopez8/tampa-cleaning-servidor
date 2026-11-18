@@ -560,7 +560,7 @@ async function paginaNomina(query, admin) {
   const sufijo = emp ? '&empleado=' + enc(emp) : '';
 
   return `${layout.head('Nómina ' + lunes, CSS)}
-${layout.cabecera({ titulo: 'Nómina — semana ' + lunes + ' → ' + domingo, seccion: '/nomina', admin })}
+${layout.cabecera({ titulo: 'Nómina — semana ' + lunes + ' → ' + domingo, seccion: 'equipo', activa: 'nomina', admin })}
 <div class="nav">
 
   <a class="btn" href="${q(sumarDias(lunes, -7), emp)}">←</a>

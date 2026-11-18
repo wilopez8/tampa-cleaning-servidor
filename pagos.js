@@ -444,7 +444,7 @@ async function paginaPagos(query, admin) {
   const nav = mes === 'todo' ? '' : `<a class="btn" href="${esc(u({ mes: sumarMes(mes, -1) }))}">←</a><a class="btn hoy" href="${esc(u({ mes: hoy.slice(0, 7) }))}">Este mes</a><a class="btn" href="${esc(u({ mes: sumarMes(mes, 1) }))}">→</a>`;
  
   return `${layout.head('Ingresos ' + etiqueta, CSS + CSS_PAGOS)}
-${layout.cabecera({ titulo: 'Ingresos — ' + etiqueta, seccion: '/cartera', admin, sub: 'cartera', activa: 'ingresos', mes })}
+${layout.cabecera({ titulo: 'Ingresos — ' + etiqueta, seccion: 'cartera', activa: 'ingresos', admin, mes })}
 <div class="nav">${nav}
 
 <a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>

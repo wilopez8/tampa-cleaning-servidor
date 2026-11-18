@@ -193,7 +193,7 @@ async function pagina(query, admin) {
   else cuerpo = await tabPendientes(nombre, hoy);
 
   return `${layout.head(nombre, S().CSS + CSS)}
-${layout.cabecera({ tituloHtml: `${esc(nombre)} ${chips}`, seccion: '/directorio', admin, ruta: [['Directorio', '/directorio/clientes'], ['Empleados', '/directorio/empleados'], [nombre]] })}
+${layout.cabecera({ tituloHtml: `${esc(nombre)} ${chips}`, seccion: 'equipo', admin, ruta: [['Equipo', '/directorio/empleados'], [nombre]] })}
 ${sub ? `<p class="em-sub">${sub}</p>` : ''}
 <div class="fs-acc">${x ? `<a class="btn" href="${esc(urlEditar(nombre))}">Editar datos</a>` : ''}<a class="btn" href="${esc(urlNomina(nombre, fecha))}">Ver semana en Nómina</a></div>
 <div class="tc-tabs">${TABS.map(([k, t]) => `<a href="${esc(url(nombre, { tab: k, fecha }))}"${k === tab ? ' class="act"' : ''}>${t}</a>`).join('')}</div>

@@ -304,7 +304,7 @@ async function paginaEgresos(query, admin) {
   const nav = mes === 'todo' ? '' : `<a class="btn" href="${esc(u({ mes: sumarMes(mes, -1) }))}">←</a><a class="btn hoy" href="${esc(u({ mes: hoy.slice(0, 7) }))}">Este mes</a><a class="btn" href="${esc(u({ mes: sumarMes(mes, 1) }))}">→</a>`;
   
   return `${layout.head('Egresos ' + etiqueta, CSS + CSS_PAGOS + CSS_EGRESOS)}
-${layout.cabecera({ titulo: 'Egresos — ' + etiqueta, seccion: '/cartera', admin, sub: 'cartera', activa: 'egresos', mes })}
+${layout.cabecera({ titulo: 'Egresos — ' + etiqueta, seccion: 'cartera', activa: 'egresos', admin, mes })}
 <div class="nav">${nav}  
   <a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
   <button class="btn hoy" onclick="egGasto()">Registrar gasto</button><button class="btn hoy" onclick="egEventual()">Pago eventual a empleado</button></div>

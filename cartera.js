@@ -456,7 +456,7 @@ async function paginaCartera(query, admin, vista) {
     <a class="btn hoy" href="${esc(url({ mes: hoy.slice(0, 7) }))}">Este mes</a><a class="btn" href="${esc(url({ mes: sumarMes(mes, 1) }))}">→</a>`;
 
   return `${layout.head('Cartera ' + etiquetaMes, CSS + P().CSS_PAGOS)}
-${layout.cabecera({ titulo: 'Cartera — ' + etiquetaMes, seccion: '/cartera', admin, sub: 'cartera', activa: soloClientes ? 'clientes' : 'servicios', mes })}
+${layout.cabecera({ titulo: (soloClientes ? 'Cobros por cliente — ' : 'Cobros — ') + etiquetaMes, seccion: soloClientes ? 'clientes' : 'cartera', activa: 'cobros', admin, mes })}
 <div class="nav">${mesNav}
   <a class="btn" href="${esc(url({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
   <a class="btn" href="${esc(url({ sync: '1' }))}">Sincronizar ahora</a>
@@ -710,7 +710,7 @@ async function paginaCliente(query, admin) {
   const u = o => '/cartera/cliente?' + Object.entries({ c: cliente, tab, mes, ...o }).filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
   const mesSec = mes === 'todo' ? hoy.slice(0, 7) : mes;
   const marco = (css, claseBody, tituloHtml, cuerpo) => `${layout.head('Cliente ' + cliente, css, claseBody)}
-${layout.cabecera({ titulo: cliente, tituloHtml, seccion: '/cartera', admin, ruta: [['Cartera', '/cartera?mes=' + mesSec], ['Clientes', '/cartera/clientes?mes=' + mesSec], [cliente]] })}
+${layout.cabecera({ titulo: cliente, tituloHtml, seccion: 'clientes', admin, ruta: [['Clientes', '/cartera/clientes?mes=' + mesSec], [cliente]] })}
 <div class="tc-tabs">${TABS_CLIENTE.map(([k, t]) => `<a href="${esc(u({ tab: k }))}"${k === tab ? ' class="act"' : ''}>${t}</a>`).join('')}</div>
 ${cuerpo}
 </body></html>`;

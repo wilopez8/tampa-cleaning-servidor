@@ -263,7 +263,7 @@ d.style.display='table-row';var f=d.previousElementSibling;if(f)f.classList.add(
   const volver = esc('/agenda?' + new URLSearchParams({ fecha, ...Object.fromEntries(Object.entries(f).filter(([, v]) => v)) }).toString());
 
     return `${layout.head('Agenda ' + fecha, CSS + (ed ? ed.CSS_EDITOR : ''))}
-${layout.cabecera({ titulo: 'Agenda — ' + diaSemana(fecha) + ' ' + fecha, seccion: '/agenda', admin })}
+${layout.cabecera({ titulo: 'Agenda — ' + diaSemana(fecha) + ' ' + fecha, seccion: 'operacion', activa: 'agenda', admin })}
 
 <div class="nav">
   <a class="btn" href="/agenda?fecha=${sumarDias(fecha, -1)}">←</a>

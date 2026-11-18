@@ -6,12 +6,15 @@ const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 const ver = f => { try { return Math.round(fs.statSync(path.join(__dirname, 'public', f)).mtimeMs); } catch (e) { return 0; } };
 const V_CSS = ver('tc.css'), V_JS = ver('tc.js');
 
-const SECCIONES = [['/resumen', 'Resumen'], ['/agenda', 'Agenda'], ['/pendientes', 'Pendientes'], ['/cartera/calidad', 'Calidad'], ['/cartera', 'Cartera'], ['/nomina', 'Nómina'], ['/directorio', 'Directorio']];
-// [clave, ruta, texto, conserva ?mes=]
+// Barra superior: cinco secciones agrupadas por tarea. [clave, ruta, texto]. Las URL de las páginas no cambian.
+const SECCIONES = [['hoy', '/resumen', 'Hoy'], ['operacion', '/agenda', 'Operación'], ['clientes', '/cartera/clientes', 'Clientes'],
+  ['equipo', '/directorio/empleados', 'Equipo'], ['cartera', '/cartera', 'Cartera']];
+// Sub-pestañas de cada sección: [clave, ruta, texto, conserva ?mes=]
 const SUBS = {
-  cartera: [['servicios', '/cartera', 'Servicios', true], ['clientes', '/cartera/clientes', 'Clientes', true], ['ingresos', '/cartera/pagos', 'Ingresos', true],
-    ['egresos', '/cartera/egresos', 'Egresos', true], ['reportes', '/cartera/reportes', 'Reportes', false]],
-  directorio: [['clientes', '/directorio/clientes', 'Clientes', false], ['empleados', '/directorio/empleados', 'Empleados', false]],
+  operacion: [['agenda', '/agenda', 'Agenda', false], ['pendientes', '/pendientes', 'Pendientes', false]],
+  clientes: [['cobros', '/cartera/clientes', 'Cobros por cliente', true], ['calidad', '/cartera/calidad', 'Calidad', false], ['directorio', '/directorio/clientes', 'Directorio', false]],
+  equipo: [['empleados', '/directorio/empleados', 'Empleados', false], ['nomina', '/nomina', 'Nómina', false]],
+  cartera: [['cobros', '/cartera', 'Cobros', true], ['ingresos', '/cartera/pagos', 'Ingresos', true], ['egresos', '/cartera/egresos', 'Egresos', true], ['reportes', '/cartera/reportes', 'Reportes', false]],
 };
 
 // css: estilos propios de la pantalla (van antes de tc.css, que los complementa)
@@ -24,12 +27,13 @@ ${css ? `<style>${css}</style>` : ''}<link rel="stylesheet" href="/static/tc.css
 }
 
 // titulo: texto plano (se escapa). tituloHtml: HTML ya seguro.
+// seccion: clave de SECCIONES. activa: clave de la sub-pestaña (las listas la pasan; las fichas no, y usan ruta).
 // ruta: migas de pan [[texto, href], …, [texto]]; el último (sin href) es la página actual.
-function cabecera({ titulo, tituloHtml, seccion, admin, sub, activa, mes, ruta }) {
-  const barra = `<header class="tc-bar"><a class="tc-brand" href="/resumen"><img src="${esc(marca.LOGO_CLARO)}" alt="${esc(marca.PRODUCTO)}"></a><a class="tc-brand" href="/agenda"><i></i><b>${esc(marca.PRODUCTO)}</b></a><span class="tc-empresa">${esc(marca.EMPRESA)}</span>
-<nav>${SECCIONES.map(([h, t]) => `<a href="${h}"${h === seccion ? ' class="act"' : ''}>${t}</a>`).join('')}</nav>
+function cabecera({ titulo, tituloHtml, seccion, admin, activa, mes, ruta }) {
+  const barra = `<header class="tc-bar"><a class="tc-brand" href="/resumen" title="Hoy"><img src="${esc(marca.LOGO_CLARO)}" alt="${esc(marca.PRODUCTO)}"></a><span class="tc-empresa">${esc(marca.EMPRESA)}</span>
+<nav>${SECCIONES.map(([k, h, t]) => `<a href="${h}"${k === seccion ? ' class="act"' : ''}>${t}</a>`).join('')}</nav>
 <div class="tc-user"><span>${esc(admin)}</span><a href="/logout">Cerrar sesión</a></div></header>`;
-  const tabs = sub && SUBS[sub] ? `<div class="tc-tabs">${SUBS[sub].map(([k, h, t, conMes]) => {
+  const tabs = activa && SUBS[seccion] ? `<div class="tc-tabs">${SUBS[seccion].map(([k, h, t, conMes]) => {
     const href = conMes && mes ? h + '?mes=' + encodeURIComponent(mes) : h;
     return `<a href="${esc(href)}"${k === activa ? ' class="act"' : ''}>${t}</a>`;
   }).join('')}</div>` : '';
