@@ -14,7 +14,7 @@ const RE_SERVICIO = /^PRG-\d{8}-\d+$/;
 
 const url = {
   cliente: (c, mes) => '/cartera/cliente?c=' + enc(limpio(c)) + (mes ? '&mes=' + enc(mes) : ''),
-  calidadCliente: c => '/cartera/calidad/cliente?c=' + enc(limpio(c)),
+  calidadCliente: c => '/cartera/cliente?c=' + enc(limpio(c)) + '&tab=calidad',
   empleado: (e, fecha) => '/nomina?' + (fecha ? 'fecha=' + enc(fecha) + '&' : '') + 'empleado=' + enc(limpio(e)),
   servicio: id => '/servicio?id=' + enc(limpio(id)),
   pendiente: id => '/pendientes?id=' + enc(limpio(id)),

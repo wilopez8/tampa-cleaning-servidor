@@ -58,7 +58,7 @@ tampa-cleaning-servidor/
 ├── egresos.js     → Egresos: página /cartera/egresos, pagos de nómina (por liquidación o eventuales) y gastos, débito en banco, anulación
 ├── reportes.js    → Página /cartera/reportes (solo lectura): antigüedad de cartera, ingresos/egresos por cuenta, método y categoría, conciliación, por depositar/debitar, pagos a empleados, mes a mes
 ├── notas.js       → Notas de retroalimentación por servicio o cliente (NOTAS_SERVICIO): botón y diálogo en la agenda, bloque en la línea de vida, sección en la página del cliente
-├── calidad.js     → Páginas /cartera/calidad y /cartera/calidad/cliente (solo lectura): semáforo de calidad por cliente y ficha con su historial
+├── calidad.js     → Página /cartera/calidad (solo lectura): semáforo de calidad por cliente; también arma la pestaña Calidad de la ficha de cliente (/cartera/calidad/cliente redirige allí)
 ├── resumen.js     → Página /resumen (inicio tras el login): semáforos de hoy y mañana, cartera vencida, pendientes, quejas, acciones correctivas, clientes sin inspección
 ├── directorio.js  → Páginas /directorio/clientes y /directorio/empleados: alta, edición y activación/desactivación; coordenadas desde el enlace de Google Maps
 ├── layout.js      → Cabecera común de las páginas de administración (head, cabecera con secciones y sub-pestañas, kpis)
@@ -100,7 +100,7 @@ tampa-cleaning-servidor/
 | `POST /nomina/reabrir` | Sesión | Reabre una liquidación cerrada (motivo obligatorio) |
 | `GET /cartera?mes=&cliente=&estado=&sync=1` | Sesión | Cartera, vista **Servicios**: un renglón por cobro del mes (`mes=AAAA-MM` o `todo`); `sync=1` fuerza la sincronización con la agenda |
 | `GET /cartera/clientes?mes=` | Sesión | Cartera, vista **Clientes**: resumen por cliente del mes |
-| `GET /cartera/cliente?c=&mes=` | Sesión | Página de un cliente: sus cobros con equipo, horas y la línea de vida de cada servicio |
+| `GET /cartera/cliente?c=&tab=&mes=` | Sesión | Ficha de cliente con pestañas: Cobros y pagos (`tab=cobros`, por defecto), Calidad (`tab=calidad`), Notas (`tab=notas`) |
 | `POST /cartera/ejecutar` | Sesión | Pasa un cobro a Ejecutado (valor opcional — si va vacío usa la tarifa del sitio; motivo obligatorio) |
 | `POST /cartera/cancelar` | Sesión | Cancela un cobro (motivo obligatorio) |
 | `POST /cartera/novedad` | Sesión | Registra una novedad de cobro, por `idCobro` (desde la cartera) o por `idProgramacion` (desde la agenda) |
@@ -117,7 +117,7 @@ tampa-cleaning-servidor/
 | `GET /cartera/reportes?desde=&hasta=&anio=&metodo=&cuenta=` | Sesión | Reportes de cartera y flujo |
 | `POST /cartera/notas/registrar`, `POST /cartera/notas/anular` | Sesión | Registra o anula una nota de retroalimentación |
 | `GET /cartera/calidad?nivel=` | Sesión | Semáforo de calidad de los clientes vigentes (`nivel` = rojo / amarillo / verde) |
-| `GET /cartera/calidad/cliente?c=` | Sesión | Ficha de calidad de un cliente |
+| `GET /cartera/calidad/cliente?c=` | Sesión | Redirige a la pestaña Calidad de la ficha de cliente |
 | `GET /resumen` | Sesión | Resumen del día (página de inicio tras el login) |
 | `GET /directorio` → `/directorio/clientes`, `GET /directorio/empleados` | Sesión | Directorio de clientes y empleados |
 | `POST /directorio/cliente/guardar`, `POST /directorio/empleado/guardar` | Sesión | Crea o edita un cliente / empleado |
@@ -347,7 +347,7 @@ Los cobros con `Decision = Auto` se actualizan solos si la agenda cambia; los qu
 **Vistas.**
 - **Servicios** (`/cartera`): navegación por mes (←, Este mes, →) o "Ver todo el histórico", barra con el total del período, filtro por cliente (búsqueda con autocompletado: nombre exacto o parte del nombre) y por estado (`Por confirmar`, `Ejecutado`, `Cancelado`, `Sin tarifa`). Un renglón por cobro: fecha, cliente con su **método de pago** (etiqueta de color desde `SITIOS.Metodo_Pago`, con `Nota_Pago` al pasar el mouse) y quién paga si es distinto (`SITIOS.Pagador`), empleados, estado y motivo, valor, novedades (plegables, con botón Anular), total y acciones.
 - **Clientes** (`/cartera/clientes`): una fila por cliente con servicios ejecutados, valor, novedades, total, *por confirmar* y *sin tarifa*; primero los que tienen algo por revisar, luego por total. Buscador instantáneo. El nombre lleva a la página del cliente y la flecha ⇩ a la vista Servicios filtrada.
-- **Cliente** (`/cartera/cliente?c=`): totales del cliente en el período (incluidos cobrado y saldo), quién paga y la nota de pago, y un renglón por día con el equipo (horas programadas y reales de cada empleado), estado, valor, novedades, total, **estado de pago** y acciones; **"Detalle"** abre la línea de vida de cada servicio de ese día (la misma de la agenda, con el bloque de Cobro). Debajo: los **ingresos del pagador** (con botón para aplicar un saldo a favor) y las **notas** del cliente (ver 6.15).
+- **Cliente** (`/cartera/cliente?c=&tab=`): ficha de cliente con ruta `Cartera › Clientes › nombre` (sin sub-pestañas de la cartera) y pestañas **Cobros y pagos** · **Calidad** · **Notas**; las pestañas conservan `?mes=` y `?ingreso=COB-…` siempre abre Cobros y pagos. **Calidad** es la ficha de 6.16; **Notas** es el historial de notas del cliente (6.15), con el selector de servicio del diálogo alimentado por los últimos 60 días. **Cobros y pagos**: totales del cliente en el período (incluidos cobrado y saldo), quién paga y la nota de pago, y un renglón por día con el equipo (horas programadas y reales de cada empleado), estado, valor, novedades, total, **estado de pago** y acciones; **"Detalle"** abre la línea de vida de cada servicio de ese día (la misma de la agenda, con el bloque de Cobro). Debajo: los **ingresos del pagador** (con botón para aplicar un saldo a favor).
 
 En las vistas Servicios y Clientes también aparecen **Cobrado**, **Saldo** y una columna de **Pago** (Pendiente / Parcial / Pagado / Cortesía / Sin valor). Las acciones de cada cobro son un botón principal (Ejecutado o + Novedad) y un menú "⋯" con "Cancelar servicio".
 
@@ -399,7 +399,7 @@ Solo lectura. Para cada cliente **vigente** calcula un semáforo:
 - 🟡 **Amarillo** — 1 queja en 60 días; quejas/dudas abiertas; tareas pendientes o insumos faltantes en 2 de los últimos 3 cierres; o **sin revisión de supervisor** (inspección) desde el 5.º servicio ejecutado más reciente.
 - 🟢 **Verde** — nada de lo anterior.
 
-La lista ordena de mayor a menor riesgo (el nombre lleva a la página del cliente en la cartera; "Ficha de calidad →" abre la ficha), con último servicio ejecutado, número de servicios, quejas abiertas, última inspección, supervisor y calificación promedio de las notas. La ficha (`/cartera/calidad/cliente?c=`) muestra los motivos y el historial: quejas, observaciones de los últimos 10 cierres, inspecciones y la cartera del cliente (saldo por antigüedad). Un "servicio ejecutado" es uno de limpieza finalizado; varias filas del mismo cliente y día cuentan como uno.
+La lista ordena de mayor a menor riesgo (el nombre lleva a la página del cliente en la cartera; "Ficha de calidad →" abre la ficha), con último servicio ejecutado, número de servicios, quejas abiertas, última inspección, supervisor y calificación promedio de las notas. La ficha (pestaña **Calidad** de la ficha de cliente, `/cartera/cliente?c=&tab=calidad`; la dirección antigua `/cartera/calidad/cliente?c=` redirige allí) muestra los motivos y el historial: quejas, observaciones de los últimos 10 cierres, inspecciones y la cartera del cliente (saldo por antigüedad). Un "servicio ejecutado" es uno de limpieza finalizado; varias filas del mismo cliente y día cuentan como uno.
 
 ### 6.17 Resumen (`/resumen`, `resumen.js`)
 

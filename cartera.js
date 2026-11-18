@@ -4,6 +4,7 @@ const layout = require('./layout');
 const E = require('./enlaces');
 const P = () => require('./pagos'); // carga diferida: pagos.js usa los helpers de este archivo
 const N = () => require('./notas'); // carga diferida: notas.js usa los helpers de este archivo
+const Q = () => require('./calidad'); // carga diferida: calidad.js usa los helpers de este archivo
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const r2 = x => Math.round(x * 100) / 100;
 const usd = n => (n < 0 ? '− $' : '$') + Math.abs(n || 0).toFixed(2);
@@ -608,13 +609,37 @@ const DIALOGO_COBRO = `<dialog id="dlg"><h3 id="dt" style="margin-top:0;"></h3>
   <button class="btn hoy" onclick="tcGuardar()">Guardar</button> <button class="btn" onclick="$('dlg').close()">Cancelar</button></dialog>
 <script>${SCRIPT}</script>`;
 
+// Ficha de cliente: /cartera/cliente?c=&tab=&mes=. Las pestañas comparten ?mes= (solo Cobros y pagos lo usa).
+const TABS_CLIENTE = [['cobros', 'Cobros y pagos'], ['calidad', 'Calidad'], ['notas', 'Notas']];
+
 async function paginaCliente(query, admin) {
   const cliente = String(query.c || '').trim();
   if (!cliente) return null;
   const hoy = hoyFlorida();
+  const mes = query.mes === 'todo' ? 'todo' : (mesValido(query.mes) ? query.mes : hoy.slice(0, 7));
+  // ?ingreso=COB-… siempre abre Cobros y pagos (allí está el diálogo del ingreso)
+  const tab = !query.ingreso && TABS_CLIENTE.some(([k]) => k === query.tab) ? query.tab : 'cobros';
+  const u = o => '/cartera/cliente?' + Object.entries({ c: cliente, tab, mes, ...o }).filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+  const mesSec = mes === 'todo' ? hoy.slice(0, 7) : mes;
+  const marco = (css, claseBody, tituloHtml, cuerpo) => `${layout.head('Cliente ' + cliente, css, claseBody)}
+${layout.cabecera({ titulo: cliente, tituloHtml, seccion: '/cartera', admin, ruta: [['Cartera', '/cartera?mes=' + mesSec], ['Clientes', '/cartera/clientes?mes=' + mesSec], [cliente]] })}
+<div class="tc-tabs">${TABS_CLIENTE.map(([k, t]) => `<a href="${esc(u({ tab: k }))}"${k === tab ? ' class="act"' : ''}>${t}</a>`).join('')}</div>
+${cuerpo}
+</body></html>`;
+
+  if (tab === 'calidad') {
+    const q = await Q().fichaCliente(cliente);
+    return marco(CSS + Q().CSS_CAL, 'rep', q.tituloHtml, q.html);
+  }
+  if (tab === 'notas') {
+    // los últimos 60 días alimentan el selector de servicio del diálogo "Nueva nota"
+    const desde = new Date(Date.parse(hoy + 'T00:00:00Z') - 60 * 86400000).toISOString().slice(0, 10);
+    const filas = (await filasDelRango(desde, hoy)).filter(r => r.Cliente && r.Cliente.trim() === cliente && (r.Tipo_Servicio || 'Limpieza') !== 'Inspeccion');
+    return marco(CSS, undefined, undefined, await N().seccionCliente(cliente, filas));
+  }
+
   let errSync = '';
   try { await sincronizar(query.sync === '1'); } catch (e) { console.error('Error sincronizando cartera:', e); errSync = e.message; }
-  const mes = query.mes === 'todo' ? 'todo' : (mesValido(query.mes) ? query.mes : hoy.slice(0, 7));
   const [cfg, tar, lista, listaNv] = await Promise.all([cargarConfig(), cargarTarifas(), cargarTabla('COBROS_SERVICIO', CS_H), cargarTabla('NOVEDADES_COBRO', NV_H)]);
   const todos = armar(lista, listaNv);
   const cobros = todos.filter(c => c.Cliente === cliente && (mes === 'todo' || c._fecha.startsWith(mes))).sort((a, b) => b._fecha.localeCompare(a._fecha));
@@ -628,7 +653,6 @@ async function paginaCliente(query, admin) {
   const ids = new Set(filas.map(r => r.ID_Programacion));
   const [quejas, cambios, pends] = await Promise.all([leerPorId('QUEJAS', ids), leerPorId('CAMBIOS_PROGRAMACION', ids), leerPorId('PENDIENTES', ids)]);
   const notasSrv = await N().porServicio(ids);
-  const notasHtml = await N().seccionCliente(cliente, filas);
 
   const T = { n: 0, base: 0, nov: 0, conf: 0, sin: 0, cob: 0, sal: 0 };
   cobros.forEach(c => {
@@ -671,26 +695,21 @@ async function paginaCliente(query, admin) {
   // ?ingreso=COB-…: abre el ingreso de ese cobro (enlace "Registrar ingreso" de otras páginas)
   const idIng = /^COB-\d{8}-\d+$/.test(String(query.ingreso || '')) ? String(query.ingreso) : '';
   const abrirIngreso = idIng ? `<script>(function(){if(!pgAbrirCobro(${JSON.stringify(idIng)}))TC.toast('Ese servicio ya no tiene saldo pendiente.');})();</script>` : '';
-  const u = o => '/cartera/cliente?' + Object.entries({ c: cliente, mes, ...o }).filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
   const etiquetaMes = mes === 'todo' ? 'Todo el histórico' : mes;
   const mesNav = mes === 'todo' ? '' : `<a class="btn" href="${esc(u({ mes: sumarMes(mes, -1) }))}">←</a>
     <a class="btn hoy" href="${esc(u({ mes: hoy.slice(0, 7) }))}">Este mes</a><a class="btn" href="${esc(u({ mes: sumarMes(mes, 1) }))}">→</a>`;
 
-  return `${layout.head('Cliente ' + cliente, CSS + P().CSS_PAGOS)}
-${layout.cabecera({ titulo: 'Cliente — ' + cliente, seccion: '/cartera', admin, sub: 'cartera', activa: 'clientes', mes })}
-<div class="nav"><a class="btn" href="${esc('/cartera/clientes?mes=' + mes)}">← Clientes</a><a class="btn" href="${esc(E.url.calidadCliente(cliente))}">Calidad del cliente</a><a class="btn" href="${esc('/agenda?cliente=' + encodeURIComponent(cliente))}">Agenda de hoy</a>${mesNav}
+  return marco(CSS + P().CSS_PAGOS, undefined, undefined, `<div class="nav"><a class="btn" href="${esc('/agenda?cliente=' + encodeURIComponent(cliente))}">Agenda de hoy</a>${mesNav}
   <a class="btn" href="${esc(u({ mes: mes === 'todo' ? hoy.slice(0, 7) : 'todo' }))}">${mes === 'todo' ? 'Ver por mes' : 'Ver todo el histórico'}</a>
-  <a class="btn" href="${esc(u({ sync: '1' }))}">Sincronizar ahora</a>${P().botonesPago(cliente, tar)}${N().botonNuevaNota(cliente)}<a class="btn" href="/cartera/pagos">Todos los pagos</a><b style="margin-left:8px;">${esc(etiquetaMes)}</b></div>
+  <a class="btn" href="${esc(u({ sync: '1' }))}">Sincronizar ahora</a>${P().botonesPago(cliente, tar)}<a class="btn" href="/cartera/pagos">Todos los pagos</a><b style="margin-left:8px;">${esc(etiquetaMes)}</b></div>
 ${errSync ? `<div class="aviso r">No se pudo sincronizar con la agenda: ${esc(errSync)}</div>` : ''}
 ${t && (t.nota || t.pagador) ? `<div class="aviso">${t.pagador ? `Paga: <b>${esc(t.pagador)}</b>. ` : ''}${esc(t.nota)}</div>` : ''}
 <table style="width:auto;"><tr><th class="num">Servicios ejecutados</th><th class="num">Valor servicios</th><th class="num">Novedades</th><th class="num">Total a cobrar</th><th class="num">Cobrado</th><th class="num">Saldo</th><th class="num">Por confirmar</th><th class="num">Sin tarifa</th></tr>
 <tr><td class="num">${T.n}</td><td class="num">${usd(T.base)}</td><td class="num">${usd(T.nov)}</td><td class="num"><b>${usd(r2(T.base + T.nov))}</b></td><td class="num">${usd(r2(T.cob))}</td><td class="num"><b>${usd(r2(T.sal))}</b></td><td class="num">${T.conf}</td><td class="num">${T.sin}</td></tr></table>
 <table class="tc"><tr><th>Fecha</th><th>Equipo y horas</th><th>Estado</th><th class="num">Valor</th><th>Novedades</th><th class="num">Total</th><th>Pago</th><th>Acciones</th></tr>${filasHtml}</table>
 ${P().seccionCliente(cliente, todos, pgd, tar)}
-${notasHtml}
 ${DIALOGO_COBRO}
-${abrirIngreso}
-</body></html>`;
+${abrirIngreso}`);
 }
 
 

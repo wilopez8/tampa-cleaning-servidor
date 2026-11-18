@@ -141,12 +141,11 @@ async function carteraCliente(cliente) {
   });
   if (!saldo) return '<p><small>Sin saldo pendiente.</small></p>';
   return `<div class="scroll"><table><tr><th class="num">0-30 días</th><th class="num">31-60</th><th class="num">61-90</th><th class="num">90+</th><th class="num">Saldo pendiente</th></tr><tr>${B.map(v => `<td class="num">${v ? usd(v) : '<small>—</small>'}</td>`).join('')}<td class="num"><b>${usd(saldo)}</b></td></tr></table></div>
-    <p><a href="${esc(E.url.cliente(cliente))}">Ver cobros y registrar ingresos de este cliente</a></p>`;
+    <p><a href="${esc(E.url.cliente(cliente) + '&tab=cobros')}">Ver cobros y registrar ingresos de este cliente</a></p>`;
 }
 
-async function paginaFicha(query, admin) {
-  const cliente = String(query.c || '').trim();
-  if (!cliente) return null;
+// Pestaña Calidad de la ficha de cliente (/cartera/cliente?c=&tab=calidad)
+async function fichaCliente(cliente) {
   const d = await leerTodo();
   const e = evaluar(cliente, d);
   const ultimos = e.ej.slice(0, 10);
@@ -178,24 +177,18 @@ async function paginaFicha(query, admin) {
   const notas = d.notas.filter(n => n.Cliente === cliente).sort((a, b) => normalizarFecha(b.Fecha).localeCompare(normalizarFecha(a.Fecha)) || String(b.ID_Nota).localeCompare(String(a.ID_Nota)));
   const act = notas.filter(n => n.Estado === 'Activa'), conCal = act.filter(n => numero(n.Calificacion) > 0);
   const prom = conCal.length ? Math.round(conCal.reduce((a, n) => a + numero(n.Calificacion), 0) / conCal.length * 10) / 10 : null;
-  const resNotas = `<div class="aviso" style="background:#f0fdf4;">${act.length} nota(s) activa(s)${prom !== null ? ` · calificación promedio <b>★ ${prom}</b> (${conCal.length} con calificación)` : ' · sin calificaciones'} · ${act.filter(n => n.Fuente === 'Cliente').length} del cliente · ${act.filter(n => n.Fuente === 'Interna').length} internas · <a href="/cartera/cliente?c=${encodeURIComponent(cliente)}">agregar o anular notas</a></div>`;
+  const resNotas = `<div class="aviso" style="background:#f0fdf4;">${act.length} nota(s) activa(s)${prom !== null ? ` · calificación promedio <b>★ ${prom}</b> (${conCal.length} con calificación)` : ' · sin calificaciones'} · ${act.filter(n => n.Fuente === 'Cliente').length} del cliente · ${act.filter(n => n.Fuente === 'Interna').length} internas · <a href="${esc(E.url.cliente(cliente) + '&tab=notas')}">agregar o anular notas</a></div>`;
   const tablaNotas = act.length ? `<div class="scroll"><table><tr><th>Fecha</th><th>Fuente</th><th>Categoría</th><th class="num">Calif.</th><th>Detalle</th></tr>${act.slice(0, 20).map(n => `<tr><td>${esc(normalizarFecha(n.Fecha))}</td><td>${esc(n.Fuente)}</td><td>${esc(n.Categoria)}</td><td class="num">${estr(n)}</td><td class="wrap">${esc(n.Detalle)}</td></tr>`).join('')}</table></div>` : '<p><small>Sin notas.</small></p>';
 
   const cartera = await carteraCliente(cliente);
 
-  return `${layout.head('Calidad — ' + cliente, CSS + CSS_CAL, 'rep')}
-
-${layout.cabecera({ tituloHtml: punto(e.nivel) + esc(cliente), seccion: '/cartera/calidad', admin })}
-
-<div class="nav"><a class="btn" href="/cartera/calidad">← Calidad de clientes</a><a class="btn" href="${esc(E.url.cliente(cliente))}">Cobros del cliente</a></div>
-${sec(`Semáforo: ${ETQ[e.nivel]}`, motivos + supHtml)}
+  return { nivel: e.nivel, tituloHtml: punto(e.nivel) + esc(cliente), html: `${sec(`Semáforo: ${ETQ[e.nivel]}`, motivos + supHtml)}
 ${sec('Resumen de notas y retroalimentación', resNotas + tablaNotas)}
 ${sec(`Últimos ${ultimos.length || 10} servicios ejecutados (quién atendió)`, `<p><small>Solo servicios ejecutados, del más reciente al más antiguo.${quienes ? ' Atendieron: ' + quienes + '.' : ''}</small></p>` + tablaServ)}
 ${sec('Quejas y dudas', tablaQ)}
 ${sec('Observaciones de los servicios (últimos 10 ejecutados)', tablaObs)}
 ${sec('Inspecciones de supervisor', tablaIns)}
-${sec('Cartera del cliente', cartera, false)}
-</body></html>`;
+${sec('Cartera del cliente', cartera, false)}` };
 }
 
 function rutas(app, auth) {
@@ -207,7 +200,11 @@ function rutas(app, auth) {
     } catch (e) { console.error('Error en GET ' + ruta, e); res.status(500).send('Error cargando la calidad de clientes: ' + e.message); }
   });
   get('/cartera/calidad', paginaLista);
-  get('/cartera/calidad/cliente', paginaFicha);
+  // la ficha de calidad ahora es la pestaña Calidad de la ficha de cliente
+  app.get('/cartera/calidad/cliente', auth.requiereAdmin, (req, res) => {
+    const c = String(req.query.c || '').trim();
+    res.redirect(c ? E.url.calidadCliente(c) : '/cartera/calidad');
+  });
 }
 
-module.exports = { rutas, evaluar, paginaLista, paginaFicha, leerTodo, abierta };
+module.exports = { rutas, evaluar, paginaLista, fichaCliente, leerTodo, abierta, CSS_CAL };
