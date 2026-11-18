@@ -2,7 +2,7 @@
 // entre Nómina, Pendientes, Egresos y el Directorio. Solo lectura: lo que se edita sigue en su página.
 const layout = require('./layout');
 const E = require('./enlaces');
-const { hoyFlorida, normalizarFecha, fechaValida, cargarPendientes, inicioSemana, sumarDias, diaSemana } = require('./agenda');
+const { hoyFlorida, normalizarFecha, fechaValida, cargarPendientes, inicioSemana, sumarDias, diaSemana, filasDelRango } = require('./agenda');
 const Dir = () => require('./directorio'); // carga diferida
 const S = () => require('./servicio'); // estilos de las fichas (tarjetas, chips)
 const Nm = () => require('./nomina'); // cálculo de la semana y liquidaciones (solo lectura)
@@ -12,8 +12,8 @@ const limpio = t => String(t ?? '').trim();
 const usd = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const num = t => { const x = parseFloat(String(t ?? '').replace(/[$,\s]/g, '')); return isFinite(x) ? x : 0; };
 
-const TABS = [['semana', 'Semana'], ['pendientes', 'Pendientes'], ['nomina', 'Nómina'], ['datos', 'Datos']];
-const DEFECTO = 'pendientes';
+const TABS = [['resumen', 'Resumen'], ['semana', 'Semana'], ['pendientes', 'Pendientes'], ['nomina', 'Nómina'], ['datos', 'Datos']];
+const DEFECTO = 'resumen';
 const url = (e, o = {}) => '/empleado?' + Object.entries({ e, ...o }).filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
 const urlEditar = e => '/directorio/empleados?editar=' + encodeURIComponent(e);
 const urlNomina = (e, fecha) => '/nomina?' + (fecha ? 'fecha=' + encodeURIComponent(fecha) + '&' : '') + 'empleado=' + encodeURIComponent(e);
@@ -21,7 +21,7 @@ const vencido = (p, hoy) => p.Estado === 'Abierto' && fechaValida(normalizarFech
 
 const CSS = `.fs-acc .btn{margin:0;} .em-sub{margin:-6px 0 14px;color:var(--gray-d);font-size:14.5px;}
 .em-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start;} @media(max-width:900px){.em-cols{grid-template-columns:1fr;}}
-tr.venc td{background:#fef2f2;} tr.anu td{color:var(--gray);} .em-nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 14px;}`;
+.kpi small{font-weight:400;font-size:12px;color:var(--gray-d);} tr.venc td{background:#fef2f2;} tr.anu td{color:var(--gray);} .em-nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 14px;}`;
 
 // ---------- pestaña Pendientes ----------
 async function tabPendientes(nombre, hoy) {
@@ -43,6 +43,65 @@ async function tabPendientes(nombre, hoy) {
 <div class="scroll"><table><tr><th>Pendiente</th><th>Cliente / servicio</th><th>Fecha límite</th><th>Estado</th></tr>${abiertos.map(p => fila(p, false)).join('') || vacio(4)}</table></div>
 <h3 style="margin-top:18px;">Cerrados y cancelados <small>(últimos 20)</small></h3>
 <div class="scroll"><table><tr><th>Pendiente</th><th>Cliente / servicio</th><th>Fecha límite</th><th>Estado</th><th>Cierre</th></tr>${otros.map(p => fila(p, true)).join('') || vacio(5)}</table></div>`;
+}
+
+// ---------- pestaña Resumen: KPIs, siguiente paso y tres tarjetas ----------
+const CHIP_ESTADO = { Confirmado: 'ok', Finalizado: 'ok', Enviado: 'am', 'Salida (falta cierre)': 'am', 'No puede': 'mal', 'En curso': 'az' };
+async function tabResumen(nombre, x, hoy) {
+  const { fmtDur } = Nm().calculoTexto;
+  const lunes = inicioSemana(hoy), lunesAnt = sumarDias(lunes, -7);
+  const [w, liqs, pends, filas] = await Promise.all([Nm().semanaEmpleado(nombre, hoy), Nm().liquidacionesEmpleado(nombre), cargarPendientes(),
+    filasDelRango(lunesAnt, sumarDias(hoy, 7))]);
+  const mias = filas.filter(r => limpio(r.Empleado) === nombre && r._estado !== 'Cancelado')
+    .sort((a, b) => a._fecha.localeCompare(b._fecha) || String(a.Hora_Inicio || a.Horario || '').localeCompare(String(b.Hora_Inicio || b.Horario || '')));
+  const abiertos = pends.filter(p => limpio(p.Responsable) === nombre && p.Estado === 'Abierto')
+    .sort((a, b) => (vencido(b, hoy) - vencido(a, hoy)) || (normalizarFecha(a.Fecha_Limite) || '9').localeCompare(normalizarFecha(b.Fecha_Limite) || '9'));
+  const vencidos = abiertos.filter(p => vencido(p, hoy));
+  const porPagar = liqs.filter(l => l.Estado === 'Cerrada' && !l.pago).sort((a, b) => a._semana.localeCompare(b._semana));
+  const totPorPagar = porPagar.reduce((a, l) => a + num(l.Total), 0);
+  const dia = f => `${diaSemana(f)} ${f.slice(8)}/${f.slice(5, 7)}`;
+  const hora = r => (r.Hora_Inicio && r.Hora_Fin) ? r.Hora_Inicio + '–' + r.Hora_Fin : (r.Horario || '');
+
+  const semana = w.rows.map(c => c.r);
+  const kp = layout.kpis([
+    ['Esta semana', `${semana.length} servicio(s)<br><small>${semana.filter(r => r._estado === 'Finalizado').length} hechos</small>`],
+    ['Horas pagadas', `${fmtDur(w.t.min)}<br><small>${w.t.cerrada ? 'semana cerrada' : 'semana en curso'}</small>`],
+    ['Millas', `${usd(w.t.millas)}<br><small>esta semana</small>`],
+    ['Pendientes', `${abiertos.length}<br><small>${vencidos.length} vencido(s)</small>`, vencidos.length ? 'neg' : ''],
+    ['Por pagar', `${usd(totPorPagar)}<br><small>${porPagar.length} liquidación(es) cerrada(s)</small>`, porPagar.length ? 'neg' : ''],
+  ]);
+
+  // siguiente paso, en este orden: no puede → sin check-in o sin cierre → semana anterior sin cerrar → sin pagar → pendiente vencido → faltan datos → al día
+  const caja = (cls, titulo, texto, href, boton) => `<div class="fs-sig${cls ? ' ' + cls : ''}"><div><span class="t">${esc(titulo)}</span>${texto}</div>${href ? `<a class="btn hoy" href="${esc(href)}">${esc(boton)}</a>` : ''}</div>`;
+  const SP = 'SIGUIENTE PASO';
+  const noPuede = mias.find(r => r._fecha >= hoy && r._estado === 'No puede');
+  const sinEntrada = mias.find(r => r._fecha < hoy && !r.Hora_Entrada_Real && r._estado !== 'No puede');
+  const sinCierre = mias.find(r => r._fecha <= hoy && r._estado === 'Salida (falta cierre)');
+  const antSinCerrar = mias.some(r => r._fecha >= lunesAnt && r._fecha < lunes) && !liqs.some(l => l.Estado === 'Cerrada' && l._semana === lunesAnt);
+  const faltan = x ? [x.wa.length >= 10 ? '' : 'WhatsApp', x.dir ? '' : 'dirección de residencia'].filter(Boolean) : [];
+  let sig;
+  if (noPuede) sig = caja('mal', SP, `Dijo que <b>no puede</b> el ${esc(dia(noPuede._fecha))} (${esc(noPuede.Cliente)})${noPuede.Motivo_No_Puede ? ': ' + esc(noPuede.Motivo_No_Puede) : ''}. Hay que reasignar el servicio.`,
+    '/agenda?fecha=' + noPuede._fecha + '&id=' + encodeURIComponent(noPuede.ID_Programacion), 'Reasignar en la agenda →');
+  else if (sinEntrada) sig = caja('mal', SP, `El servicio del ${esc(dia(sinEntrada._fecha))} (${esc(sinEntrada.Cliente)}) <b>no tiene check-in</b>. Revisa si se hizo.`, E.url.servicio(sinEntrada.ID_Programacion), 'Revisar el servicio →');
+  else if (sinCierre) sig = caja('', SP, `Salió del servicio del ${esc(dia(sinCierre._fecha))} (${esc(sinCierre.Cliente)}) pero <b>no hizo el cierre</b>.`, E.url.servicio(sinCierre.ID_Programacion), 'Ver el servicio →');
+  else if (antSinCerrar) sig = caja('', SP, `La liquidación de la semana del ${esc(lunesAnt)} <b>no está cerrada</b>.`, urlNomina(nombre, lunesAnt), 'Cerrar en Nómina →');
+  else if (porPagar.length) sig = caja('', SP, `La liquidación de la semana del ${esc(porPagar[0]._semana)} está <b>cerrada y sin pagar</b> (${usd(num(porPagar[0].Total))})${porPagar.length > 1 ? `; hay ${porPagar.length} por pagar` : ''}.`, E.url.pagarLiquidacion(porPagar[0].ID_Liquidacion), 'Registrar pago →');
+  else if (vencidos.length) sig = caja('', SP, `Tiene ${vencidos.length} <b>pendiente(s) vencido(s)</b>; el más antiguo: "${esc(vencidos[0].Titulo || vencidos[0].ID_Pendiente)}" (límite ${esc(normalizarFecha(vencidos[0].Fecha_Limite))}).`, E.url.pendiente(vencidos[0].ID_Pendiente), 'Ver el pendiente →');
+  else if (faltan.length) sig = caja('', SP, `Falta su <b>${esc(faltan.join(' y '))}</b> en el Directorio${x.dir ? '' : ' (sin ella no se calculan millas)'}.`, urlEditar(nombre), 'Editar datos →');
+  else sig = caja('ok', 'AL DÍA', 'Sin servicios por reasignar o por revisar, liquidaciones cerradas y pagadas, sin pendientes vencidos.');
+
+  const lst = filas => `<div class="fs-lst">${filas.join('') || '<div><small>Nada.</small></div>'}</div>`;
+  const cardSemana = `<div class="fs-card"><h3>Esta semana · ${esc(dia(w.lunes))}–${esc(dia(w.domingo))}</h3>${lst(semana.map(r =>
+    `<div><span><b>${esc(dia(r._fecha))}</b> <small>${esc(hora(r))}</small><br><small>${E.servicio(r.ID_Programacion, { texto: r.Cliente })}${r.Tipo_Servicio && r.Tipo_Servicio !== 'Limpieza' ? ' · ' + esc(r.Tipo_Servicio) : ''}</small></span><span class="chip ${CHIP_ESTADO[r._estado] || ''}">${esc(r._estado)}</span></div>`))}
+  <div class="fs-par"><a href="${esc(url(nombre, { tab: 'semana' }))}">Ver la semana completa →</a></div></div>`;
+  const cardPend = `<div class="fs-card"><h3>Pendientes abiertos</h3>${lst(abiertos.slice(0, 5).map(p =>
+    `<div><span><b>${E.pendiente(p.ID_Pendiente, { texto: p.Titulo || p.ID_Pendiente })}</b><br><small>${p.Cliente ? esc(p.Cliente) + ' · ' : ''}límite ${esc(normalizarFecha(p.Fecha_Limite)) || '—'}</small></span>${vencido(p, hoy) ? '<span class="chip mal">Vencido</span>' : '<span class="chip am">Abierto</span>'}</div>`))}
+  <div class="fs-par"><a href="${esc(url(nombre, { tab: 'pendientes' }))}">Ver todos sus pendientes →</a></div></div>`;
+  const filaAbierta = w.t.cerrada ? [] : [`<div><span><b>Semana ${esc(w.lunes)}</b><br><small>abierta · ${usd(w.t.total)} hasta ahora</small></span><span class="chip">Abierta</span></div>`];
+  const cardNom = `<div class="fs-card"><h3>Nómina · últimas liquidaciones</h3>${lst(filaAbierta.concat(liqs.filter(l => l.Estado === 'Cerrada').slice(0, 4).map(l =>
+    `<div><span><b>Semana ${esc(l._semana)}</b><br><small>${esc(l.ID_Liquidacion)} · ${usd(num(l.Total))}</small></span>${l.pago ? '<span class="chip ok">Pagada</span>' : `<a class="chip am" href="${esc(E.url.pagarLiquidacion(l.ID_Liquidacion))}">Por pagar →</a>`}</div>`)))}
+  <div class="fs-par"><a href="${esc(url(nombre, { tab: 'nomina' }))}">Ver todas las liquidaciones →</a></div></div>`;
+  return `${kp}${sig}<div class="em-cols">${cardSemana}${cardPend}${cardNom}</div>`;
 }
 
 // ---------- pestaña Semana (solo lectura; se ajusta y se cierra en Nómina) ----------
@@ -127,7 +186,8 @@ async function pagina(query, admin) {
     x.dir ? 'vive en ' + esc(x.dir) : '<span class="neg">sin dirección (no se calculan millas)</span>'].join(' · ') : '';
 
   let cuerpo;
-  if (tab === 'datos') cuerpo = tabDatos(nombre, x, errDir);
+  if (tab === 'resumen') cuerpo = await tabResumen(nombre, x, hoy);
+  else if (tab === 'datos') cuerpo = tabDatos(nombre, x, errDir);
   else if (tab === 'semana') cuerpo = await tabSemana(nombre, fecha || hoy, hoy);
   else if (tab === 'nomina') cuerpo = await tabNomina(nombre);
   else cuerpo = await tabPendientes(nombre, hoy);
