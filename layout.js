@@ -24,7 +24,8 @@ ${css ? `<style>${css}</style>` : ''}<link rel="stylesheet" href="/static/tc.css
 }
 
 // titulo: texto plano (se escapa). tituloHtml: HTML ya seguro.
-function cabecera({ titulo, tituloHtml, seccion, admin, sub, activa, mes }) {
+// ruta: migas de pan [[texto, href], …, [texto]]; el último (sin href) es la página actual.
+function cabecera({ titulo, tituloHtml, seccion, admin, sub, activa, mes, ruta }) {
   const barra = `<header class="tc-bar"><a class="tc-brand" href="/resumen"><img src="${esc(marca.LOGO_CLARO)}" alt="${esc(marca.PRODUCTO)}"></a><a class="tc-brand" href="/agenda"><i></i><b>${esc(marca.PRODUCTO)}</b></a><span class="tc-empresa">${esc(marca.EMPRESA)}</span>
 <nav>${SECCIONES.map(([h, t]) => `<a href="${h}"${h === seccion ? ' class="act"' : ''}>${t}</a>`).join('')}</nav>
 <div class="tc-user"><span>${esc(admin)}</span><a href="/logout">Cerrar sesión</a></div></header>`;
@@ -32,7 +33,8 @@ function cabecera({ titulo, tituloHtml, seccion, admin, sub, activa, mes }) {
     const href = conMes && mes ? h + '?mes=' + encodeURIComponent(mes) : h;
     return `<a href="${esc(href)}"${k === activa ? ' class="act"' : ''}>${t}</a>`;
   }).join('')}</div>` : '';
-  return `${barra}<div class="tc-titulo"><h1>${tituloHtml !== undefined ? tituloHtml : esc(titulo)}</h1></div>${tabs}`;
+  const migas = ruta && ruta.length ? `<nav class="tc-ruta" aria-label="Ruta">${ruta.map(([t, h], i) => (i ? '<span>›</span>' : '') + (h ? `<a href="${esc(h)}">${esc(t)}</a>` : `<b>${esc(t)}</b>`)).join('')}</nav>` : '';
+  return `${barra}${migas}<div class="tc-titulo"><h1>${tituloHtml !== undefined ? tituloHtml : esc(titulo)}</h1></div>${tabs}`;
 }
 
 // items: [[etiqueta, valor(HTML seguro), clase opcional]]

@@ -536,6 +536,7 @@ async function datosCobroDia(filas) {
     const c = porClave.get(`${cli}|${r._fecha}`);
     const info = infoCobro(c, nvs);
     const e = c && pgd && armados.has(c.ID_Cobro) ? P().estadoCobro(armados.get(c.ID_Cobro), pgd) : null;
+    if (e) info.pago = e; // estado de pago (pagado / parcial / pendiente / cortesía / sin valor), lo usa la ficha de servicio
     if (e && e.saldo > 0.004) Object.assign(info, { saldo: e.saldo, idCobro: c.ID_Cobro, cliente: cli, fecha: r._fecha });
     out[r.ID_Programacion] = info;
   });

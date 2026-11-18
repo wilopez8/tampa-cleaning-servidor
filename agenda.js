@@ -251,7 +251,7 @@ d.style.display='table-row';var f=d.previousElementSibling;if(f)f.classList.add(
       <td><span class="est ${esc(r._estado)}">${esc(r._estado)}</span>${r.Registro_Retroactivo === 'Sí' ? ` <span class="est" style="background:#fecaca" title="${esc(r.Motivo_Retroactivo)}">Retroactivo</span>` : ''}${r.Origen_Registro === 'Manual' ? ' ✍️' : ''}${accionPendiente(r) ? ' ⚠️' : ''}</td>
       <td><button class="btn" data-id="${esc(r.ID_Programacion)}" onclick="tcDetalle(this.dataset.id)">Detalle</button></td>
       <td>${menuFila(r)}</td></tr>
-      <tr class="filadet" id="det-${esc(r.ID_Programacion)}" style="display:none"><td colspan="7">${cartera.lineaDeVidaH(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion], porServ[r.ID_Programacion], cobroInfo[r.ID_Programacion], notasSrv[r.ID_Programacion])}</td></tr>`;
+      <tr class="filadet" id="det-${esc(r.ID_Programacion)}" style="display:none"><td colspan="7"><div style="margin:4px 4px 0;"><a href="${esc(enlaces.url.servicio(r.ID_Programacion))}"><b>Abrir ficha del servicio →</b></a></div>${cartera.lineaDeVidaH(r, quejas[r.ID_Programacion], cambios[r.ID_Programacion], porServ[r.ID_Programacion], cobroInfo[r.ID_Programacion], notasSrv[r.ID_Programacion])}</td></tr>`;
     
   }).join('') : '<tr><td colspan="7" style="text-align:center;color:#888;padding:24px;">No hay servicios para esta fecha o filtro.</td></tr>';
 
@@ -288,4 +288,4 @@ ${abrirId}
 </body></html>`;
 }
 
-module.exports = { paginaAgenda, normalizarFecha, fechaValida, hoyFlorida, sumarDias, inicioSemana, diaSemana, filasDelRango, cargarPendientes, tipoDe };
+module.exports = { paginaAgenda, normalizarFecha, fechaValida, hoyFlorida, sumarDias, inicioSemana, diaSemana, filasDelRango, cargarPendientes, tipoDe, quejasPorServicio, cambiosPorServicio };
