@@ -2,15 +2,18 @@
 // entre Nómina, Pendientes, Egresos y el Directorio. Solo lectura: lo que se edita sigue en su página.
 const layout = require('./layout');
 const E = require('./enlaces');
-const { hoyFlorida, normalizarFecha, fechaValida, cargarPendientes } = require('./agenda');
+const { hoyFlorida, normalizarFecha, fechaValida, cargarPendientes, inicioSemana, sumarDias, diaSemana } = require('./agenda');
 const Dir = () => require('./directorio'); // carga diferida
 const S = () => require('./servicio'); // estilos de las fichas (tarjetas, chips)
+const Nm = () => require('./nomina'); // cálculo de la semana y liquidaciones (solo lectura)
 
 const esc = layout.esc;
 const limpio = t => String(t ?? '').trim();
 const usd = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const num = t => { const x = parseFloat(String(t ?? '').replace(/[$,\s]/g, '')); return isFinite(x) ? x : 0; };
 
-const TABS = [['pendientes', 'Pendientes'], ['datos', 'Datos']];
+const TABS = [['semana', 'Semana'], ['pendientes', 'Pendientes'], ['nomina', 'Nómina'], ['datos', 'Datos']];
+const DEFECTO = 'pendientes';
 const url = (e, o = {}) => '/empleado?' + Object.entries({ e, ...o }).filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
 const urlEditar = e => '/directorio/empleados?editar=' + encodeURIComponent(e);
 const urlNomina = (e, fecha) => '/nomina?' + (fecha ? 'fecha=' + encodeURIComponent(fecha) + '&' : '') + 'empleado=' + encodeURIComponent(e);
@@ -18,7 +21,7 @@ const vencido = (p, hoy) => p.Estado === 'Abierto' && fechaValida(normalizarFech
 
 const CSS = `.fs-acc .btn{margin:0;} .em-sub{margin:-6px 0 14px;color:var(--gray-d);font-size:14.5px;}
 .em-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start;} @media(max-width:900px){.em-cols{grid-template-columns:1fr;}}
-tr.venc td{background:#fef2f2;}`;
+tr.venc td{background:#fef2f2;} tr.anu td{color:var(--gray);} .em-nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 14px;}`;
 
 // ---------- pestaña Pendientes ----------
 async function tabPendientes(nombre, hoy) {
@@ -42,6 +45,57 @@ async function tabPendientes(nombre, hoy) {
 <div class="scroll"><table><tr><th>Pendiente</th><th>Cliente / servicio</th><th>Fecha límite</th><th>Estado</th><th>Cierre</th></tr>${otros.map(p => fila(p, true)).join('') || vacio(5)}</table></div>`;
 }
 
+// ---------- pestaña Semana (solo lectura; se ajusta y se cierra en Nómina) ----------
+const CHIP_CALC = { Calculado: 'ok', Ajustado: 'az', Revisar: 'mal' };
+async function tabSemana(nombre, fecha, hoy) {
+  const { fmtDur, f12 } = Nm().calculoTexto;
+  const w = await Nm().semanaEmpleado(nombre, fecha), t = w.t;
+  const ir = f => url(nombre, { tab: 'semana', fecha: f });
+  const nav = `<div class="em-nav"><a class="btn" href="${esc(ir(sumarDias(w.lunes, -7)))}">←</a><a class="btn${inicioSemana(hoy) === w.lunes ? ' hoy' : ''}" href="${esc(ir(hoy))}">Esta semana</a><a class="btn" href="${esc(ir(sumarDias(w.lunes, 7)))}">→</a>
+  <b>Semana ${esc(w.lunes)} → ${esc(w.domingo)}</b><a class="btn hoy" style="margin-left:auto;" href="${esc(urlNomina(nombre, w.lunes))}">Abrir en Nómina para ajustar o cerrar →</a></div>`;
+  const kp = layout.kpis([['Servicios', t.n], ['Horas pagadas', fmtDur(t.min)], ['Monto horas', usd(t.montoH)], ['Millas', usd(t.millas)],
+    ['Propinas y bonos', usd(t.mas)], ['Descuentos', (t.menos ? '− ' : '') + usd(t.menos)], ['Total a pagar', usd(t.total)]]);
+  const aviso = t.cerrada ? `<div class="aviso">Semana <b>cerrada</b> (${esc(t.id)}): los totales son los congelados al cerrar. El detalle de horas y millas cerrado está en Nómina.</div>`
+    : t.rev ? `<div class="aviso r">${t.rev} punto(s) por revisar en Nómina (servicios sin check-in o sin tarifa, días con millas por revisar). Quedan en $0 y no dejan cerrar la liquidación.</div>`
+    : '<div class="aviso">Semana abierta: horas y millas calculadas en vivo, igual que en Nómina.</div>';
+  const filas = w.rows.map(c => {
+    const r = c.r;
+    return `<tr><td>${esc(diaSemana(r._fecha))} ${esc(r._fecha.slice(8))}</td><td>${E.cliente(r.Cliente, { mes: r._fecha.slice(0, 7) })}<br><small>${E.servicio(r.ID_Programacion, { texto: r.Tipo_Servicio || 'Limpieza' })}</small></td>
+      <td>${f12(c.prog.ini)} – ${f12(c.prog.fin)}</td><td>${f12(c.real.ini)} – ${f12(c.real.fin)}</td>
+      ${t.cerrada ? '' : `<td>${c.pago.ini !== null ? `${f12(c.pago.ini)} – ${f12(c.pago.fin)}` : '—'}</td><td class="num">${c.min ? fmtDur(c.min) : '—'}</td><td class="num">${usd(c.monto)}</td>`}
+      <td><span class="chip ${CHIP_CALC[c.estado] || ''}">${esc(c.estado)}</span>${c.nota ? `<br><small>${esc(c.nota)}</small>` : ''}${c.sinTarifa ? '<br><small>Sin tarifa</small>' : ''}</td></tr>`;
+  }).join('') || `<tr><td colspan="${t.cerrada ? 5 : 8}" style="text-align:center;color:#888;padding:16px;">Sin servicios esta semana.</td></tr>`;
+  const canc = w.canceladas.length ? `<p><small>Cancelados esta semana: ${w.canceladas.map(r => `${esc(diaSemana(r._fecha))} ${esc(r._fecha.slice(8))} ${E.servicio(r.ID_Programacion, { texto: r.Cliente })}`).join(' · ')}</small></p>` : '';
+  return `${nav}${kp}${aviso}
+<div class="scroll"><table><tr><th>Día</th><th>Servicio</th><th>Programado</th><th>Real (check-in)</th>${t.cerrada ? '' : '<th>Pagado</th><th class="num">Horas</th><th class="num">Monto</th>'}<th>Estado</th></tr>${filas}</table></div>${canc}`;
+}
+
+// ---------- pestaña Nómina: liquidaciones ----------
+const SCRIPT_COPIAR = `function tcCopiar(b){var t=b.dataset.msg.replace('{URL}',location.origin+b.dataset.path);function ok(){TC.toast('Mensaje copiado.');}function fb(){TC.alerta(t,{titulo:'Copia el mensaje'});}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(ok,fb);}else{fb();}}`;
+async function tabNomina(nombre) {
+  const { fmtDur } = Nm().calculoTexto;
+  const todas = await Nm().liquidacionesEmpleado(nombre), ls = todas.slice(0, 12);
+  const porPagar = todas.filter(l => l.Estado === 'Cerrada' && !l.pago);
+  const filas = ls.map(l => {
+    let est, acc = '';
+    if (l.Estado === 'Cerrada') {
+      const e = Nm().enlaceLiquidacion(l);
+      const copiar = `<button type="button" class="btn mini" data-msg="${esc(e.msg)}" data-path="${esc(e.ruta)}" onclick="tcCopiar(this)">Copiar mensaje con enlace</button>`;
+      if (l.pago) { est = `<span class="chip ok">Pagada</span><br><small>${esc(l.pago.ID_Egreso)}${l.pago.Fecha_Pago ? ' · ' + esc(normalizarFecha(l.pago.Fecha_Pago) || l.pago.Fecha_Pago) : ''}</small>`; acc = copiar; }
+      else { est = '<span class="chip am">Por pagar</span>'; acc = `<a class="btn mini hoy" href="${esc(E.url.pagarLiquidacion(l.ID_Liquidacion))}">Registrar pago</a> ${copiar}`; }
+    } else est = `<span class="chip">${esc(l.Estado || '—')}</span>${l.Estado === 'Reabierta' ? `<br><small>${esc(l.Reabierto_Por)}${l.Motivo_Reapertura ? ': ' + esc(l.Motivo_Reapertura) : ''}</small>` : ''}`;
+    return `<tr${l.Estado === 'Reabierta' ? ' class="anu"' : ''}><td><a href="${esc(urlNomina(nombre, l._semana))}">${esc(l._semana)}</a><br><small>${esc(l.ID_Liquidacion)}</small></td>
+      <td class="num">${num(l.Servicios)}</td><td class="num">${fmtDur(num(l.Minutos))}</td><td class="num">${usd(num(l.Monto_Horas))}</td><td class="num">${usd(num(l.Monto_Millas))}</td>
+      <td class="num"><b>${usd(num(l.Total))}</b></td><td>${est}</td><td>${acc}<br><small>Cerrada por ${esc(l.Cerrado_Por)}${l.Fecha_Cierre ? ' · ' + esc(l.Fecha_Cierre) : ''}</small></td></tr>`;
+  }).join('') || '<tr><td colspan="8" style="text-align:center;color:#888;padding:16px;">Todavía no tiene liquidaciones cerradas.</td></tr>';
+  return `${layout.kpis([['Por pagar', usd(porPagar.reduce((a, l) => a + num(l.Total), 0)), porPagar.length ? 'neg' : ''], ['Liquidaciones por pagar', porPagar.length], ['Pagadas', todas.filter(l => l.pago).length]])}
+<div class="aviso">La semana en curso aparece aquí cuando se cierra su liquidación en Nómina; mientras tanto, ver la pestaña Semana. Una liquidación <b>reabierta</b> aparece tachada: la vigente es la que se cierre de nuevo.</div>
+<div class="fs-acc"><a class="btn" href="/cartera/egresos">Ver pagos en Egresos →</a></div>
+<div class="scroll"><table><tr><th>Semana</th><th class="num">Servicios</th><th class="num">Horas</th><th class="num">Horas $</th><th class="num">Millas</th><th class="num">Total</th><th>Estado</th><th></th></tr>${filas}</table></div>
+${todas.length > 12 ? `<p><small>Se muestran las últimas 12 de ${todas.length}.</small></p>` : ''}
+<script>${SCRIPT_COPIAR}</script>`;
+}
+
 // ---------- pestaña Datos ----------
 function tabDatos(nombre, x, errDir) {
   if (!x) return `<div class="aviso r">${errDir ? 'No se pudo leer el Directorio: ' + esc(errDir) : 'Este empleado no está en el Directorio (hoja EMPLEADOS).'}</div><p><a class="btn" href="/directorio/empleados">Ir al Directorio</a></p>`;
@@ -62,7 +116,7 @@ async function pagina(query, admin) {
   if (!nombre) return null;
   const hoy = hoyFlorida();
   const fecha = fechaValida(query.fecha) ? query.fecha : '';
-  const tab = TABS.some(([k]) => k === query.tab) ? query.tab : TABS[0][0];
+  const tab = TABS.some(([k]) => k === query.tab) ? query.tab : DEFECTO;
 
   let x = null, errDir = '';
   try { x = (await Dir().leerEmpleados(false)).lista.find(o => o.nombre === nombre) || null; }
@@ -74,6 +128,8 @@ async function pagina(query, admin) {
 
   let cuerpo;
   if (tab === 'datos') cuerpo = tabDatos(nombre, x, errDir);
+  else if (tab === 'semana') cuerpo = await tabSemana(nombre, fecha || hoy, hoy);
+  else if (tab === 'nomina') cuerpo = await tabNomina(nombre);
   else cuerpo = await tabPendientes(nombre, hoy);
 
   return `${layout.head(nombre, S().CSS + CSS)}

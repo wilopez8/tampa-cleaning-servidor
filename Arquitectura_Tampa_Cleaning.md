@@ -63,7 +63,7 @@ tampa-cleaning-servidor/
 ├── directorio.js  → Páginas /directorio/clientes y /directorio/empleados: alta, edición y activación/desactivación; coordenadas desde el enlace de Google Maps
 ├── layout.js      → Cabecera común de las páginas de administración (head, cabecera con secciones y sub-pestañas, kpis)
 ├── servicio.js    → Ficha de servicio /servicio?id=PRG-…: pasos, siguiente paso, línea de vida en orden y lo vinculado (ver 6.20)
-├── empleado.js    → Ficha de empleado /empleado?e=<nombre>: pendientes y datos del empleado, solo lectura (ver 6.21)
+├── empleado.js    → Ficha de empleado /empleado?e=<nombre>: semana, pendientes, liquidaciones y datos del empleado, solo lectura (ver 6.21)
 ├── enlaces.js    → Enlaces comunes entre páginas: nombre de cliente → /cartera/cliente, empleado → su semana en /nomina, ID PRG- → /servicio, ID PND- → /pendientes?id=, ID LIQ- → la semana del empleado en /nomina
 ├── marca.js       → Nombre de la empresa, del producto y logos (sobrescribibles con variables MARCA_*)
 ├── menu.js        → Menú antiguo (MENU_CSS, menuHtml). Ya casi no se usa: lo reemplazó layout.js
@@ -447,6 +447,8 @@ Fase 3 de la navegación. Una página por servicio (`PRG-`) con todo lo que se s
 ### 6.21 Ficha de empleado (`/empleado?e=`, `empleado.js`)
 
 Una página por empleado con lo que hoy está repartido entre Nómina, Pendientes, Egresos y el Directorio. **Solo lectura**: lo que se edita sigue en su página (la nómina se ajusta y se cierra en `/nomina`; los pendientes en `/pendientes`; los datos en el Directorio). Ruta `Directorio › Empleados › nombre`; en la barra queda marcado Directorio. Encabezado: nombre, estado y rol; WhatsApp, tarifa por hora y dirección de residencia (en rojo si faltan); botones "Editar datos" (`/directorio/empleados?editar=`) y "Ver semana en Nómina" (`/nomina?fecha=&empleado=`). `?fecha=` se conserva entre pestañas.
+- **Semana** — con ← → entre semanas (`?fecha=`): KPIs (servicios, horas pagadas, monto horas, millas, propinas y bonos, descuentos, total) y un renglón por servicio (programado, check-in real y, si la semana está abierta, lo pagado, horas, monto y estado de cálculo). Usa `nomina.semanaEmpleado()`, el **mismo cálculo** de `/nomina`: semana abierta = horas y millas en vivo (las millas pueden consultar distancias nuevas a Google, como al abrir la nómina); semana cerrada = los totales congelados de `LIQUIDACIONES` (el detalle cerrado se ve en Nómina). Avisa si hay puntos por revisar. "Abrir en Nómina para ajustar o cerrar →" lleva a `/nomina?fecha=&empleado=`.
+- **Nómina** — sus últimas 12 liquidaciones (`nomina.liquidacionesEmpleado()`): semana, servicios, horas, montos, total y estado — **Pagada** (con el egreso que la pagó), **Por pagar** (con "Registrar pago" → `/cartera/egresos?pagar=LIQ-…`) o **Reabierta** (tachada, con quién y por qué). "Copiar mensaje con enlace" usa el mismo enlace seguro de Nómina (`nomina.enlaceLiquidacion()`). KPIs: total por pagar, liquidaciones por pagar, pagadas.
 - **Pendientes** — los del empleado (`PENDIENTES.Responsable`): abiertos primero, vencidos en rojo arriba (misma regla que `/pendientes`), con cliente, servicio, fecha límite y si se envió por WhatsApp; debajo los últimos 20 cerrados o cancelados con quién y cómo se cerraron. "Ver en Pendientes →" abre `/pendientes?responsable=`.
 - **Datos** — lo que hay en `EMPLEADOS` (WhatsApp, rol, estado, tarifa por hora, dirección de residencia para las millas), con "Editar en el Directorio →". Si el nombre no está en el Directorio, lo avisa.
 

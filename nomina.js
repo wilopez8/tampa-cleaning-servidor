@@ -699,4 +699,43 @@ function rutas(app, auth) {
   api('/nomina/reabrir', (b, admin) => reabrir({ empleado: b.empleado, semana: b.semana, motivo: b.motivo, admin }));
 }
 
-module.exports = { rutas, paginaNomina };
+// ---------- para la ficha de empleado (empleado.js), solo lectura ----------
+// Servicios y totales de la semana de un empleado, con el mismo cálculo de esta página. Semana cerrada: los totales congelados
+// de LIQUIDACIONES. Semana abierta: horas y millas en vivo (las millas pueden consultar distancias nuevas, como al abrir la nómina).
+async function semanaEmpleado(empleado, fecha) {
+  const lunes = inicioSemana(fecha), domingo = sumarDias(lunes, 6);
+  const [{ rows, canceladas, cfg }, liqs, conceptos] = await Promise.all([datosEmpleado(empleado, lunes), cargarLiquidaciones(), cargarConceptos()]);
+  rows.sort((a, b) => a.r._fecha.localeCompare(b.r._fecha) || (a.prog.ini ?? 0) - (b.prog.ini ?? 0));
+  const l = cerradaDe(liqs, lunes, empleado);
+  let t;
+  if (l) {
+    t = { cerrada: true, id: l.ID_Liquidacion, n: numero(l.Servicios) || 0, min: numero(l.Minutos) || 0, montoH: numero(l.Monto_Horas) || 0, millas: numero(l.Monto_Millas) || 0,
+      mas: numero(l.Monto_Propinas_Bonos) || 0, menos: numero(l.Monto_Descuentos) || 0, total: numero(l.Total) || 0, rev: 0 };
+  } else {
+    const cerrados = idsCerrados(liqs);
+    const s = sumaCons(conceptos.filter(c => c._semana === lunes && c.Empleado === empleado && conceptoAbierto(c, cerrados)));
+    const ctx = await millas.cargarContexto();
+    const dm = await millas.calcularMillasEmpleado({ empleado, rows, canceladas, cfg, ctx });
+    try { await millas.volcarDistancias(ctx.dist); } catch (e) { console.error('No se pudo guardar DISTANCIAS:', e.message); }
+    const montoH = r2(rows.reduce((a, c) => a + c.monto, 0)), montoM = r2(dm.reduce((a, d) => a + d.monto, 0));
+    t = { cerrada: false, n: rows.length, min: rows.reduce((a, c) => a + c.min, 0), montoH, millas: montoM, mas: s.mas, menos: s.menos,
+      total: r2(montoH + montoM + s.mas - s.menos), rev: rows.filter(necesitaRevision).length + dm.filter(d => d.estado === 'Revisar').length };
+  }
+  return { lunes, domingo, rows, canceladas, t };
+}
+
+// Liquidaciones del empleado (más reciente primero); pago = el egreso activo que la pagó, si lo hay
+async function liquidacionesEmpleado(empleado) {
+  const [liqs, eg] = await Promise.all([cargarLiquidaciones(), require('./egresos').datos()]);
+  return liqs.filter(l => String(l.Empleado || '').trim() === empleado)
+    .sort((a, b) => b._semana.localeCompare(a._semana) || String(b.ID_Liquidacion).localeCompare(String(a.ID_Liquidacion)))
+    .map(l => ({ ...l, pago: l.Estado === 'Cerrada' ? eg.porLiq[l.ID_Liquidacion] || null : null }));
+}
+
+// Enlace seguro y mensaje para el empleado (el mismo botón "Copiar mensaje con enlace" de esta página)
+function enlaceLiquidacion(l) {
+  const lunes = l._semana || normalizarFecha(l.Semana_Inicio);
+  return { ruta: '/liquidacion?t=' + crearToken(l.ID_Liquidacion), msg: `Hola ${l.Empleado}, esta es tu liquidación de la semana ${lunes} al ${sumarDias(lunes, 6)} (el enlace vale ${DIAS_ENLACE} días): {URL}` };
+}
+
+module.exports = { rutas, paginaNomina, semanaEmpleado, liquidacionesEmpleado, enlaceLiquidacion, calculoTexto: { fmtDur, f12, necesitaRevision } };
