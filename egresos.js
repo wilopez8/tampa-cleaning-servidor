@@ -263,7 +263,7 @@ async function paginaEgresos(query, admin) {
 
   // ?pagar=LIQ-…: abre el pago de esa liquidación (lo usa el botón "Registrar pago" de la nómina)
   const lPagar = idPagar ? liqs.find(l => l.ID_Liquidacion === idPagar) : null;
-  const volverNom = lPagar ? ` · <a href="${esc(E.url.empleado(lPagar.Empleado, normalizarFecha(lPagar.Semana_Inicio)))}">← Volver a la nómina de ${esc(lPagar.Empleado)}</a>` : '';
+  const volverNom = lPagar ? ` · <a href="${esc(E.url.nominaEmpleado(lPagar.Empleado, normalizarFecha(lPagar.Semana_Inicio)))}">← Volver a la nómina de ${esc(lPagar.Empleado)}</a>` : '';
   let avisoPagar = '', abrirPagar = '';
   if (idPagar) {
     if (porPagar.some(l => l.ID_Liquidacion === idPagar)) {

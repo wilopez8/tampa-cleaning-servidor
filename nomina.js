@@ -498,7 +498,7 @@ async function paginaNomina(query, admin) {
           <td class="num">${numero(s.Tarifa_Efectiva) > 0 ? usd(numero(s.Tarifa_Efectiva)) + '/h' : '—'}</td><td class="num">${usd(numero(s.Monto_Horas) || 0)}</td>
           <td><span class="est ${s.Estado_Calculo === 'Sin pago' ? 'sp' : (s.Estado_Calculo === 'Ajustado' ? 'aj' : 'ok')}" title="${esc(s.Motivo_Ajuste)}">${esc(s.Estado_Calculo)}</span></td></tr>`;
       }).join('');
-      detalle = `<h3>${esc(emp)} <span class="est cer">Cerrada por ${esc(liq.Cerrado_Por)} · ${esc(liq.Fecha_Cierre)}</span></h3>
+      detalle = `<h3>${esc(emp)} <small><a href="${esc(E.url.empleado(emp, lunes))}">Ficha →</a></small> <span class="est cer">Cerrada por ${esc(liq.Cerrado_Por)} · ${esc(liq.Fecha_Cierre)}</span></h3>
         ${difiere ? '<div class="aviso y">⚠️ El cálculo de horas en vivo ya no coincide con lo cerrado (cambió la agenda, la tarifa o la configuración). Lo cerrado no se modifica; reabre la liquidación si quieres recalcular.</div>' : ''}
         <div style="margin-bottom:8px;"><button class="btn" onclick="tcTodo(true)">Abrir todo</button> <button class="btn" onclick="tcTodo(false)">Cerrar todo</button></div>
         ${sec('Horas (servicios)', `<table><tr><th>Día</th><th>Servicio</th><th>Programado</th><th>Real (check-in)</th><th>Pagado</th><th class="num">Horas</th><th class="num">Tarifa</th><th class="num">Monto</th><th>Estado</th></tr>${filasSnap}</table>`)}
@@ -528,7 +528,7 @@ async function paginaNomina(query, admin) {
       const bloqueaH = g.filter(necesitaRevision).length, bloqueaM = dm.filter(d => d.estado === 'Revisar').length;
       const opcionesServ = g.map(c => `<option value="${esc(c.r.ID_Programacion)}">${diaSemana(c.r._fecha)} ${c.r._fecha.slice(8)} · ${esc(c.r.Cliente)}</option>`).join('');
       const pendTxt = [bloqueaH ? bloqueaH + ' servicio(s) por revisar' : '', bloqueaM ? bloqueaM + ' día(s) con millas por revisar' : ''].filter(Boolean).join(' · ');
-      detalle = `<h3>${esc(emp)}</h3>
+      detalle = `<h3>${esc(emp)} <small><a href="${esc(E.url.empleado(emp, lunes))}">Ficha →</a></small></h3>
         <div style="margin-bottom:8px;"><button class="btn" onclick="tcTodo(true)">Abrir todo</button> <button class="btn" onclick="tcTodo(false)">Cerrar todo</button></div>
         ${sec('Horas (servicios)', `<table><tr><th>Día</th><th>Servicio</th><th>Programado</th><th>Real (check-in)</th><th>Pagado</th><th class="num">Horas</th><th class="num">Tarifa</th><th class="num">Monto</th><th>Estado</th><th></th></tr>${filasHtml}</table>`)}
         ${sec('Millas', millas.tablaAbierta(dm))}

@@ -212,7 +212,7 @@ async function pagina(id, admin) {
   const cardCliente = `<div class="fs-card"><h3>Cliente</h3><div style="font-size:15px;font-weight:600;">${E.cliente(r.Cliente, { mes })}</div>
 ${par('Dirección', r.Direccion ? esc(r.Direccion) + maps : '')}<div class="fs-par"><a href="${esc(E.url.calidadCliente(r.Cliente))}">Ficha de calidad →</a></div></div>`;
   const cardEquipo = `<div class="fs-card"><h3>Equipo</h3><div class="fs-lst">${equipo.map(x => `<div><span>${E.empleado(x.Empleado, { fecha: r._fecha })}${x.ID_Programacion === r.ID_Programacion ? '' : ` <small>${E.servicio(x.ID_Programacion, { texto: 'ver' })}</small>`}<br><small>Prog. ${esc(horarioDe(x) || '—')} · Real ${esc(soloHora(x.Hora_Entrada_Real) || '—')} → ${esc(soloHora(x.Hora_Salida_Real) || '—')}</small></span>${chipEstado(x._estado)}</div>`).join('')}</div>
-<div class="fs-par"><a href="${esc(E.url.empleado(r.Empleado, r._fecha))}">Semana en Nómina →</a></div></div>`;
+<div class="fs-par"><a href="${esc(E.url.nominaEmpleado(r.Empleado, r._fecha))}">Semana en Nómina →</a></div></div>`;
   const cardCobro = cobro ? `<div class="fs-card"><h3>Cobro</h3>${par('Estado en cartera', esc(cobro.estado + (cobro.motivo ? ' — ' + cobro.motivo : '')))}
 ${cobro.ejecutado ? par('Total a cobrar', usd(cobro.total) + (cobro.nov ? ` <small>(incluye ${usd(cobro.nov)} de novedades)</small>` : '')) : ''}
 ${cobro.pago ? par('Pago', esc(cobro.pago.txt) + (cobro.pago.aplicado ? ` · cobrado ${usd(cobro.pago.aplicado)}` : '') + (cobro.saldo ? ` · saldo <b>${usd(cobro.saldo)}</b>` : '')) : ''}
