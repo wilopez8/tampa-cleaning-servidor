@@ -1,10 +1,11 @@
 const { leerHoja, agregarFila, agregarFilas, actualizarCeldas, asegurarHoja } = require('./sheets');
-const { normalizarFecha, fechaValida, hoyFlorida, filasDelRango } = require('./agenda');
+const { normalizarFecha, fechaValida, hoyFlorida, filasDelRango, diaSemana } = require('./agenda');
 const layout = require('./layout');
 const E = require('./enlaces');
 const P = () => require('./pagos'); // carga diferida: pagos.js usa los helpers de este archivo
 const N = () => require('./notas'); // carga diferida: notas.js usa los helpers de este archivo
 const Q = () => require('./calidad'); // carga diferida: calidad.js usa los helpers de este archivo
+const S = () => require('./servicio'); // estilos de las fichas (tarjetas, siguiente paso)
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const r2 = x => Math.round(x * 100) / 100;
 const usd = n => (n < 0 ? '− $' : '$') + Math.abs(n || 0).toFixed(2);
@@ -420,7 +421,7 @@ async function paginaCartera(query, admin, vista) {
 
   const orden = [...clientes].sort((a, b) => ((res[b].conf + res[b].sin > 0) - (res[a].conf + res[a].sin > 0)) || ((res[b].base + res[b].nov) - (res[a].base + res[a].nov)) || a.localeCompare(b));
     const filasRes = orden.map(k => { const x = res[k];
-    return `<tr data-n="${esc(k.toLowerCase())}"><td><a href="${esc('/cartera/cliente?c=' + encodeURIComponent(k) + '&mes=' + mes)}">${esc(k)}</a>${mp(k)} <a title="Ver los servicios de este cliente" href="${esc('/cartera?mes=' + mes + '&cliente=' + encodeURIComponent(k))}">⇩</a></td><td class="num">${x.n}</td><td class="num">${usd(x.base)}</td><td class="num">${usd(x.nov)}</td><td class="num"><b>${usd(r2(x.base + x.nov))}</b></td><td class="num">${usd(r2(x.cob))}</td><td class="num">${x.sal > 0.004 ? `<span class="est rev">${usd(r2(x.sal))}</span>` : usd(0)}</td>
+    return `<tr data-n="${esc(k.toLowerCase())}"><td><a href="${esc(E.url.cliente(k, mes, 'cobros'))}">${esc(k)}</a>${mp(k)} <a title="Ver los servicios de este cliente" href="${esc('/cartera?mes=' + mes + '&cliente=' + encodeURIComponent(k))}">⇩</a></td><td class="num">${x.n}</td><td class="num">${usd(x.base)}</td><td class="num">${usd(x.nov)}</td><td class="num"><b>${usd(r2(x.base + x.nov))}</b></td><td class="num">${usd(r2(x.cob))}</td><td class="num">${x.sal > 0.004 ? `<span class="est rev">${usd(r2(x.sal))}</span>` : usd(0)}</td>
       <td class="num">${x.conf ? `<span class="est rev">${x.conf}</span>` : '0'}</td><td class="num">${x.sin ? `<span class="est rev">${x.sin}</span>` : '0'}</td></tr>`;
   }).join('') || '<tr><td colspan="9" style="text-align:center;color:#888;padding:20px;">No hay cobros en este período.</td></tr>';
 
@@ -441,7 +442,7 @@ async function paginaCartera(query, admin, vista) {
     ? ` <button class="btn mini" data-modo="anular" data-id="${esc(n.ID_Novedad)}" data-t="${esc('Anular novedad ' + n.ID_Novedad)}" onclick="tcAbrir(this)">Anular</button>`
     : ' · anulada: ' + esc(n.Motivo_Anulacion)}</small></div>`).join('')}</details>` : '<small>—</small>';
     const cls = c.Estado === 'Ejecutado' ? (c._sinTarifa ? 'rev' : 'ok') : (c.Estado === 'Por confirmar' ? 'rev' : 'cn');
-      return `<tr><td>${esc(c._fecha)}</td><td>${E.cliente(c.Cliente, { mes: c._fecha.slice(0, 7) })}${mp(c.Cliente)}${c.Pagador && c.Pagador !== c.Cliente ? `<br><small>Paga: ${esc(c.Pagador)}</small>` : ''}</td>
+      return `<tr><td>${esc(c._fecha)}</td><td>${E.cliente(c.Cliente, { mes: c._fecha.slice(0, 7), tab: 'cobros' })}${mp(c.Cliente)}${c.Pagador && c.Pagador !== c.Cliente ? `<br><small>Paga: ${esc(c.Pagador)}</small>` : ''}</td>
         <td><small>${String(c.Empleados || '').split(',').map(x => x.trim()).filter(Boolean).map(x => E.empleado(x, { fecha: c._fecha })).join(', ')}</small></td>
         <td><span class="est ${cls}">${esc(c.Estado)}</span>${c._sinTarifa ? '<br><small class="neg">Sin tarifa en SITIOS</small>' : ''}${c.Motivo ? `<br><small>${esc(c.Motivo)}</small>` : ''}</td>
         <td class="num">${c.Estado === 'Ejecutado' && c._base ? usd(c._base) : '—'}</td><td>${nvHtml}</td>
@@ -610,7 +611,75 @@ const DIALOGO_COBRO = `<dialog id="dlg"><h3 id="dt" style="margin-top:0;"></h3>
 <script>${SCRIPT}</script>`;
 
 // Ficha de cliente: /cartera/cliente?c=&tab=&mes=. Las pestañas comparten ?mes= (solo Cobros y pagos lo usa).
-const TABS_CLIENTE = [['cobros', 'Cobros y pagos'], ['calidad', 'Calidad'], ['notas', 'Notas']];
+const TABS_CLIENTE = [['resumen', 'Resumen'], ['cobros', 'Cobros y pagos'], ['calidad', 'Calidad'], ['notas', 'Notas']];
+const CHIP_ESTADO = { Confirmado: 'ok', Finalizado: 'ok', Enviado: 'am', 'Salida (falta cierre)': 'am', 'No puede': 'mal', 'En curso': 'az' };
+
+// Pestaña Resumen: KPIs, siguiente paso y tres tarjetas (próximos y recientes, saldo, calidad)
+async function resumenCliente(cliente, hoy) {
+  const [d, futuras, sal] = await Promise.all([Q().leerTodo(), filasDelRango(hoy, '2999-12-31'), Q().saldoCliente(cliente)]);
+  const e = Q().evaluar(cliente, d), mes0 = hoy.slice(0, 7);
+  const tipoR = r => r.Tipo_Servicio || 'Limpieza';
+  const hora = r => (r.Hora_Inicio && r.Hora_Fin) ? r.Hora_Inicio + '–' + r.Hora_Fin : (r.Horario || '');
+  const dia = f => `${diaSemana(f)} ${f.slice(8)}/${f.slice(5, 7)}`;
+  const urlC = tab => E.url.cliente(cliente, '', tab);
+
+  // próximos: hoy en adelante, sin cancelados ni finalizados; un grupo por fecha y tipo (el equipo va junto)
+  const prox = futuras.filter(r => r.Cliente && r.Cliente.trim() === cliente && r._estado !== 'Cancelado' && r._estado !== 'Finalizado')
+    .sort((a, b) => a._fecha.localeCompare(b._fecha) || hora(a).localeCompare(hora(b)));
+  const grupos = [];
+  prox.forEach(r => { const k = r._fecha + '|' + tipoR(r); let g = grupos.find(x => x.k === k); if (!g) grupos.push(g = { k, fecha: r._fecha, tipo: tipoR(r), filas: [] }); g.filas.push(r); });
+  const limp = grupos.filter(g => g.tipo !== 'Inspeccion');
+
+  const t = d.tar.mapa[cliente];
+  const sinTarifa = !t || !(t.tarifa > 0);
+  const vencido = r2(sal.B[1] + sal.B[2] + sal.B[3]);
+  const cal = d.notas.filter(n => n.Cliente === cliente && n.Estado === 'Activa' && numero(n.Calificacion) > 0);
+  const prom = cal.length ? Math.round(cal.reduce((a, n) => a + numero(n.Calificacion), 0) / cal.length * 10) / 10 : null;
+  const urgente = e.abiertas.some(q => String(q.Urgencia || '').trim().toLowerCase() === 'alta');
+
+  const kp = layout.kpis([
+    ['Próximo servicio', limp[0] ? `${esc(dia(limp[0].fecha))}<br><small>${esc(hora(limp[0].filas[0]) || 'sin hora')}</small>` : '<small>Ninguno programado</small>'],
+    ['Servicios este mes', `${e.ej.filter(x => x.fecha.startsWith(mes0)).length} hechos<br><small>${limp.filter(g => g.fecha.startsWith(mes0)).length} por hacer</small>`],
+    ['Saldo', `${usd(sal.saldo)}${vencido ? `<br><small>${usd(vencido)} con más de 30 días</small>` : ''}`, vencido ? 'neg' : ''],
+    ['Semáforo', Q().punto(e.nivel) + Q().ETQ[e.nivel], e.nivel === 'rojo' ? 'neg' : ''],
+    ['Calificación', prom !== null ? `★ ${prom}<br><small>${cal.length} nota(s)</small>` : '<small>Sin calificaciones</small>'],
+  ]);
+
+  // siguiente paso, en este orden: queja urgente, saldo vencido, falta inspección, falta tarifa, al día
+  const caja = (cls, titulo, texto, href, boton) => `<div class="fs-sig${cls ? ' ' + cls : ''}"><div><span class="t">${esc(titulo)}</span>${texto}</div>${href ? `<a class="btn hoy" href="${esc(href)}">${esc(boton)}</a>` : ''}</div>`;
+  let sig;
+  if (urgente) sig = caja('mal', 'SIGUIENTE PASO', 'Hay una <b>queja o duda de urgencia alta</b> abierta.', urlC('calidad'), 'Ver en Calidad →');
+  else if (vencido && sal.viejo) sig = caja('mal', 'SIGUIENTE PASO', `Tiene <b>${usd(vencido)}</b> sin pagar con más de 30 días (el más antiguo es del ${esc(sal.viejo.fecha)}).`, E.url.registrarIngreso(cliente, sal.viejo.fecha, sal.viejo.id), 'Registrar ingreso →');
+  else if (e.supervisor && !e.supervisor.ok) sig = caja('', 'SIGUIENTE PASO', `No ha tenido <b>revisión de supervisor</b> ${e.supervisor.n === 1 ? 'en su último servicio' : `en sus últimos ${e.supervisor.n} servicios`} (desde el ${esc(e.supervisor.desde)}). Programa una inspección.`, '/agenda?cliente=' + encodeURIComponent(cliente), 'Ir a la agenda →');
+  else if (sinTarifa) sig = caja('', 'SIGUIENTE PASO', 'No tiene <b>tarifa</b> en SITIOS: sus servicios no se pueden cobrar.', '/directorio/clientes', 'Editar en el Directorio →');
+  else if (e.nivel !== 'verde') sig = caja('', 'AL DÍA', `Nada urgente, pero el semáforo está en <b>${Q().ETQ[e.nivel]}</b>: revisa los motivos en la tarjeta Calidad.`, urlC('calidad'), 'Ver en Calidad →');
+  else sig = caja('ok', 'AL DÍA', 'Sin quejas urgentes, sin saldo vencido, con revisión de supervisor y con tarifa.');
+
+  const lst = filas => `<div class="fs-lst">${filas.join('') || '<div><small>—</small></div>'}</div>`;
+  const equipo = fs => fs.map(r => E.servicio(r.ID_Programacion, { texto: String(r.Empleado || '').trim() || 'Sin asignar' })).join(', ');
+  const cardProx = `<div class="fs-card"><h3>Próximos</h3>${lst(grupos.slice(0, 4).map(g => {
+    const est = g.filas[0]._estado;
+    return `<div><span><b>${esc(dia(g.fecha))}</b> <small>${esc(hora(g.filas[0]))}</small>${g.tipo !== 'Limpieza' ? ` <span class="chip">${esc(g.tipo)}</span>` : ''}<br><small>${equipo(g.filas)}</small></span><span class="chip ${CHIP_ESTADO[est] || ''}">${esc(est)}</span></div>`;
+  }))}
+  <h3 style="margin-top:14px;">Recientes</h3>${lst(e.ej.slice(0, 3).map(x => `<div><span><b>${esc(dia(x.fecha))}</b><br><small>${equipo(x.filas)}</small></span><span class="chip ok">Finalizado</span></div>`))}
+  <div class="fs-par"><a href="${esc('/agenda?cliente=' + encodeURIComponent(cliente))}">Ver en la agenda →</a></div></div>`;
+
+  const ETQ_B = ['0–30 días', '31–60 días', '61–90 días', 'Más de 90 días'];
+  const cardSaldo = `<div class="fs-card"><h3>Saldo por antigüedad</h3>${sal.saldo ? lst(sal.B.map((v, i) => `<div><span>${ETQ_B[i]}</span><span${i && v ? ' class="neg"' : ''}>${v ? usd(v) : '<small>—</small>'}</span></div>`).concat(`<div><b>Total</b><b>${usd(sal.saldo)}</b></div>`))
+    + (sal.viejo ? `<div class="fs-par"><a href="${esc(E.url.registrarIngreso(cliente, sal.viejo.fecha, sal.viejo.id))}">Registrar ingreso (el más antiguo, ${esc(sal.viejo.fecha)}) →</a></div>` : '')
+    : '<p><small>Sin saldo pendiente.</small></p>'}
+  <div class="fs-par"><a href="${esc(urlC('cobros'))}">Ver cobros y pagos →</a></div></div>`;
+
+  const ultIns = e.ins[0];
+  const cardCal = `<div class="fs-card"><h3>Calidad</h3><div style="font-weight:600;margin-bottom:6px;">${Q().punto(e.nivel)}${Q().ETQ[e.nivel]}</div>
+  ${e.motivos.length ? `<ul style="margin:0 0 8px;padding-left:18px;font-size:13.5px;">${e.motivos.map(m => `<li>${esc(m)}</li>`).join('')}</ul>` : '<p><small>Sin alertas.</small></p>'}
+  ${lst([`<div><span>Quejas o dudas abiertas</span><span>${e.abiertas.length}</span></div>`, `<div><span>Última inspección</span><span>${ultIns ? E.servicio(ultIns.ID_Programacion, { texto: ultIns._fecha }) : 'Nunca'}</span></div>`])}
+  <div class="fs-par"><a href="${esc(urlC('calidad'))}">Ver ficha de calidad →</a></div></div>`;
+
+  return { tituloHtml: Q().punto(e.nivel) + esc(cliente), html: `${kp}${sig}<div class="cl-cols">${cardProx}${cardSaldo}${cardCal}</div>` };
+}
+const CSS_RESUMEN = `.cl-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start;} @media(max-width:900px){.cl-cols{grid-template-columns:1fr;}}
+.kpi small{font-weight:400;font-size:12px;color:var(--gray-d);} .kpi .sem{display:inline-block;}`;
 
 async function paginaCliente(query, admin) {
   const cliente = String(query.c || '').trim();
@@ -618,7 +687,7 @@ async function paginaCliente(query, admin) {
   const hoy = hoyFlorida();
   const mes = query.mes === 'todo' ? 'todo' : (mesValido(query.mes) ? query.mes : hoy.slice(0, 7));
   // ?ingreso=COB-… siempre abre Cobros y pagos (allí está el diálogo del ingreso)
-  const tab = !query.ingreso && TABS_CLIENTE.some(([k]) => k === query.tab) ? query.tab : 'cobros';
+  const tab = query.ingreso ? 'cobros' : (TABS_CLIENTE.some(([k]) => k === query.tab) ? query.tab : 'resumen');
   const u = o => '/cartera/cliente?' + Object.entries({ c: cliente, tab, mes, ...o }).filter(([, v]) => v).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
   const mesSec = mes === 'todo' ? hoy.slice(0, 7) : mes;
   const marco = (css, claseBody, tituloHtml, cuerpo) => `${layout.head('Cliente ' + cliente, css, claseBody)}
@@ -627,6 +696,10 @@ ${layout.cabecera({ titulo: cliente, tituloHtml, seccion: '/cartera', admin, rut
 ${cuerpo}
 </body></html>`;
 
+  if (tab === 'resumen') {
+    const r = await resumenCliente(cliente, hoy);
+    return marco(CSS + S().CSS + Q().CSS_CAL + CSS_RESUMEN, undefined, r.tituloHtml, r.html);
+  }
   if (tab === 'calidad') {
     const q = await Q().fichaCliente(cliente);
     return marco(CSS + Q().CSS_CAL, 'rep', q.tituloHtml, q.html);

@@ -128,20 +128,27 @@ async function paginaLista(query, admin) {
 }
 
 // ---------- ficha ----------
-async function carteraCliente(cliente) {
-  const [cs, nv, tar, pgd] = await Promise.all([cargarTabla('COBROS_SERVICIO', CS_H, false), cargarTabla('NOVEDADES_COBRO', NV_H, false), cargarTarifas(), P.datos(false)]);
+// Saldo pendiente del cliente por antigüedad: B = [0-30, 31-60, 61-90, 90+] días; viejo = el cobro con saldo más antiguo
+async function saldoCliente(cliente) {
+  const [cs, nv, pgd] = await Promise.all([cargarTabla('COBROS_SERVICIO', CS_H, false), cargarTabla('NOVEDADES_COBRO', NV_H, false), P.datos(false)]);
   const hoy = hoyFlorida(), B = [0, 0, 0, 0];
-  let saldo = 0;
+  let saldo = 0, viejo = null;
   armar(cs, nv).filter(c => c.Cliente === cliente).forEach(c => {
     const e = P.estadoCobro(c, pgd);
     if (!e || e.saldo <= EPS) return;
     saldo = r2(saldo + e.saldo);
     const n = Math.max(0, dias(c._fecha, hoy)), i = n <= 30 ? 0 : n <= 60 ? 1 : n <= 90 ? 2 : 3;
     B[i] = r2(B[i] + e.saldo);
+    if (!viejo || c._fecha < viejo.fecha) viejo = { id: c.ID_Cobro, fecha: c._fecha };
   });
+  return { saldo, B, viejo };
+}
+
+async function carteraCliente(cliente) {
+  const { saldo, B } = await saldoCliente(cliente);
   if (!saldo) return '<p><small>Sin saldo pendiente.</small></p>';
   return `<div class="scroll"><table><tr><th class="num">0-30 días</th><th class="num">31-60</th><th class="num">61-90</th><th class="num">90+</th><th class="num">Saldo pendiente</th></tr><tr>${B.map(v => `<td class="num">${v ? usd(v) : '<small>—</small>'}</td>`).join('')}<td class="num"><b>${usd(saldo)}</b></td></tr></table></div>
-    <p><a href="${esc(E.url.cliente(cliente) + '&tab=cobros')}">Ver cobros y registrar ingresos de este cliente</a></p>`;
+    <p><a href="${esc(E.url.cliente(cliente, '', 'cobros'))}">Ver cobros y registrar ingresos de este cliente</a></p>`;
 }
 
 // Pestaña Calidad de la ficha de cliente (/cartera/cliente?c=&tab=calidad)
@@ -177,7 +184,7 @@ async function fichaCliente(cliente) {
   const notas = d.notas.filter(n => n.Cliente === cliente).sort((a, b) => normalizarFecha(b.Fecha).localeCompare(normalizarFecha(a.Fecha)) || String(b.ID_Nota).localeCompare(String(a.ID_Nota)));
   const act = notas.filter(n => n.Estado === 'Activa'), conCal = act.filter(n => numero(n.Calificacion) > 0);
   const prom = conCal.length ? Math.round(conCal.reduce((a, n) => a + numero(n.Calificacion), 0) / conCal.length * 10) / 10 : null;
-  const resNotas = `<div class="aviso" style="background:#f0fdf4;">${act.length} nota(s) activa(s)${prom !== null ? ` · calificación promedio <b>★ ${prom}</b> (${conCal.length} con calificación)` : ' · sin calificaciones'} · ${act.filter(n => n.Fuente === 'Cliente').length} del cliente · ${act.filter(n => n.Fuente === 'Interna').length} internas · <a href="${esc(E.url.cliente(cliente) + '&tab=notas')}">agregar o anular notas</a></div>`;
+  const resNotas = `<div class="aviso" style="background:#f0fdf4;">${act.length} nota(s) activa(s)${prom !== null ? ` · calificación promedio <b>★ ${prom}</b> (${conCal.length} con calificación)` : ' · sin calificaciones'} · ${act.filter(n => n.Fuente === 'Cliente').length} del cliente · ${act.filter(n => n.Fuente === 'Interna').length} internas · <a href="${esc(E.url.cliente(cliente, '', 'notas'))}">agregar o anular notas</a></div>`;
   const tablaNotas = act.length ? `<div class="scroll"><table><tr><th>Fecha</th><th>Fuente</th><th>Categoría</th><th class="num">Calif.</th><th>Detalle</th></tr>${act.slice(0, 20).map(n => `<tr><td>${esc(normalizarFecha(n.Fecha))}</td><td>${esc(n.Fuente)}</td><td>${esc(n.Categoria)}</td><td class="num">${estr(n)}</td><td class="wrap">${esc(n.Detalle)}</td></tr>`).join('')}</table></div>` : '<p><small>Sin notas.</small></p>';
 
   const cartera = await carteraCliente(cliente);
@@ -207,4 +214,4 @@ function rutas(app, auth) {
   });
 }
 
-module.exports = { rutas, evaluar, paginaLista, fichaCliente, leerTodo, abierta, CSS_CAL };
+module.exports = { rutas, evaluar, paginaLista, fichaCliente, saldoCliente, leerTodo, abierta, punto, ETQ, CSS_CAL };

@@ -216,7 +216,7 @@ ${par('Dirección', r.Direccion ? esc(r.Direccion) + maps : '')}<div class="fs-p
   const cardCobro = cobro ? `<div class="fs-card"><h3>Cobro</h3>${par('Estado en cartera', esc(cobro.estado + (cobro.motivo ? ' — ' + cobro.motivo : '')))}
 ${cobro.ejecutado ? par('Total a cobrar', usd(cobro.total) + (cobro.nov ? ` <small>(incluye ${usd(cobro.nov)} de novedades)</small>` : '')) : ''}
 ${cobro.pago ? par('Pago', esc(cobro.pago.txt) + (cobro.pago.aplicado ? ` · cobrado ${usd(cobro.pago.aplicado)}` : '') + (cobro.saldo ? ` · saldo <b>${usd(cobro.saldo)}</b>` : '')) : ''}
-<div class="fs-par"><a href="${esc(E.url.cliente(r.Cliente, mes))}">Cobros del cliente en ${esc(MESES[+mes.slice(5) - 1] + ' ' + mes.slice(0, 4))} →</a></div></div>` : '';
+<div class="fs-par"><a href="${esc(E.url.cliente(r.Cliente, mes, 'cobros'))}">Cobros del cliente en ${esc(MESES[+mes.slice(5) - 1] + ' ' + mes.slice(0, 4))} →</a></div></div>` : '';
   const vinc = [
     ...pends.map(p => `<div><span>${E.pendiente(p.ID_Pendiente)} · ${esc(p.Titulo)}</span><span class="chip ${p.Estado === 'Abierto' ? 'am' : p.Estado === 'Cancelado' ? '' : 'ok'}">${esc(p.Estado)}</span></div>`),
     ...q.map(x => `<div><span>${esc(x.Tipo || 'Queja')}: ${esc(String(x.Descripcion || '').slice(0, 60))}</span><span class="chip ${/abiert/i.test(x.Estado) ? 'mal' : ''}">${esc(x.Estado || '—')}</span></div>`),
@@ -265,4 +265,4 @@ function rutas(app, auth) {
   });
 }
 
-module.exports = { rutas, tiempo };
+module.exports = { rutas, tiempo, CSS };

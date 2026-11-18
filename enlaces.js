@@ -1,6 +1,6 @@
 // Enlaces comunes entre páginas de administración.
 // Regla: un nombre de cliente o empleado, o un ID (PRG-, PND-), siempre lleva al mismo lugar.
-//   cliente   → /cartera/cliente?c=      (cobros, servicios con su línea de vida, ingresos y notas)
+//   cliente   → /cartera/cliente?c=      (ficha de cliente; abre en Resumen, o en la pestaña opts.tab, p. ej. 'cobros' desde la Cartera)
 //   empleado  → /nomina?empleado=        (su semana: servicios, horas, millas y liquidación)
 //   servicio  → /servicio?id=            (ficha de servicio, servicio.js)
 //   pendiente → /pendientes?id=          (la lista mostrando solo ese pendiente)
@@ -13,7 +13,7 @@ const limpio = t => String(t ?? '').trim();
 const RE_SERVICIO = /^PRG-\d{8}-\d+$/;
 
 const url = {
-  cliente: (c, mes) => '/cartera/cliente?c=' + enc(limpio(c)) + (mes ? '&mes=' + enc(mes) : ''),
+  cliente: (c, mes, tab) => '/cartera/cliente?c=' + enc(limpio(c)) + (tab ? '&tab=' + enc(tab) : '') + (mes ? '&mes=' + enc(mes) : ''),
   calidadCliente: c => '/cartera/cliente?c=' + enc(limpio(c)) + '&tab=calidad',
   empleado: (e, fecha) => '/nomina?' + (fecha ? 'fecha=' + enc(fecha) + '&' : '') + 'empleado=' + enc(limpio(e)),
   servicio: id => '/servicio?id=' + enc(limpio(id)),
@@ -26,7 +26,7 @@ const url = {
 
 const a = (href, texto, titulo) => `<a class="lnk" href="${esc(href)}" title="${esc(titulo)}">${esc(texto)}</a>`;
 // opts.texto: texto visible (por defecto, el nombre o ID). Si el valor está vacío se devuelve el texto sin enlace.
-const cliente = (nombre, opts = {}) => limpio(nombre) ? a(url.cliente(nombre, opts.mes), opts.texto ?? limpio(nombre), 'Ver cliente') : esc(opts.texto ?? nombre);
+const cliente = (nombre, opts = {}) => limpio(nombre) ? a(url.cliente(nombre, opts.mes, opts.tab), opts.texto ?? limpio(nombre), 'Ver ficha del cliente') : esc(opts.texto ?? nombre);
 const empleado = (nombre, opts = {}) => limpio(nombre) ? a(url.empleado(nombre, opts.fecha), opts.texto ?? limpio(nombre), 'Ver su semana en Nómina') : esc(opts.texto ?? nombre);
 const servicio = (id, opts = {}) => limpio(id) ? a(url.servicio(id), opts.texto ?? limpio(id), 'Ver ficha del servicio') : esc(opts.texto ?? id);
 const pendiente = (id, opts = {}) => limpio(id) ? a(url.pendiente(id), opts.texto ?? limpio(id), 'Ver pendiente') : esc(opts.texto ?? id);
