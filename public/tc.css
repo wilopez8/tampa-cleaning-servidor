@@ -116,6 +116,12 @@ dialog p{font-size:13px;}
 
 /* logo en la barra superior */
 .tc-brand img{height:40px;width:auto;display:block;}
+/* buscador global de la barra */
+.tc-buscar{margin-left:auto;flex:0 1 270px;min-width:150px;}
+.tc-buscar input{width:100%;height:34px;padding:0 12px;border-radius:8px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#fff;font:inherit;font-size:13.5px;}
+.tc-buscar input::placeholder{color:#aebbc6;}
+.tc-buscar input:focus{outline:none;border-color:var(--amber);background:rgba(255,255,255,.14);}
+.tc-buscar + .tc-user{margin-left:14px;}
 
 /* celular: barra compacta con menú desplazable */
 @media(max-width:800px){
@@ -127,5 +133,9 @@ dialog p{font-size:13px;}
   .tc-bar nav::-webkit-scrollbar{display:none;}
   .tc-bar nav a{flex:0 0 auto;padding:0 12px;white-space:nowrap;}
   .tc-user{margin-left:6px;font-size:12px;}
+  .tc-bar{flex-wrap:wrap;height:auto;}
+  .tc-bar nav{height:56px;}
+  .tc-buscar{order:9;flex:1 0 100%;margin:0 0 10px;}
+  .tc-buscar + .tc-user{margin-left:6px;}
   th,td{padding:10px;}
 }

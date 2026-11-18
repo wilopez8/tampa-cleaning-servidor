@@ -29,9 +29,11 @@ ${css ? `<style>${css}</style>` : ''}<link rel="stylesheet" href="/static/tc.css
 // titulo: texto plano (se escapa). tituloHtml: HTML ya seguro.
 // seccion: clave de SECCIONES. activa: clave de la sub-pestaña (las listas la pasan; las fichas no, y usan ruta).
 // ruta: migas de pan [[texto, href], …, [texto]]; el último (sin href) es la página actual.
-function cabecera({ titulo, tituloHtml, seccion, admin, activa, mes, ruta }) {
+// q: texto que queda en el buscador (solo en /buscar).
+function cabecera({ titulo, tituloHtml, seccion, admin, activa, mes, ruta, q }) {
   const barra = `<header class="tc-bar"><a class="tc-brand" href="/resumen" title="Hoy"><img src="${esc(marca.LOGO_CLARO)}" alt="${esc(marca.PRODUCTO)}"></a><span class="tc-empresa">${esc(marca.EMPRESA)}</span>
 <nav>${SECCIONES.map(([k, h, t]) => `<a href="${h}"${k === seccion ? ' class="act"' : ''}>${t}</a>`).join('')}</nav>
+<form class="tc-buscar" method="GET" action="/buscar" role="search"><input type="search" name="q" value="${esc(q || '')}" placeholder="Buscar cliente, empleado o ID…" aria-label="Buscar cliente, empleado o ID" maxlength="100"></form>
 <div class="tc-user"><span>${esc(admin)}</span><a href="/logout">Cerrar sesión</a></div></header>`;
   const tabs = activa && SUBS[seccion] ? `<div class="tc-tabs">${SUBS[seccion].map(([k, h, t, conMes]) => {
     const href = conMes && mes ? h + '?mes=' + encodeURIComponent(mes) : h;
