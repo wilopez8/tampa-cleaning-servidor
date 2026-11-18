@@ -474,20 +474,21 @@ async function paginaClientes(admin, query = {}) {
     dialogoCliente(d.listas), { tipo: 'clientes', filas: L, editar, volver: editar ? '/cartera/cliente?c=' + encodeURIComponent(editar) + '&tab=datos' : '' });
 }
 
-async function paginaEmpleados(admin) {
+async function paginaEmpleados(admin, query = {}) {
   const d = await leerEmpleados(false), L = d.lista, act = L.filter(x => x.act);
+  const editar = L.some(x => x.nombre === limpio(query.editar)) ? limpio(query.editar) : '';
   const kpis = layout.kpis([
     ['Empleados activos', act.length], ['Inactivos', L.length - act.length],
     ['Activos sin WhatsApp válido', act.filter(x => x.wa.length < 10).length, act.some(x => x.wa.length < 10) ? 'neg' : ''],
     ['Activos sin dirección', act.filter(x => !x.dir).length, act.some(x => !x.dir) ? 'neg' : ''],
   ]);
   const filas = L.map((x, i) => `<tr data-i="${i}" data-q="${esc([x.nombre, x.rol, x.wa, x.dir].join(' ').toLowerCase())}">
-<td><b>${esc(x.nombre)}</b></td><td>${x.wa.length >= 10 ? '+' + esc(x.wa) : '<span class="est par">Falta</span>'}</td><td>${esc(x.rol)}</td>
+<td><b><a href="${esc('/empleado?e=' + encodeURIComponent(x.nombre))}" title="Ver ficha del empleado">${esc(x.nombre)}</a></b></td><td>${x.wa.length >= 10 ? '+' + esc(x.wa) : '<span class="est par">Falta</span>'}</td><td>${esc(x.rol)}</td>
 <td>${x.tarifa === '' ? '<small>—</small>' : usd(x.tarifa)}</td><td class="hm"><small>${esc(corto(x.dir, 60))}</small></td>
 <td><span class="est ${x.act ? 'ok' : 'cn'}">${x.estado}</span></td><td class="ac">${menu(x.act)}</td></tr>`).join('');
   return marco('empleados', admin, kpis, '+ Nuevo empleado', filas,
     '<th>Empleado</th><th>WhatsApp</th><th>Rol</th><th>Tarifa/h</th><th class="hm">Residencia</th><th>Estado</th><th></th>',
-    dialogoEmpleado(d.listas), { tipo: 'empleados', filas: L.map(({ _fila, ...r }) => r) });
+    dialogoEmpleado(d.listas), { tipo: 'empleados', filas: L.map(({ _fila, ...r }) => r), editar, volver: editar ? '/empleado?e=' + encodeURIComponent(editar) + '&tab=datos' : '' });
 }
 
 function rutas(app, auth) {
@@ -508,4 +509,4 @@ function rutas(app, auth) {
   app.post('/directorio/estado', auth.requiereAdmin, api(cambiarEstado));
 }
 
-module.exports = { rutas, leerClientes, paginaClientes, paginaEmpleados, guardarCliente, guardarEmpleado, cambiarEstado, resolverEnlace, _t: { coordsDeTexto, revisarCliente, revisarEmpleado, CLIENTE_JS } };
+module.exports = { rutas, leerClientes, leerEmpleados, paginaClientes, paginaEmpleados, guardarCliente, guardarEmpleado, cambiarEstado, resolverEnlace, _t: { coordsDeTexto, revisarCliente, revisarEmpleado, CLIENTE_JS } };

@@ -63,6 +63,7 @@ tampa-cleaning-servidor/
 ├── directorio.js  → Páginas /directorio/clientes y /directorio/empleados: alta, edición y activación/desactivación; coordenadas desde el enlace de Google Maps
 ├── layout.js      → Cabecera común de las páginas de administración (head, cabecera con secciones y sub-pestañas, kpis)
 ├── servicio.js    → Ficha de servicio /servicio?id=PRG-…: pasos, siguiente paso, línea de vida en orden y lo vinculado (ver 6.20)
+├── empleado.js    → Ficha de empleado /empleado?e=<nombre>: pendientes y datos del empleado, solo lectura (ver 6.21)
 ├── enlaces.js    → Enlaces comunes entre páginas: nombre de cliente → /cartera/cliente, empleado → su semana en /nomina, ID PRG- → /servicio, ID PND- → /pendientes?id=, ID LIQ- → la semana del empleado en /nomina
 ├── marca.js       → Nombre de la empresa, del producto y logos (sobrescribibles con variables MARCA_*)
 ├── menu.js        → Menú antiguo (MENU_CSS, menuHtml). Ya casi no se usa: lo reemplazó layout.js
@@ -125,6 +126,7 @@ tampa-cleaning-servidor/
 | `POST /directorio/coordenadas` | Sesión | Obtiene latitud/longitud de un enlace de Google Maps |
 | `POST /pendientes/editar` | Sesión | Edita un pendiente abierto (avisa al empleado si ya estaba enviado) |
 | `GET /servicio?id=` | Sesión | Ficha de servicio (`servicio.js`, ver 6.20). Un ID con formato inválido redirige a `/agenda`; uno que no existe muestra un aviso con enlace a la agenda de esa fecha |
+| `GET /empleado?e=&tab=&fecha=` | Sesión | Ficha de empleado (`empleado.js`, ver 6.21); sin `e` redirige a `/directorio/empleados` |
 | `GET /static/*` | — | Estilos, scripts y logos de `public/` |
 | `GET /liquidacion?t=` | — (token firmado, vence a los 60 días) | Página del empleado con el detalle de su liquidación cerrada (solo lectura) |
 | `GET/POST /pendiente?id=` | — (link único por pendiente) | Página del empleado para marcar el pendiente como resuelto o "sigue pendiente" |
@@ -419,7 +421,7 @@ Alta y edición de **clientes** y **empleados** sin entrar al Sheets. Las filas 
 - **Coordenadas** — se sacan del enlace de Google Maps (también enlaces cortos, que el servidor sigue solo hacia dominios de Google) o se escriben a mano como "latitud, longitud". Se guardan como texto y se aceptan con punto o coma decimal. Guardar sin coordenadas está permitido, con aviso: los check-ins de ese cliente saldrán fuera de rango.
 - **Empleado** — WhatsApp (10 dígitos → se antepone el 1; no puede repetirse entre empleados), rol, estatus, tarifa por hora y dirección de residencia (sin ella, aviso: no se calculan millas).
 - **Activar / desactivar** — cliente: `Cliente Vigente/Vencido` + `SITIOS.Estatus`; empleado: `Estatus`.
-- **Abrir para editar** — `/directorio/clientes?editar=<nombre>` abre el diálogo de ese cliente (lo usa "Editar en el Directorio" de la pestaña Datos de la ficha de cliente y el siguiente paso "sin tarifa"); al guardar vuelve a la pestaña Datos. La dirección se limpia al abrir, para que recargar no reabra el diálogo.
+- **Abrir para editar** — `/directorio/clientes?editar=<nombre>` y `/directorio/empleados?editar=<nombre>` abren el diálogo de ese registro (lo usan "Editar en el Directorio" de la pestaña Datos de la ficha de cliente o de empleado y el siguiente paso "sin tarifa"); al guardar vuelve a la pestaña Datos de la ficha. En la lista de empleados, el nombre abre la ficha de empleado (6.21). La dirección se limpia al abrir, para que recargar no reabra el diálogo.
 - Exige que existan todas sus columnas en `CLIENTES`, `SITIOS` y `EMPLEADOS` (ver sección 7); si falta alguna, la página muestra el error con los nombres. Escribe por nombre de columna, solo las celdas que cambiaron, y antepone `'` a textos que empiecen con `= + - @` para que Sheets no los tome como fórmula. Usa su propia cola en memoria.
 
 ### 6.19 Interfaz común (`layout.js`, `public/`)
@@ -441,6 +443,12 @@ Fase 3 de la navegación. Una página por servicio (`PRG-`) con todo lo que se s
 - **Línea de vida en orden:** programado, última modificación o cancelación, envío, confirmación, cambios después de enviar, entrada, avisos, salida, cierre, resultado de la inspección, novedades de cobro, notas, pendientes (creado y cerrado) y quejas, ordenados por su fecha/hora. El **envío** y el **cierre** no guardan hora en la hoja: se muestran con "—" en su lugar lógico del flujo (después del último evento con hora que va antes).
 - **Columna lateral:** cliente (dirección, mapa, ficha de calidad), equipo (horas programadas y reales de cada uno, enlace a su semana en Nómina), cobro (estado, total con novedades, pago y saldo; `cartera.datosCobroDia` ahora también devuelve el estado de pago) y lo vinculado (pendientes, quejas, inspecciones de este servicio o servicio inspeccionado, notas).
 - El Detalle de la agenda se mantiene como vista rápida.
+
+### 6.21 Ficha de empleado (`/empleado?e=`, `empleado.js`)
+
+Una página por empleado con lo que hoy está repartido entre Nómina, Pendientes, Egresos y el Directorio. **Solo lectura**: lo que se edita sigue en su página (la nómina se ajusta y se cierra en `/nomina`; los pendientes en `/pendientes`; los datos en el Directorio). Ruta `Directorio › Empleados › nombre`; en la barra queda marcado Directorio. Encabezado: nombre, estado y rol; WhatsApp, tarifa por hora y dirección de residencia (en rojo si faltan); botones "Editar datos" (`/directorio/empleados?editar=`) y "Ver semana en Nómina" (`/nomina?fecha=&empleado=`). `?fecha=` se conserva entre pestañas.
+- **Pendientes** — los del empleado (`PENDIENTES.Responsable`): abiertos primero, vencidos en rojo arriba (misma regla que `/pendientes`), con cliente, servicio, fecha límite y si se envió por WhatsApp; debajo los últimos 20 cerrados o cancelados con quién y cómo se cerraron. "Ver en Pendientes →" abre `/pendientes?responsable=`.
+- **Datos** — lo que hay en `EMPLEADOS` (WhatsApp, rol, estado, tarifa por hora, dirección de residencia para las millas), con "Editar en el Directorio →". Si el nombre no está en el Directorio, lo avisa.
 
 ## 7. Estructura de las hojas de Google Sheets relevantes
 

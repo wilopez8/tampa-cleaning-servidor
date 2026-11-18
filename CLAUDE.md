@@ -34,6 +34,7 @@ Hosted on Render (`tampa-cleaning-servidor.onrender.com`). **Pushing to `main` a
 - `edicion.js` — agenda editor: validation, create/edit/reassign/cancel, save & send, retroactive registration for past dates. `maestros()` returns active clients/employees.
 - `pendientes.js` — pendientes: admin page, one WhatsApp per task (SID stored for reply matching), reminders, employee replies, employee page.
 - `enlaces.js` — shared cross-page links (client → `/cartera/cliente`, the client ficha: Resumen by default, `tab=cobros` from Cartera pages, employee → `/nomina?empleado=`, `PRG-` → `/servicio?id=`, the service ficha in `servicio.js`; `/agenda?fecha=&id=` still opens the agenda Detalle, `PND-` → `/pendientes?id=`, `LIQ-` → the employee's week in `/nomina`, which needs the employee and week since the ID alone doesn't say whose it is). Use it whenever a page prints a client/employee name or an ID.
+- `empleado.js` — employee ficha `/empleado?e=` (read-only; payroll edits stay in `/nomina`).
 - `sheets.js` — Sheets API wrapper with hardcoded `SPREADSHEET_ID`: `leerHoja(nombre, { cache })`, `agregarFila(s)`, `actualizarCelda(s)`, `asegurarHoja` (creates a tab with headers if missing), `invalidarCache`, `edadCacheSegundos`. Re-authenticates on every call. Reads are live unless `{ cache: true }` (45 s, in-memory; used only by agenda views); any write invalidates that sheet's cache. Code paths that write must read live before validating.
 
 ### Webhook dispatch order (index.js)

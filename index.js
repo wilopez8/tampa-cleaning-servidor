@@ -321,6 +321,7 @@ require('./calidad').rutas(app, auth);
 require('./resumen').rutas(app, auth);
 require('./directorio').rutas(app, auth);
 require('./servicio').rutas(app, auth); // ficha de servicio (/servicio?id=)
+require('./empleado').rutas(app, auth); // ficha de empleado (/empleado?e=)
 
 app.get('/pendientes', auth.requiereAdmin, async (req, res) => {
   try { res.set('Content-Type', 'text/html; charset=utf-8'); res.send(await pend.paginaPendientes(req.query, req.admin)); }
