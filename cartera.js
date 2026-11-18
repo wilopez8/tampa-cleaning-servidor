@@ -6,6 +6,7 @@ const P = () => require('./pagos'); // carga diferida: pagos.js usa los helpers 
 const N = () => require('./notas'); // carga diferida: notas.js usa los helpers de este archivo
 const Q = () => require('./calidad'); // carga diferida: calidad.js usa los helpers de este archivo
 const S = () => require('./servicio'); // estilos de las fichas (tarjetas, siguiente paso)
+const Dir = () => require('./directorio'); // datos del cliente (CLIENTES + SITIOS)
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const r2 = x => Math.round(x * 100) / 100;
 const usd = n => (n < 0 ? '− $' : '$') + Math.abs(n || 0).toFixed(2);
@@ -611,7 +612,8 @@ const DIALOGO_COBRO = `<dialog id="dlg"><h3 id="dt" style="margin-top:0;"></h3>
 <script>${SCRIPT}</script>`;
 
 // Ficha de cliente: /cartera/cliente?c=&tab=&mes=. Las pestañas comparten ?mes= (solo Cobros y pagos lo usa).
-const TABS_CLIENTE = [['resumen', 'Resumen'], ['cobros', 'Cobros y pagos'], ['calidad', 'Calidad'], ['notas', 'Notas']];
+const TABS_CLIENTE = [['resumen', 'Resumen'], ['cobros', 'Cobros y pagos'], ['calidad', 'Calidad'], ['notas', 'Notas'], ['datos', 'Datos']];
+const urlEditarCliente = c => '/directorio/clientes?editar=' + encodeURIComponent(c);
 const CHIP_ESTADO = { Confirmado: 'ok', Finalizado: 'ok', Enviado: 'am', 'Salida (falta cierre)': 'am', 'No puede': 'mal', 'En curso': 'az' };
 
 // Pestaña Resumen: KPIs, siguiente paso y tres tarjetas (próximos y recientes, saldo, calidad)
@@ -651,7 +653,7 @@ async function resumenCliente(cliente, hoy) {
   if (urgente) sig = caja('mal', 'SIGUIENTE PASO', 'Hay una <b>queja o duda de urgencia alta</b> abierta.', urlC('calidad'), 'Ver en Calidad →');
   else if (vencido && sal.viejo) sig = caja('mal', 'SIGUIENTE PASO', `Tiene <b>${usd(vencido)}</b> sin pagar con más de 30 días (el más antiguo es del ${esc(sal.viejo.fecha)}).`, E.url.registrarIngreso(cliente, sal.viejo.fecha, sal.viejo.id), 'Registrar ingreso →');
   else if (e.supervisor && !e.supervisor.ok) sig = caja('', 'SIGUIENTE PASO', `No ha tenido <b>revisión de supervisor</b> ${e.supervisor.n === 1 ? 'en su último servicio' : `en sus últimos ${e.supervisor.n} servicios`} (desde el ${esc(e.supervisor.desde)}). Programa una inspección.`, '/agenda?cliente=' + encodeURIComponent(cliente), 'Ir a la agenda →');
-  else if (sinTarifa) sig = caja('', 'SIGUIENTE PASO', 'No tiene <b>tarifa</b> en SITIOS: sus servicios no se pueden cobrar.', '/directorio/clientes', 'Editar en el Directorio →');
+  else if (sinTarifa) sig = caja('', 'SIGUIENTE PASO', 'No tiene <b>tarifa</b> en SITIOS: sus servicios no se pueden cobrar.', urlEditarCliente(cliente), 'Editar datos →');
   else if (e.nivel !== 'verde') sig = caja('', 'AL DÍA', `Nada urgente, pero el semáforo está en <b>${Q().ETQ[e.nivel]}</b>: revisa los motivos en la tarjeta Calidad.`, urlC('calidad'), 'Ver en Calidad →');
   else sig = caja('ok', 'AL DÍA', 'Sin quejas urgentes, sin saldo vencido, con revisión de supervisor y con tarifa.');
 
@@ -678,6 +680,23 @@ async function resumenCliente(cliente, hoy) {
 
   return { tituloHtml: Q().punto(e.nivel) + esc(cliente), html: `${kp}${sig}<div class="cl-cols">${cardProx}${cardSaldo}${cardCal}</div>` };
 }
+// Pestaña Datos: lo que hay en el Directorio (CLIENTES + SITIOS), solo lectura; se edita en el Directorio
+async function datosCliente(cliente) {
+  const x = (await Dir().leerClientes(false)).lista.find(o => o.nombre === cliente);
+  const btn = `<a class="btn hoy" href="${esc(urlEditarCliente(cliente))}">Editar en el Directorio →</a>`;
+  if (!x) return `<div class="aviso r">Este cliente no está en el Directorio (hojas CLIENTES y SITIOS).</div><p><a class="btn" href="/directorio/clientes">Ir al Directorio</a></p>`;
+  const v = t => t === '' || t === undefined || t === null ? '<small>—</small>' : esc(t);
+  const par = (k, val) => `<div class="fs-par"><span>${esc(k)}</span>${val}</div>`;
+  const maps = /^https?:\/\//i.test(x.maps) ? `<a href="${esc(x.maps)}" target="_blank" rel="noopener">Abrir en Google Maps</a>` : v(x.maps);
+  const coord = x.lat !== '' && x.lon !== '' ? `${esc(x.lat)}, ${esc(x.lon)} · <a href="${esc('https://www.google.com/maps?q=' + x.lat + ',' + x.lon)}" target="_blank" rel="noopener">verificar</a>` : '<span class="neg">Faltan</span>';
+  const card = (t, cuerpo) => `<div class="fs-card"><h3>${t}</h3>${cuerpo}</div>`;
+  return `<div class="fs-acc"><span class="chip ${x.act ? 'ok' : ''}">${esc(x.estado)}</span>${x.incompleto ? '<span class="chip am">Incompleto: falta en CLIENTES o en SITIOS</span>' : ''}${btn}</div>
+<div class="cl-cols">
+${card('Ubicación', par('Dirección', v(x.dir)) + par('Ciudad', v(x.ciudad)) + par('Tipo de cliente', v(x.tipo)) + par('Google Maps', maps) + par('Coordenadas (check-in)', coord) + par('Radio de tolerancia', x.radio ? esc(x.radio) + ' m' : '<small>—</small>'))}
+${card('Servicio', par('Descripción', v(x.desc)) + par('Instrucciones para el equipo', v(x.ins)) + par('Checklist de tareas', v(x.chk)))}
+${card('Cobro', par('Tarifa por servicio', x.tarifa === '' ? '<span class="neg">Sin tarifa</span>' : usd(x.tarifa)) + par('Pagador', v(x.pagador)) + par('Método de pago', v(x.metodo)) + par('Nota de pago', v(x.nota)) + par('Frecuencia de cobro', v(x.frec)) + par('Fecha de referencia del cobro', v(x.ref)))}
+</div>`;
+}
 const CSS_RESUMEN = `.cl-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start;} @media(max-width:900px){.cl-cols{grid-template-columns:1fr;}}
 .kpi small{font-weight:400;font-size:12px;color:var(--gray-d);} .kpi .sem{display:inline-block;}`;
 
@@ -700,6 +719,7 @@ ${cuerpo}
     const r = await resumenCliente(cliente, hoy);
     return marco(CSS + S().CSS + Q().CSS_CAL + CSS_RESUMEN, undefined, r.tituloHtml, r.html);
   }
+  if (tab === 'datos') return marco(CSS + S().CSS + CSS_RESUMEN, undefined, undefined, await datosCliente(cliente));
   if (tab === 'calidad') {
     const q = await Q().fichaCliente(cliente);
     return marco(CSS + Q().CSS_CAL, 'rep', q.tituloHtml, q.html);

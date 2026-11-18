@@ -334,14 +334,16 @@ const CLIENTE_JS = String.raw`
     $('f_lat').addEventListener('input',estadoCoord);$('f_lon').addEventListener('input',estadoCoord);
   }
   $('dcancel').onclick=function(){dlg.close();};
+  // después de guardar: volver a la ficha si se vino desde ella (?editar=), si no recargar la lista
+  function seguir(){if(D.volver&&MODO==='editar'){location.href=D.volver;}else{location.reload();}}
   $('dsave').onclick=function(){
     var b=this;err.textContent='';b.disabled=true;
     TC.post(EMP?'/directorio/empleado/guardar':'/directorio/cliente/guardar',leer()).then(function(r){
       b.disabled=false;if(!r){return;}
       if(!r.ok){err.textContent=r.error||'No se guardó.';return;}
       dlg.close();
-      if(r.aviso){TC.alerta(r.aviso,{titulo:'Guardado'}).then(function(){location.reload();});return;}
-      TC.toast('Guardado.');setTimeout(function(){location.reload();},700);
+      if(r.aviso){TC.alerta(r.aviso,{titulo:'Guardado'}).then(seguir);return;}
+      TC.toast('Guardado.');setTimeout(seguir,700);
     }).catch(function(){b.disabled=false;err.textContent='Error de conexión.';});
   };
   $('nuevo').onclick=function(){abrir({estado:'Activo'},'crear',EMP?'Nuevo empleado':'Nuevo cliente');};
@@ -380,6 +382,11 @@ const CLIENTE_JS = String.raw`
   }
   $('q').addEventListener('input',filtrar);$('fe').addEventListener('change',filtrar);
   filtrar();
+  // ?editar=<nombre>: abre ese registro para editar (enlace "Editar en el Directorio" de la ficha)
+  if(D.editar){
+    try{history.replaceState(null,'',location.pathname);}catch(e){}
+    for(var k=0;k<D.filas.length;k++){if(D.filas[k].nombre===D.editar){abrir(D.filas[k],'editar','Editar: '+D.editar);break;}}
+  }
 })();
 `;
 
@@ -447,8 +454,9 @@ ${dialogo}
 const menu = (act, extra) => `<button type="button" class="btn mini" data-a="ed">Editar</button> <details class="mnu"><summary class="btn mini">⋯</summary><div class="mnu-l">${extra || ''}<button type="button" class="mnu-i${act ? ' pel' : ''}" data-a="est">${act ? 'Desactivar' : 'Activar'}</button></div></details>`;
 const usd = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-async function paginaClientes(admin) {
+async function paginaClientes(admin, query = {}) {
   const d = await leerClientes(false), L = d.lista, act = L.filter(x => x.act);
+  const editar = L.some(x => x.nombre === limpio(query.editar)) ? limpio(query.editar) : '';
   const kpis = layout.kpis([
     ['Clientes activos', act.length], ['Inactivos', L.length - act.length],
     ['Activos sin coordenadas', act.filter(x => x.lat === '').length, act.some(x => x.lat === '') ? 'neg' : ''],
@@ -463,7 +471,7 @@ async function paginaClientes(admin) {
 <td class="ac">${menu(x.act, '<button type="button" class="mnu-i" data-a="sitio">Agregar otro sitio (mismo pagador)</button>')}</td></tr>`).join('');
   return marco('clientes', admin, kpis, '+ Nuevo cliente', filas,
     '<th>Cliente</th><th class="hm">Pagador</th><th>Tarifa</th><th class="hm">Cobro</th><th>Coord.</th><th>Estado</th><th></th>',
-    dialogoCliente(d.listas), { tipo: 'clientes', filas: L });
+    dialogoCliente(d.listas), { tipo: 'clientes', filas: L, editar, volver: editar ? '/cartera/cliente?c=' + encodeURIComponent(editar) + '&tab=datos' : '' });
 }
 
 async function paginaEmpleados(admin) {
@@ -484,7 +492,7 @@ async function paginaEmpleados(admin) {
 
 function rutas(app, auth) {
   const html = (fn) => async (req, res) => {
-    try { res.set('Content-Type', 'text/html; charset=utf-8'); res.send(await fn(req.admin)); }
+    try { res.set('Content-Type', 'text/html; charset=utf-8'); res.send(await fn(req.admin, req.query || {})); }
     catch (e) { console.error('Error en ' + req.path + ':', e); res.status(500).send('Error cargando el directorio: ' + e.message); }
   };
   const api = (fn) => async (req, res) => {
@@ -500,4 +508,4 @@ function rutas(app, auth) {
   app.post('/directorio/estado', auth.requiereAdmin, api(cambiarEstado));
 }
 
-module.exports = { rutas, paginaClientes, paginaEmpleados, guardarCliente, guardarEmpleado, cambiarEstado, resolverEnlace, _t: { coordsDeTexto, revisarCliente, revisarEmpleado, CLIENTE_JS } };
+module.exports = { rutas, leerClientes, paginaClientes, paginaEmpleados, guardarCliente, guardarEmpleado, cambiarEstado, resolverEnlace, _t: { coordsDeTexto, revisarCliente, revisarEmpleado, CLIENTE_JS } };
